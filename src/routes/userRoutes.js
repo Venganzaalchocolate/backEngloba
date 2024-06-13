@@ -7,9 +7,9 @@ const urlencodedParser = bodyParser.urlencoded({ extended: false })
 
 router.get("/users", urlencodedParser, getUsers)
 router.get("/user/:id", urlencodedParser,tokenValid, getUserID)
-router.post("/crearusuario", urlencodedParser,postCreateUser)
-router.delete("/borrarusuario/:id", urlencodedParser, tokenValidAdmin,UserDeleteId)
-router.put("/actualizarusuario", urlencodedParser,tokenValid, userPut)
-router.post('/usersfilter', urlencodedParser, tokenValidAdmin, getUsersFilter)
+router.post("/createuser", urlencodedParser,postCreateUser)
+router.delete("/deleteuser/:id", urlencodedParser, tokenValidAdmin,UserDeleteId)
+router.put("/modifyuser", urlencodedParser,tokenValid, userPut)
+router.post('/filteruser', urlencodedParser, tokenValidAdmin, getUsersFilter)
 
 module.exports = router;

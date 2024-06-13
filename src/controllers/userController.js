@@ -3,36 +3,17 @@ const {prevenirInyeccionCodigo, esPassSegura, validName, validEmail, catchAsync,
 
 // crear usuario
 const postCreateUser = async (req, res) => {
-    // doble comprobación, primero por seguridad en el frontend nos aseguraremos que los datos enviados sean correctos,
-    // y aquí (backend) volveremos ha hacer una doble comprobación para evitar injección de código
-
-    if (!req.body.nombre || !req.body.email || !req.body.password || !req.body.direccion ||
-        !validEmail(req.body.email) ||
-        !validName(req.body.nombre) ||
-        !esPassSegura(req.body.password)
-    ) throw new ClientError("Los datos no son correctos", 400);
-    // Crear un nuevo usuario utilizando el modelo de Mongoose
-    //const newUser = new User(req.body);
-    // genero una password segura
+    if (!req.body.name || !req.body.email || !req.body.password || !req.body.role || !req.body.dni) throw new ClientError("Los datos no son correctos", 400);
     const passSegura=generarHashpass(req.body.password);
+
     const newUser=new User({
-        name: prevenirInyeccionCodigo(req.body.nombre),
-        email: prevenirInyeccionCodigo(req.body.email),
+        name: req.body.name,
+        email: req.body.email,
         pass: await passSegura,
-        direction: prevenirInyeccionCodigo(req.body.direccion),
+        role: req.body.role,
+        dni:req.body.dni
     })
-    // Guardar el usuario en la base de datos
     const savedUser = await newUser.save();
-    /*to, from, subject, messageAux*/
-    const messageAux={
-        name:req.body.nombre,
-        from:'mesamagicatienda@gmail.com',
-        to:req.body.email,
-        subject:"Gracias por unirte a MesaMágica",
-        message:"Tu cuenta se ha creado con éxito"
-    }
-    await sendEmail(messageAux.to, messageAux.from, messageAux.subject, messageAux)
-    // Enviar el usuario guardado como respuesta
     response(res, 200, savedUser)
 }
 
