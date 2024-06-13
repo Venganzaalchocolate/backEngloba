@@ -43,6 +43,10 @@ const createDate=(fecha)=> {
     const date = new Date(fecha);
     return (!isNaN(date))?date:false;
 }
+
+const validJobs=(job)=>{
+  return true
+}
   
 const esPassSegura=(pass)=>{
   if (pass == undefined) return false
@@ -105,7 +109,8 @@ const validNumber=(texto, cero=false)=>{
     validDataString,
     prevenirInyeccionCodigo,
     validText,
-    validDecimalNumber
+    validDecimalNumber,
+    validJobs
 
   };
 

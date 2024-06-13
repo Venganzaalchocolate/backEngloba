@@ -4,11 +4,14 @@ const mongoose=require("mongoose")
 const cors = require('cors'); // Importa el paquete cors
 const userRoutes=require("./routes/userRoutes");
 const loginRoutes=require("./routes/loginRoutes");
+const userCvRoutes=require("./routes/userCvRoutes");
+const filesRoutes=require("./routes/fileRoutes")
 const {resError} = require('./utils/indexUtils');
 
-const port = process.env.PORT || 10000;
+
 // usamos dtenv para las variables de entorno 
 require('dotenv').config()
+const port = process.env.PORT || 10000;
 
 const app=express();
 // Middleware para parsear el cuerpo de la solicitud como JSON
@@ -22,6 +25,8 @@ app.use(cors());
 //le ponemos un "prefijo" a las rutas
 app.use('/api',userRoutes)
 app.use('/api',loginRoutes)
+app.use('/api',userCvRoutes)
+app.use('/api',filesRoutes)
 //le pasamos el manejador de errores en vez del suyo para no mostrar la ruta del error
 app.use((err,req,res,next)=>{
   const statusCode=err.status || 500;
