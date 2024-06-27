@@ -1,0 +1,9 @@
+{
+    "Statement":[{
+      "Sid": "FullAccess",
+      "Effect": "Allow",
+      "Action":["s3:*"],
+      "Resource":["*"]
+    }]
+}
+  

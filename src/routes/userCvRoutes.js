@@ -1,15 +1,16 @@
 const express = require('express');
 const router = express.Router()
-const {postCreateUserCv, getUserCvID, getUserCvs, UserCvDeleteId, UserCvPut, tokenValid, tokenValidAdmin, getUserCvsFilter} = require('../controllers/indexController')
+const {postCreateUserCv, getUserCvID, getUserCvs, UserCvDeleteId, UserCvPut, tokenValid, tokenValidAdmin, getUserCvsFilter, getEnums} = require('../controllers/indexController')
 const bodyParser = require('body-parser');
 const urlencodedParser = bodyParser.urlencoded({ extended: false })
 
 
-router.get("/usercvs", urlencodedParser, getUserCvs)
+router.post("/usercvs", urlencodedParser, getUserCvs)
 router.get("/usercv/:id", urlencodedParser,tokenValid, getUserCvID)
 router.post("/createusercv", urlencodedParser,postCreateUserCv)
 router.delete("/deleteusercv/:id", urlencodedParser, tokenValidAdmin,UserCvDeleteId)
-router.put("/modifyusercv", urlencodedParser,tokenValid, UserCvPut)
+router.put("/modifyusercv", urlencodedParser, UserCvPut)
 router.post('/filterusercv', urlencodedParser, getUserCvsFilter)
+router.get('/infodata', urlencodedParser, getEnums)
 
 module.exports = router;
