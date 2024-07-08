@@ -5,8 +5,10 @@ const cors = require('cors'); // Importa el paquete cors
 const userRoutes=require("./routes/userRoutes");
 const loginRoutes=require("./routes/loginRoutes");
 const userCvRoutes=require("./routes/userCvRoutes");
-const filesRoutes=require("./routes/fileRoutes")
+const filesRoutes=require("./routes/fileRoutes");
+const bagRoutes=require("./routes/bagRoutes");
 const {resError} = require('./utils/indexUtils');
+const programRoutes=require('./routes/programRoutes')
 
 
 // usamos dtenv para las variables de entorno 
@@ -27,6 +29,8 @@ app.use('/api',userRoutes)
 app.use('/api',loginRoutes)
 app.use('/api',userCvRoutes)
 app.use('/api',filesRoutes)
+app.use('/api',bagRoutes)
+app.use('/api',programRoutes)
 //le pasamos el manejador de errores en vez del suyo para no mostrar la ruta del error
 app.use((err,req,res,next)=>{
   const statusCode=err.status || 500;

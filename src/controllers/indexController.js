@@ -4,6 +4,8 @@ const {tokenValid, tokenValidAdmin} = require("./authController");
 const { getUserCvsFilter, postCreateUserCv, getUserCvID, getUserCvs, UserCvDeleteId, UserCvPut, getEnums } = require("./userCvController");
 const { uploadFile, listBucketContents, getFileCv } = require("./ovhController");
 const { postUploadFile, getFile } = require("./fileController");
+const { postCreateBag, getBags, getBagID, BagDeleteId, BagPut, getBagsFilter } = require("./bagController");
+const { crearProgrmasPrueba, getPrograms } = require("./programController");
 
 
 
@@ -13,5 +15,7 @@ module.exports = {
     tokenValid, tokenValidAdmin,
     getUserCvsFilter, postCreateUserCv, getUserCvID, getUserCvs, UserCvDeleteId, UserCvPut, getEnums,
     uploadFile, listBucketContents, getFile,
-    postUploadFile
+    postUploadFile,
+    postCreateBag, getBags, getBagID,BagDeleteId, BagPut,getBagsFilter,
+    crearProgrmasPrueba, getPrograms
 }

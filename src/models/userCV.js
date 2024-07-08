@@ -41,13 +41,13 @@ const userCv = mongoose.Schema({
         unique:true
     },
     jobs:{
-        type: String,
+        type: [String],
         enum: ['Auxiliar Técnico', 'Educación Social', 'Integración Sociolaboral', 'Magisterio', 'Psicología', 'Trabajo Social', 'Orientador Sociolaboral'],
         require:true,
     },
     provinces: {
-        type: String,
-        enum: ['Almería', 'Cádiz', 'Ceuta', 'Córdoba', 'Extremadura', 'Granada', 'Huelva', 'Jaén', 'Málaga', 'Murcia', 'Sevilla', 'Todas'],
+        type: [String],
+        enum: ['Almería', 'Cádiz', 'Ceuta', 'Córdoba', 'Extremadura', 'Granada', 'Huelva', 'Jaén', 'Málaga', 'Murcia', 'Sevilla'],
         require:true,
     },
     about:{
@@ -55,26 +55,26 @@ const userCv = mongoose.Schema({
     },
     commentsPhone:{
         type: [commentSchema],
-        default: undefined // Array of cantidadJuegos subdocuments
+        default: undefined 
     },
     commentsVideo:{
         type: [commentSchema],
-        default: undefined // Array of cantidadJuegos subdocuments
+        default: undefined 
     },
     commentsInperson:{
         type: [commentSchema],
-        default: undefined // Array of cantidadJuegos subdocuments
+        default: undefined 
     },
 
     view:{
-        type: Boolean,
-        default: false,
+        type: Schema.Types.ObjectId,
+        default: null,
     },
     offer:{
         type: String,
     },
     work_schedule:{
-        type: String,
+        type: [String],
         enum: ['Cualquiera', 'Jornada completa', 'Media Jornada', 'Mañanas', 'Tardes', 'Noches'],
         require:true,
     },
@@ -86,23 +86,32 @@ const userCv = mongoose.Schema({
         type: Number,
         default: 1,
     },
-    status:{
-        type:{
-            hired:{
-                type:{
-                    date: {
-                        type: Date
-                    }
-                }
+    hired:{
+        type: {
+            date:{
+                type: Date,
+                required: true,
+
+            },
+            for:{
+                type: Schema.Types.ObjectId,
+                required: true,
             }
-            
         }
     },
     favorite:{
-        type: Boolean
+        type: Schema.Types.ObjectId,
+        default: null,
     },
     reject:{
-        type:Boolean
+        type:Schema.Types.ObjectId,
+        default: null,
+    },
+        // Añadido campo studies que es un enum permitiendo múltiples valores
+    studies: {
+        type: [String],
+        enum: ['Auxiliar Técnico', 'Grado en Educación Social', 'Integración Sociolaboral', 'Magisterio', 'Psicología', 'Trabajo Social', 'Orientador Sociolaboral'],
+        required: true
     }
 
 });

@@ -1,4 +1,4 @@
-const { S3Client, PutObjectCommand, ListObjectsCommand, GetObjectCommand} = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, ListObjectsCommand, GetObjectCommand, ListObjectsV2Command,DeleteObjectsCommand } = require('@aws-sdk/client-s3');
 const fs = require('fs');
 const { catchAsync } = require('../utils/catchAsync');
 require('dotenv').config()
@@ -56,11 +56,12 @@ const uploadFile=async (file, name)=>{
         };
     
           await s3Client.send(new PutObjectCommand(uploadParams));
-          console.log(`Archivo subido correctamente: ${name}`);
+          return name;
 
       } catch (error) {
-        console.error('Error al subir los archivos:', error);
+        return {'error': error}
       }
+
 }
 //listar el contenido de un contenedor
 const listBucketContents = async () => {
@@ -79,7 +80,40 @@ const listBucketContents = async () => {
   };
 
 
-
+  const deleteAllFiles = async () => {
+    try {
+      // Primero listamos todos los objetos en el bucket
+      const listParams = {
+        Bucket: containerName
+      };
+      const listCommand = new ListObjectsV2Command(listParams);
+      const listResult = await s3Client.send(listCommand);
+      
+      if (listResult.Contents.length === 0) {
+        console.log('No hay archivos para eliminar.');
+        return;
+      }
+  
+      // Creamos el array de objetos a eliminar
+      const objectsToDelete = listResult.Contents.map((item) => ({ Key: item.Key }));
+  
+      // Configuramos los parámetros de eliminación
+      const deleteParams = {
+        Bucket: containerName,
+        Delete: {
+          Objects: objectsToDelete,
+          Quiet: false
+        }
+      };
+      
+      const deleteCommand = new DeleteObjectsCommand(deleteParams);
+      await s3Client.send(deleteCommand);
+      console.log('Todos los archivos han sido eliminados correctamente.');
+  
+    } catch (error) {
+      console.error('Error al eliminar los archivos:', error);
+    }
+  };
 
 module.exports = {
     //gestiono los errores con catchAsync

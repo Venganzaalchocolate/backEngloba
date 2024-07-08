@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const Schema = mongoose.Schema;
 
 const bag= mongoose.Schema({
     name:{
@@ -14,6 +15,14 @@ const bag= mongoose.Schema({
     },
     date:{
         type:Date,
+    },
+    create:{
+        type:  Schema.Types.ObjectId,
+        required:true
+    },
+    dispositive:{
+        type: Schema.Types.ObjectId,
+        required:true,
     }
 })
 

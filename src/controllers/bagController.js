@@ -3,28 +3,14 @@ const {prevenirInyeccionCodigo, esPassSegura, validName, validEmail, catchAsync,
 
 // crear usuario
 const postCreateBag = async (req, res) => {
-    if (!req.body.name || !req.body.sepe) throw new ClientError("Los datos no son correctos", 400);
+    if (!req.body.name || !req.body.sepe || !req.body.dispositive || !req.body.create) throw new ClientError("Los datos no son correctos", 400);
 
-    /*
-    name:{
-        type: String,
-        required:true,
-    },
-    userCv:{
-        type: [],
-        default: undefined
-    },
-    sepe:{
-        type:Boolean
-    },
-    date:{
-        type:Date,
-    }
-    */
     const newBag=new Bag({
         name: req.body.name,
         sepe: req.body.sepe,
-        date: new Date(),
+        date: new Date().toLocaleString('es-ES'),
+        dispositive: req.body.dispositive,
+        create: req.body.create
     })
     const savedBag = await newBag.save();
     response(res, 200, savedBag)
@@ -67,16 +53,26 @@ const BagDeleteId=async (req, res)=>{
 
 // modificar el usuario
 const BagPut=async (req, res)=>{
-    const filter = { _id: req.body.id};
-    const updateText={};
-    
-    
+    if (!req.body._id) throw new ClientError("Los datos no son correctos", 400);
+    const filter = { _id: req.body._id };
+    const updateText = {};
 
-    let doc = await Bag.findOneAndUpdate(filter, updateText);
-    if(doc!=null)doc= await Bag.findById(req.body.id)
-    else throw new ClientError("La bolsa no existe", 400)
-    response(res, 200, doc);
+    if (req.body.user) {
+        const user = req.body.user;
+        updateText['$addToSet'] = {
+            userCv: user
+        };
+    }
+
+    let doc = await Bag.findOneAndUpdate(filter, updateText, { new: true });
+    if (doc) {
+        response(res, 200, doc);
+    } else {
+        throw new ClientError("La bolsa no existe", 400);
+    }
 }
+
+
 
 module.exports = {
     //gestiono los errores con catchAsync

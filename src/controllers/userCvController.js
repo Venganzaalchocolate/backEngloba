@@ -4,7 +4,8 @@ const { dateAndHour } = require('../utils/utils');
 
 // crear usuario
 const postCreateUserCv = async (req, res) => {
-    if (!req.body.name || !req.body.email || !req.body.phone || !req.body.jobs) throw new ClientError("Los datos no son correctos", 400);
+
+    if (!req.body.name || !req.body.email || !req.body.phone || !req.body.jobs || !req.body.studies || !req.body.provinces || !req.body.work_schedule) throw new ClientError("Los datos no son correctos", 400);
 
     let dataUser = {
         date: new Date(),
@@ -12,7 +13,9 @@ const postCreateUserCv = async (req, res) => {
         email: req.body.email,
         phone: req.body.phone,
         jobs: req.body.jobs,
+        studies:req.body.studies,
         provinces: req.body.provinces,
+        work_schedule:req.body.work_schedule
     }
     if (!!req.body.about) dataUser['about'] = req.body.about
     if (!!req.body.offer) dataUser['offer'] = req.body.offer
@@ -93,20 +96,20 @@ const UserCvPut = async (req, res) => {
     if (!!req.body.email) updateText['email'] = req.body.email;
     if (!!req.body.phone) updateText['phone'] = req.body.phone;
     if (!!req.body.jobs) updateText['jobs'] = req.body.jobs;
+    if (!!req.body.studies) updateText['studies'] = req.body.studies;
     if (!!req.body.provinces) updateText['provinces'] = req.body.provinces;
     if (!!req.body.about) updateText['about'] = req.body.about
     if (!!req.body.offer) updateText['offer'] = req.body.offer
     if (!!req.body.work_schedule) updateText['work_schedule'] = req.body.work_schedule
     if (!!req.body.job_exchange) updateText['job_exchange'] = req.body.job_exchange
     if (!!req.body.numberCV) updateText['numberCV'] = req.body.numberCV
-
     // Manejo de comentarios
     const dateNow = new Date();
     // Manejar comentarios independientes
 
 
     if (req.body.commentsPhone) {
-        updateText['view'] = true
+        updateText['view'] = req.body.id
         updateText['$push'] = {
             commentsPhone: {
                 userCv: req.body.id,
@@ -118,7 +121,7 @@ const UserCvPut = async (req, res) => {
     }
 
     if (req.body.commentsVideo) {
-        updateText['view'] = true
+        updateText['view'] = req.body.id
         updateText['$push'] = {
             commentsVideo: {
                 userCv: req.body.id,
@@ -130,7 +133,7 @@ const UserCvPut = async (req, res) => {
     }
 
     if (req.body.commentsInperson) {
-        updateText['view'] = true
+        updateText['view'] = req.body.id
         updateText['$push'] = {
             commentsInperson: {
                 userCv: req.body.id,
@@ -143,25 +146,26 @@ const UserCvPut = async (req, res) => {
 
 
 
-    if (req.body.view != undefined) updateText['view'] = req.body.view
-    if (req.body.favorite != undefined) updateText['favorite'] = req.body.favorite
-    if (req.body.reject != undefined) updateText['reject'] = req.body.reject
+    if (!!req.body.view || req.body.view==null) updateText['view'] = req.body.view
+    if (!!req.body.favorite || req.body.favorite==null) updateText['favorite'] = req.body.favorite
+    if (!!req.body.reject || req.body.reject==null) updateText['reject'] = req.body.reject
 
 
-    let doc = await UserCv.findOneAndUpdate(filter, updateText);
-    if (doc != null) doc = await UserCv.findById(req.body._id)
-
-    else throw new ClientError("No existe el usuario", 400)
-
-
+    let doc = await UserCv.findOneAndUpdate(filter, updateText,  { new: true });
+    if (doc == null)  throw new ClientError("No existe el usuario", 400)
     response(res, 200, doc);
 }
 
 const getEnums = async (req, res) => {
     let enumValues = {}
-    enumValues['jobs'] = await UserCv.schema.path("jobs").enumValues;
-    enumValues['provinces'] = await UserCv.schema.path("provinces").enumValues;
-    enumValues['work_schedule'] = await UserCv.schema.path("work_schedule").enumValues;
+    enumValues['jobs'] = await UserCv.schema.path("jobs").caster.enumValues;
+    enumValues['provinces'] = await UserCv.schema.path("provinces").caster.enumValues;
+    enumValues['work_schedule'] = await UserCv.schema.path("work_schedule").caster.enumValues;
+    enumValues['studies'] = await UserCv.schema.path("studies").caster.enumValues;
+    if(enumValues.jobs==undefined) throw new ClientError('Error al solicitar los enums de los trabajos', 500)
+    if(enumValues.provinces==undefined) throw new ClientError('Error al solicitar los enums de las provincias ', 500)
+    if(enumValues.work_schedule==undefined) throw new ClientError('Error al solicitar los enums de los horarios', 500)
+    if(enumValues.studies==undefined) throw new ClientError('Error al solicitar los enums de los estudios', 500)
     response(res, 200, enumValues);
 }
 
