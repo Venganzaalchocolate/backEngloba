@@ -7,7 +7,7 @@ const bag= mongoose.Schema({
         required:true,
     },
     userCv:{
-        type: [],
+        type: [Schema.Types.ObjectId],
         default: undefined
     },
     sepe:{

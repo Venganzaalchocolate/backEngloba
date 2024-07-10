@@ -11,6 +11,7 @@ const postUploadFile = async (req, res) => {
   } else {
     try {
       const archivoGuardado = await uploadFile(req.file, `${req.body.nameFile}.pdf`); // Pasar el flujo de datos del archivo directamente
+      console.log(archivoGuardado)
       response(res, 200, archivoGuardado); // Enviar los datos del archivo guardado a la respuesta
     } catch (error) {
       console.error('Error al subir el archivo:', error);

@@ -59,7 +59,7 @@ const uploadFile=async (file, name)=>{
           return name;
 
       } catch (error) {
-        return {'error': error}
+        return error
       }
 
 }

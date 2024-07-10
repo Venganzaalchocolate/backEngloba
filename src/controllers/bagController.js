@@ -72,6 +72,33 @@ const BagPut=async (req, res)=>{
     }
 }
 
+const BagPutDeleteUser = async (req, res) => {
+    if (!req.body._id) throw new ClientError("Los datos no son correctos", 400);
+    
+    const filter = { _id: req.body._id };
+    const updateText = {};
+    
+    if (req.body.user) {
+        const user = req.body.user;
+        updateText['$pull'] = {
+            userCv: user._id
+        };
+    }
+
+    try {
+        let doc = await Bag.findOneAndUpdate(filter, updateText, { new: true });
+        if (doc) {
+            response(res, 200, doc);
+        } else {
+            throw new ClientError("La bolsa no existe", 400);
+        }
+    } catch (err) {
+        // Manejo de errores, puedes agregar más detalles si lo necesitas
+        res.status(500).json({ message: err.message });
+    }
+};
+
+
 
 
 module.exports = {
@@ -81,5 +108,6 @@ module.exports = {
     getBagID:catchAsync(getBagID),
     BagDeleteId:catchAsync(BagDeleteId),
     BagPut:catchAsync(BagPut),
-    getBagsFilter:catchAsync(getBagsFilter)
+    getBagsFilter:catchAsync(getBagsFilter),
+    BagPutDeleteUser:catchAsync(BagPutDeleteUser)
 }

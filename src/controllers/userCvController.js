@@ -43,7 +43,7 @@ const getUserCvs = async (req, res) => {
     if (req.body.work_schedule && req.body.work_schedule.length > 0) filters["work_schedule"] = { $in: req.body.work_schedule };
     if (req.body.view) filters["view"] = req.body.view;
     if (req.body.offer) filters["offer"] = { $regex: req.body.offer, $options: 'i' };
-
+    if (req.body.users) filters["_id"]={ $in: req.body.users }
 
     try {
         // Obtener el total de documentos en la colección

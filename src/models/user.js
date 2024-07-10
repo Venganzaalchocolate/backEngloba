@@ -30,14 +30,19 @@ const PeriodSchema = new Schema({
     },
     // Jornada laboral del empleado (total o parcial)
     workShift: {
-        type: String,
-        enum: ['total', 'parcial'],
-        required: true
+        nota: {
+            type: String,
+        },
+        type: {
+            type: String,
+            enum: ['total', 'parcial'],
+            required: true 
+        }
     },
     // Proceso de selección asociado al periodo de contratación (referencia a otra colección)
     selectionProcess: {
         type: Schema.Types.ObjectId,
-        ref: 'SelectionProcess'
+        ref: 'Bag'
     }
 });
 
@@ -121,25 +126,16 @@ const UserSchema = new Schema({
     // Teléfono del empleado
     phone: {
         type: String,
-        required: true
-    },
-    // Proceso asociado al empleado (referencia a otra colección)
-    process: {
-        type: Schema.Types.ObjectId,
-        ref: 'Bag',
-        required: true
-    },
-    // Indicador de si el empleado está activo
-    active: {
-        type: Boolean,
         required: true,
-        default: true
+        unique: true
     },
+
     // Estado laboral del empleado
     employmentStatus: {
         type: String,
-        enum: ['trabajando', 'excedencia voluntaria', 'excedencia forzosa', 'baja laboral', 'finalización de contrato'],
-        required: true
+        enum: ['trabajando', 'excedencia voluntaria', 'excedencia forzosa', 'baja laboral', 'finalización de contrato', 'en proceso de contratación'],
+        default:  'en proceso de contratación'
+
     },
     // Periodos de contratación del empleado
     hiringPeriods: [PeriodSchema],
@@ -160,14 +156,17 @@ const UserSchema = new Schema({
         type: String
     },
     // Titulación del empleado (no requerida)
+    // TODO hacer esquema de estudios
     degree: {
         type: String
     },
-    // Certificado de Delitos Sexuales del empleado (no requerido)
+
+    // Certificado de Delitos Sexuales del empleado (no requerido) PDF
+    // esquema file de programs
     sexualOffenseCertificate: {
         type: String
     },
-    // Modelo 145 del empleado (no requerido)
+    // Modelo 145 del empleado (no requerido) PDF
     model145: {
         type: String
     },
@@ -197,6 +196,8 @@ const UserSchema = new Schema({
     },
     // Nóminas del empleado
     payrolls: [PayrollSchema]
+    // subida de archivos firmados
+    // uploadFileSigned: pdf
 });
 
 module.exports=mongoose.model('User', UserSchema)
