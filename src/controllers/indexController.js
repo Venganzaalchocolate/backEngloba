@@ -6,6 +6,7 @@ const { uploadFile, listBucketContents, getFileCv } = require("./ovhController")
 const { postUploadFile, getFile } = require("./fileController");
 const { postCreateBag, getBags, getBagID, BagDeleteId, BagPut, getBagsFilter, BagPutDeleteUser } = require("./bagController");
 const { crearProgrmasPrueba, getPrograms } = require("./programController");
+const { postCreateOfferJob, getOfferJobID, getOfferJobs, OfferJobDeleteId, OfferJobPut } = require("./offerController");
 
 
 
@@ -17,5 +18,6 @@ module.exports = {
     uploadFile, listBucketContents, getFile,
     postUploadFile,
     postCreateBag, getBags, getBagID,BagDeleteId, BagPut,getBagsFilter, BagPutDeleteUser,
-    crearProgrmasPrueba, getPrograms
+    crearProgrmasPrueba, getPrograms,
+    postCreateOfferJob, getOfferJobID, getOfferJobs,OfferJobDeleteId, OfferJobPut
 }

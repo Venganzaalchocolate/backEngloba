@@ -1,13 +1,34 @@
 const mongoose = require("mongoose");
 
 const estadistics = mongoose.Schema({
-    name: { type: String, required: true }, // Nombre
-    dateOfBirth: { type: Date, required: true }, // Fecha de nacimiento
-    age: { type: Number, required: true }, // Edad
-    interventionPlan: { type: Boolean, required: true }, // Plan de intervención (Sí - No)
-    surname: { type: String, required: true }, // Apellidos
-    gender: { type: String, enum: ['Male', 'Female', 'Other'], required: true }, // Sexo
-    compliesInterventionPlan: { type: Boolean, required: true }, // Cumple plan intervención (Sí - No)
+    name: { 
+        type: String, 
+        required: true 
+    }, // Nombre
+    dateOfBirth: {
+        type: Date, 
+        required: true 
+    }, // Fecha de nacimiento
+    age: { 
+        type: Number, 
+        required: true 
+    }, // Edad
+    interventionPlan: { 
+        type: Boolean, 
+        required: true 
+    }, // Plan de intervención (Sí - No)
+    surname: { 
+        type: String, 
+        required: true 
+    }, // Apellidos
+    gender: { 
+        type: String, 
+        enum: ['Male', 'Female', 'Other'], 
+        required: true }, // Sexo
+    compliesInterventionPlan: { 
+        type: Boolean, 
+        required: true 
+    }, // Cumple plan intervención (Sí - No)
     registrationDate: { type: Date, required: true }, // Fecha inscripción
     referredFrom: { type: String, required: true }, // Derivada desde
     currentStatus: { type: String, enum: ['In program', 'Discharged', 'Dropped out'], required: true }, // Estado actual en programa (En programa, Alta, Baja)

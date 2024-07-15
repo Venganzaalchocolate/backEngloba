@@ -3,17 +3,34 @@ const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
 const fileSchema = new Schema({
-    fileName: { type: String, required: true },
-    fileTag: { type: String, required: true },
-    description: { type: String },
-    date: { type: Date }
+    fileName: { 
+        type: String, 
+        required: true 
+    },
+    fileTag: { 
+        type: String, 
+        required: true 
+    },
+    description: { 
+        type: String 
+    },
+    date: { 
+        type: Date 
+    }
 });
 
 const deviceSchema = new Schema({
-    name: { type: String, required: true },
-    address: { type: String},
+    name: { 
+        type: String, 
+        required: true 
+    },
+    address: { 
+        type: String
+    },
     files: [fileSchema],
-    responsible: { type: Schema.Types.ObjectId },
+    responsible: { 
+        type: Schema.Types.ObjectId 
+    },
     protectionPlan: [fileSchema],
     organizationChart: [fileSchema],
     operatingAuthorization: [fileSchema],
@@ -34,8 +51,14 @@ const programSchema = new Schema({
         enum: ['Concierto', 'FSE', 'IRPF', 'NextGen', 'IAM'],
         required: true
     },
-    name: { type: String, required: true },
-    acronym: { type: String, required: true },
+    name: { 
+        type: String, 
+        required: true 
+    },
+    acronym: { 
+        type: String,
+        required: true 
+    },
     files: [fileSchema],
     devices: [deviceSchema]
 });

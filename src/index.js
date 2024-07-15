@@ -9,6 +9,7 @@ const filesRoutes=require("./routes/fileRoutes");
 const bagRoutes=require("./routes/bagRoutes");
 const {resError} = require('./utils/indexUtils');
 const programRoutes=require('./routes/programRoutes')
+const offerRoutes=require('./routes/offerRoutes')
 
 
 // usamos dtenv para las variables de entorno 
@@ -31,6 +32,7 @@ app.use('/api',userCvRoutes)
 app.use('/api',filesRoutes)
 app.use('/api',bagRoutes)
 app.use('/api',programRoutes)
+app.use('/api',offerRoutes)
 //le pasamos el manejador de errores en vez del suyo para no mostrar la ruta del error
 app.use((err,req,res,next)=>{
   const statusCode=err.status || 500;
