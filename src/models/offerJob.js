@@ -54,17 +54,14 @@ const offerJob= mongoose.Schema({
         type:  Date,
         required:true
     },
-    program:{
-        type: Schema.Types.ObjectId,
-        required:true,
-    }, 
-    dispositive:{
-        type: Schema.Types.ObjectId,
-        required:true,
-    },
     active:{
         type: Boolean,
         default:true
+    },
+    bag:{
+        type: Schema.Types.ObjectId,
+        required:true,
+        ref:'Bag'
     }
 })
 

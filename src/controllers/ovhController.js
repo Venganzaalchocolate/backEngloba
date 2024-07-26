@@ -7,10 +7,15 @@ const { Readable } = require('stream');
 const path = require('path');
 
 
-const containerName = process.env.OVH_CONTAINERNAME;
-const endpoint = process.env.OVH_ENDPOINT;
-const accessKeyId = process.env.OVH_ACCESSKEYID;
-const secretAccessKey = process.env.OVH_SECRETACCESSKEY;
+// const containerName = process.env.OVH_CONTAINERNAME;
+// const endpoint = process.env.OVH_ENDPOINT;
+// const accessKeyId = process.env.OVH_ACCESSKEYID;
+// const secretAccessKey = process.env.OVH_SECRETACCESSKEY;
+
+const containerName = process.env.ARSYS_CONTAINERNAME;
+const endpoint = process.env.ARSYS_ENDPOINT;
+const accessKeyId = process.env.ARSYS_ACCESSKEYID;
+const secretAccessKey = process.env.ARSYS_SECRETACCESSKEY;
 
 const s3Client = new S3Client({
   endpoint,
@@ -18,7 +23,7 @@ const s3Client = new S3Client({
     accessKeyId,
     secretAccessKey,
   },
-  region: 'de',
+  region: 'eu-central-3',
 });
 
 // const files = [

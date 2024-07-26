@@ -4,11 +4,11 @@ const {  catchAsync, response, ClientError } = require('../utils/indexUtils');
 
 // crear usuario
 const postCreateOfferJob = async (req, res) => {
-    if (!req.body.conditions || !req.body.dispositive 
+    if (!req.body.conditions
         || !req.body.expected_incorporation_date ||  !req.body.functions 
         || !req.body.job_title ||  !req.body.location 
         || !req.body.provinces ||  !req.body.studies 
-        || !req.body.work_schedule ||  !req.body.create) throw new ClientError("Los datos no son correctos", 400);
+        || !req.body.work_schedule ||  !req.body.create || !req.body.bag) throw new ClientError("Los datos no son correctos", 400);
     
     let dataOfferJob = {
         entity: 'ASOCIACIÓN ENGLOBA',
@@ -25,7 +25,7 @@ const postCreateOfferJob = async (req, res) => {
         create: req.body.create,
         expected_incorporation_date:new Date(req.body.expected_incorporation_date),
         dispositive: req.body.dispositive,
-        program:req.body.program
+        bag:req.body.bag
     }
     const newOfferJob = new OfferJob(dataOfferJob)
     const savedOfferJob = await newOfferJob.save();
@@ -37,7 +37,7 @@ const postCreateOfferJob = async (req, res) => {
 //recoge todos los usuarios
 const getOfferJobs = async (req, res) => {
     try {
-        const OfferJobs = await OfferJob.find()
+        const OfferJobs = await OfferJob.find().populate('bag')
         // Responde con la lista de usuarios paginada y código de estado 200 (OK)
         response(res, 200, OfferJobs);
     } catch (error) {
@@ -51,8 +51,9 @@ const getOfferJobID = async (req, res) => {
     const id = req.params.id;
     // Utiliza el método findById() de Mongoose para buscar un usuario por su ID
     // Si no se encuentra el usuario, responde con un código de estado 404 (Not Found)
-    const OfferJob = await OfferJob.findById(id).catch(error => { throw new ClientError('OfferJoba no encontrado', 404) });
-    // Responde con el usuario encontrado y código de estado 200 (OK)
+    const OfferJob = await OfferJob.findById(id).populate('bag').catch(error => { throw new ClientError('OfferJoba no encontrado', 404) });
+    // Responde con el usuario encontrado y código de estado 200 (OK)ç
+    console.log(OfferJob)
     response(res, 200, OfferJob);
 }
 
@@ -80,10 +81,8 @@ const OfferJobPut = async (req, res) => {
     if (!!req.body.date) dataOfferJob['date'] = req.body.date;
     if (!!req.body.create) dataOfferJob['create'] = req.body.create;
     if (!!req.body.expected_incorporation_date) dataOfferJob['expected_incorporation_date'] = new Date(req.body.expected_incorporation_date);
-    if (!!req.body.dispositive) dataOfferJob['dispositive'] = req.body.dispositive;
-    if (!!req.body.program) dataOfferJob['program'] = req.body.program;
     if (req.body.active!=undefined) dataOfferJob['active'] = req.body.active;
-
+    if (!!req.body.bag) dataOfferJob['bag'] = req.body.bag;
 
     let doc = await OfferJob.findOneAndUpdate(filter, dataOfferJob,  { new: true });
     if (doc == null)  throw new ClientError("No existe el OfferJob", 400)

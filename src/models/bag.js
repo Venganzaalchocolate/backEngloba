@@ -21,8 +21,18 @@ const bag= mongoose.Schema({
         required:true
     },
     dispositive:{
-        type: Schema.Types.ObjectId,
-        required:true,
+        name:{
+            type: String,
+            required:true,
+        },
+        id:{
+            type: Schema.Types.ObjectId,
+            required:true,    
+        }
+    },
+    active:{
+        type: Boolean,
+        default: true
     }
 })
 
