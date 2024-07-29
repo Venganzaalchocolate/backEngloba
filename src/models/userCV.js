@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
+
 const commentSchema = mongoose.Schema({
     userCv: {
         type: Schema.Types.ObjectId,
@@ -42,12 +43,10 @@ const userCv = mongoose.Schema({
     },
     jobs:{
         type: [String],
-        enum: ['Auxiliar Técnico', 'Educación Social', 'Integración Sociolaboral', 'Magisterio', 'Psicología', 'Trabajo Social', 'Orientador Sociolaboral'],
         require:true,
     },
     provinces: {
         type: [String],
-        enum: ['Almería', 'Cádiz', 'Ceuta', 'Córdoba', 'Extremadura', 'Granada', 'Huelva', 'Jaén', 'Málaga', 'Murcia', 'Sevilla'],
         require:true,
     },
     about:{
@@ -110,7 +109,6 @@ const userCv = mongoose.Schema({
         // Añadido campo studies que es un enum permitiendo múltiples valores
     studies: {
         type: [String],
-        enum: ['Auxiliar Técnico', 'Grado en Educación Social', 'Integración Sociolaboral', 'Magisterio', 'Psicología', 'Trabajo Social', 'Orientador Sociolaboral'],
         required: true
     }
 

@@ -10,6 +10,7 @@ const bagRoutes=require("./routes/bagRoutes");
 const {resError} = require('./utils/indexUtils');
 const programRoutes=require('./routes/programRoutes')
 const offerRoutes=require('./routes/offerRoutes')
+const enumsRoutes=require('./routes/enumsRoutes')
 
 
 // usamos dtenv para las variables de entorno 
@@ -33,6 +34,8 @@ app.use('/api',filesRoutes)
 app.use('/api',bagRoutes)
 app.use('/api',programRoutes)
 app.use('/api',offerRoutes)
+app.use('/api',enumsRoutes)
+
 //le pasamos el manejador de errores en vez del suyo para no mostrar la ruta del error
 app.use((err,req,res,next)=>{
   const statusCode=err.status || 500;

@@ -45,10 +45,17 @@ const deviceSchema = new Schema({
     fireDrill: [fileSchema]
 });
 
+const finantialSchema= new Schema({
+    name: {
+        type:String,
+        required: true,
+        unique:true
+    }
+})
+
 const programSchema = new Schema({
     funding: {
-        type: String,
-        enum: ['Concierto', 'FSE', 'IRPF', 'NextGen', 'IAM'],
+        type: finantialSchema,
         required: true
     },
     name: { 

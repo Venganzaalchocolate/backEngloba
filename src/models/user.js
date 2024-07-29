@@ -2,6 +2,24 @@ const mongoose = require("mongoose");
 const Bag = require("./bag")
 const { Schema } = mongoose;
 
+
+const fileSchema = new Schema({
+    fileName: { 
+        type: String, 
+        required: true 
+    },
+    fileTag: { 
+        type: String, 
+        required: true 
+    },
+    description: { 
+        type: String 
+    },
+    date: { 
+        type: Date 
+    }
+});
+
 // Esquema para Periodos de Contratación
 const PeriodSchema = new Schema({
     // Cargo que desempeña el empleado durante el periodo de contratación
@@ -12,6 +30,7 @@ const PeriodSchema = new Schema({
     // Categoría del puesto del empleado
     category: {
         type: String,
+        enum:['grupo 1', 'grupo 2', 'grupo 3'],
         required: true
     },
     // Fecha de inicio del periodo de contratación
@@ -51,7 +70,7 @@ const LeavePeriodSchema = new Schema({
     // Tipo de excedencia (voluntaria, cuidado de hijo a cargo, cargo público, baja laboral)
     leaveType: {
         type: String,
-        enum: ['voluntaria', 'cuidado de hijo a cargo', 'cargo público', 'baja laboral'],
+        enum: ['excedencia voluntaria', 'excedencia forzosa', 'enfermedad común', 'accidente laboral', 'maternidad', 'riesgo emparazo', 'lactancia'],
         required: true
     },
     // Fecha de inicio de la excedencia o baja laboral
@@ -98,7 +117,7 @@ const UserSchema = new Schema({
     role:{
         type: String,
         default: 'user',
-        enum: ['user', 'admin', 'auditor'],
+        enum: ['global', 'root', 'auditor', 'employer'],
         require:true,
     },
     // DNI del empleado
@@ -133,7 +152,7 @@ const UserSchema = new Schema({
     // Estado laboral del empleado
     employmentStatus: {
         type: String,
-        enum: ['trabajando', 'excedencia voluntaria', 'excedencia forzosa', 'baja laboral', 'finalización de contrato', 'en proceso de contratación'],
+        enum: ['baja', 'activo', 'en proceso de contratación', 'excedencia'],
         default:  'en proceso de contratación'
 
     },
@@ -155,10 +174,9 @@ const UserSchema = new Schema({
     cv: {
         type: String
     },
-    // Titulación del empleado (no requerida)
-    // TODO hacer esquema de estudios
+
     degree: {
-        type: String
+        type: [fileSchema]
     },
 
     // Certificado de Delitos Sexuales del empleado (no requerido) PDF

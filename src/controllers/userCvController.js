@@ -41,9 +41,11 @@ const getUserCvs = async (req, res) => {
     if (req.body.jobs && req.body.jobs.length > 0) filters["jobs"] = { $in: req.body.jobs };
     if (req.body.provinces && req.body.provinces.length > 0) filters["provinces"] = { $in: req.body.provinces };
     if (req.body.work_schedule && req.body.work_schedule.length > 0) filters["work_schedule"] = { $in: req.body.work_schedule };
+    if (req.body.studies && req.body.studies.length > 0) filters["studies"] = { $in: req.body.studies };
     if (req.body.view) filters["view"] = req.body.view;
     if (req.body.offer) filters["offer"] = { $regex: req.body.offer, $options: 'i' };
     if (req.body.users) filters["_id"]={ $in: req.body.users }
+
 
     try {
         // Obtener el total de documentos en la colección
@@ -156,18 +158,18 @@ const UserCvPut = async (req, res) => {
     response(res, 200, doc);
 }
 
-const getEnums = async (req, res) => {
-    let enumValues = {}
-    enumValues['jobs'] = await UserCv.schema.path("jobs").caster.enumValues;
-    enumValues['provinces'] = await UserCv.schema.path("provinces").caster.enumValues;
-    enumValues['work_schedule'] = await UserCv.schema.path("work_schedule").caster.enumValues;
-    enumValues['studies'] = await UserCv.schema.path("studies").caster.enumValues;
-    if(enumValues.jobs==undefined) throw new ClientError('Error al solicitar los enums de los trabajos', 500)
-    if(enumValues.provinces==undefined) throw new ClientError('Error al solicitar los enums de las provincias ', 500)
-    if(enumValues.work_schedule==undefined) throw new ClientError('Error al solicitar los enums de los horarios', 500)
-    if(enumValues.studies==undefined) throw new ClientError('Error al solicitar los enums de los estudios', 500)
-    response(res, 200, enumValues);
-}
+// const getEnums = async (req, res) => {
+//     let enumValues = {}
+//     enumValues['jobs'] = await UserCv.schema.path("jobs").caster.enumValues;
+//     enumValues['provinces'] = await UserCv.schema.path("provinces").caster.enumValues;
+//     enumValues['work_schedule'] = await UserCv.schema.path("work_schedule").caster.enumValues;
+//     enumValues['studies'] = await UserCv.schema.path("studies").caster.enumValues;
+//     if(enumValues.jobs==undefined) throw new ClientError('Error al solicitar los enums de los trabajos', 500)
+//     if(enumValues.provinces==undefined) throw new ClientError('Error al solicitar los enums de las provincias ', 500)
+//     if(enumValues.work_schedule==undefined) throw new ClientError('Error al solicitar los enums de los horarios', 500)
+//     if(enumValues.studies==undefined) throw new ClientError('Error al solicitar los enums de los estudios', 500)
+//     response(res, 200, enumValues);
+// }
 
 
 //work_schedule
@@ -180,5 +182,4 @@ module.exports = {
     UserCvDeleteId: catchAsync(UserCvDeleteId),
     UserCvPut: catchAsync(UserCvPut),
     getUserCvsFilter: catchAsync(getUserCvsFilter),
-    getEnums: catchAsync(getEnums),
 }

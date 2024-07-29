@@ -11,6 +11,6 @@ router.post("/createusercv", urlencodedParser,postCreateUserCv)
 router.delete("/deleteusercv/:id", urlencodedParser, tokenValidAdmin,UserCvDeleteId)
 router.put("/modifyusercv", urlencodedParser, UserCvPut)
 router.post('/filterusercv', urlencodedParser, getUserCvsFilter)
-router.get('/infodata', urlencodedParser, getEnums)
+
 
 module.exports = router;
