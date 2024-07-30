@@ -48,13 +48,12 @@ const getOfferJobs = async (req, res) => {
 
 const getOfferJobID = async (req, res) => {
     // Obtén el ID del parámetro de la solicitud
-    const id = req.params.id;
+    const id = req.body.id;
     // Utiliza el método findById() de Mongoose para buscar un usuario por su ID
     // Si no se encuentra el usuario, responde con un código de estado 404 (Not Found)
-    const OfferJob = await OfferJob.findById(id).populate('bag').catch(error => { throw new ClientError('OfferJoba no encontrado', 404) });
+    const offerJobData = await OfferJob.findById(id).populate('bag').catch(error => { throw new ClientError('OfferJoba no encontrado', 404) });
     // Responde con el usuario encontrado y código de estado 200 (OK)ç
-    console.log(OfferJob)
-    response(res, 200, OfferJob);
+    response(res, 200, offerJobData);
 }
 
 const OfferJobDeleteId = async (req, res) => {

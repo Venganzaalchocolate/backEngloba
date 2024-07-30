@@ -70,7 +70,9 @@ const userCv = mongoose.Schema({
         default: null,
     },
     offer:{
-        type: String,
+        type: Schema.Types.ObjectId,
+        default: null,
+        ref:'OfferJob'
     },
     work_schedule:{
         type: [String],
@@ -112,6 +114,6 @@ const userCv = mongoose.Schema({
         required: true
     }
 
-});
+}, { timestamps: true });
 
 module.exports=mongoose.model('UserCv', userCv)

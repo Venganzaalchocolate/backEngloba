@@ -5,8 +5,8 @@ const bodyParser = require('body-parser');
 const urlencodedParser = bodyParser.urlencoded({ extended: false })
 
 
-router.get("/offerjobs", urlencodedParser, tokenValid, getOfferJobs)
-router.get("/offerjob/:id", urlencodedParser,tokenValid, getOfferJobID)
+router.get("/offerjobs", urlencodedParser, getOfferJobs)
+router.post("/offerjob", urlencodedParser, getOfferJobID)
 router.post("/createofferjob", urlencodedParser,postCreateOfferJob)
 router.delete("/deleteofferjob/:id", urlencodedParser, tokenValidAdmin,OfferJobDeleteId)
 router.put("/modifyofferjob", urlencodedParser, OfferJobPut)

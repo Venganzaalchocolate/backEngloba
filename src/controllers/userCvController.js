@@ -1,16 +1,18 @@
 const { UserCv } = require('../models/indexModels');
 const { prevenirInyeccionCodigo, esPassSegura, validName, validEmail, catchAsync, response, generarHashpass, ClientError, sendEmail } = require('../utils/indexUtils');
-const { dateAndHour } = require('../utils/utils');
+const { dateAndHour, getSpainCurrentDate } = require('../utils/utils');
 
 // crear usuario
 const postCreateUserCv = async (req, res) => {
 
     if (!req.body.name || !req.body.email || !req.body.phone || !req.body.jobs || !req.body.studies || !req.body.provinces || !req.body.work_schedule) throw new ClientError("Los datos no son correctos", 400);
 
+    const spainDate = getSpainCurrentDate();
+    req.body.name.toLowerCase()
     let dataUser = {
-        date: new Date(),
-        name: req.body.name,
-        email: req.body.email,
+        date: spainDate,
+        name: req.body.name.toLowerCase(),
+        email: req.body.email.toLowerCase(),
         phone: req.body.phone,
         jobs: req.body.jobs,
         studies:req.body.studies,
@@ -54,7 +56,7 @@ const getUserCvs = async (req, res) => {
         const totalPages = Math.ceil(totalDocs / limit);
 
         // Utiliza el método find() de Mongoose con skip() y limit() para paginar
-        const users = await UserCv.find(filters).skip((page - 1) * limit).limit(limit)
+        const users = await UserCv.find(filters).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).populate('offer')
         // Responde con la lista de usuarios paginada y código de estado 200 (OK)
         response(res, 200, { users, totalPages });
     } catch (error) {
