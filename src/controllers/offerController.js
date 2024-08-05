@@ -4,29 +4,28 @@ const {  catchAsync, response, ClientError } = require('../utils/indexUtils');
 
 // crear usuario
 const postCreateOfferJob = async (req, res) => {
-    if (!req.body.conditions
-        || !req.body.expected_incorporation_date ||  !req.body.functions 
-        || !req.body.job_title ||  !req.body.location 
-        || !req.body.provinces ||  !req.body.studies 
-        || !req.body.work_schedule ||  !req.body.create || !req.body.bag) throw new ClientError("Los datos no son correctos", 400);
+
+    if (!req.body.job_title
+        || !req.body.functions ||  !req.body.work_schedule 
+        || !req.body.essentials_requirements ||  !req.body.conditions || !req.body.provinces
+        || !req.body.location || !req.body.create ||  !req.body.expected_incorporation_date || !req.body.bag) throw new ClientError("Los datos no son correctos", 400);
     
     let dataOfferJob = {
         entity: 'ASOCIACIÓN ENGLOBA',
         job_title: req.body.job_title,
         functions: req.body.functions,
         work_schedule:req.body.work_schedule,
-        studies:req.body.studies,
-        essentials_requirements:(!req.body.essentials_requirements)?'noRequirements':req.body.essentials_requirements,
-        optionals_requirements:(!req.body.optionals_requirements)?'noRequirements':req.body.optionals_requirements,
+        essentials_requirements:req.body.essentials_requirements,
         conditions:req.body.conditions,
         province:req.body.provinces,
         location:req.body.location,
         date: new Date(),
         create: req.body.create,
-        expected_incorporation_date:new Date(req.body.expected_incorporation_date),
-        dispositive: req.body.dispositive,
+        expected_incorporation_date:req.body.expected_incorporation_date,
         bag:req.body.bag
     }
+
+    if(!!req.body.optionals_requirements) dataOfferJob['optionals_requirements']=req.body.optionals_requirements
     const newOfferJob = new OfferJob(dataOfferJob)
     const savedOfferJob = await newOfferJob.save();
     response(res, 200, savedOfferJob)
@@ -72,7 +71,6 @@ const OfferJobPut = async (req, res) => {
     if (!!req.body.job_title) dataOfferJob['job_title'] = req.body.job_title;
     if (!!req.body.functions) dataOfferJob['functions'] = req.body.functions;
     if (!!req.body.work_schedule) dataOfferJob['work_schedule'] = req.body.work_schedule;
-    if (!!req.body.studies) dataOfferJob['studies'] = req.body.studies;
     if (!!req.body.essentials_requirements) dataOfferJob['essentials_requirements'] = req.body.essentials_requirements;
     if (!!req.body.optionals_requirements) dataOfferJob['optionals_requirements'] = req.body.optionals_requirements;
     if (!!req.body.conditions) dataOfferJob['conditions'] = req.body.conditions;

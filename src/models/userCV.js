@@ -34,7 +34,6 @@ const userCv = mongoose.Schema({
     email:{
         type:String,
         require:true,
-        unique:true
     },
     phone:{
         type: String,

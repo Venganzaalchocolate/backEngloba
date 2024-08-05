@@ -19,17 +19,11 @@ const offerJob= mongoose.Schema({
         type:String,
         required:true
     },
-    studies:{
-        type:String,
-        required:true
-    },
     essentials_requirements:{
         type: String,
-        required:true,
     },
     optionals_requirements:{
         type: String,
-        required:true,
     },
     conditions:{
         type: String,
@@ -47,11 +41,11 @@ const offerJob= mongoose.Schema({
         type:Date,
     },
     create:{
-        type:  Schema.Types.ObjectId,
+        type: Schema.Types.ObjectId,
         required:true
     },
     expected_incorporation_date:{
-        type:  Date,
+        type:  String,
         required:true
     },
     active:{

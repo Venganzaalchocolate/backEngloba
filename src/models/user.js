@@ -154,8 +154,8 @@ const UserSchema = new Schema({
         type: String,
         enum: ['baja', 'activo', 'en proceso de contratación', 'excedencia'],
         default:  'en proceso de contratación'
-
     },
+    
     // Periodos de contratación del empleado
     hiringPeriods: [PeriodSchema],
     // Periodos de excedencia o baja laboral del empleado

@@ -66,7 +66,9 @@ const getUserCvs = async (req, res) => {
 }
 
 const getUserCvsFilter = async (req, res) => {
-    const filter = { phone: req.body.phone }
+    let filter={}
+    if(!!req.body.phone) filter = { phone: req.body.phone };
+    if(!!req.body.id) filter = { _id: req.body.id };
     // Utiliza el método find() de Mongoose para obtener todos los documentos en la colección
     const usuarios = await UserCv.find(filter);
     // Responde con la lista de usuarios y código de estado 200 (OK)
