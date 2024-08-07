@@ -44,10 +44,12 @@ const getUserCvs = async (req, res) => {
     if (req.body.provinces && req.body.provinces.length > 0) filters["provinces"] = { $in: req.body.provinces };
     if (req.body.work_schedule && req.body.work_schedule.length > 0) filters["work_schedule"] = { $in: req.body.work_schedule };
     if (req.body.studies && req.body.studies.length > 0) filters["studies"] = { $in: req.body.studies };
-    if (req.body.view) filters["view"] = req.body.view;
     if (req.body.offer) filters["offer"] = { $regex: req.body.offer, $options: 'i' };
     if (req.body.users) filters["_id"]={ $in: req.body.users }
 
+    if (req.body.view) (req.body.view=='0') ?filters["view"]=null:filters["view"] ={$ne:null}
+    if (req.body.favorite) (req.body.view=='0') ?filters["favorite"]=null:filters["favorite"] ={$ne:null}
+    if (req.body.reject) (req.body.view=='0') ? filters["reject"]=null : filters["reject"] ={$ne:null}
 
     try {
         // Obtener el total de documentos en la colección

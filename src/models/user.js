@@ -123,7 +123,6 @@ const UserSchema = new Schema({
     // DNI del empleado
     dni: {
         type: String,
-        required: true,
         unique: true
     },
     // Nombre del empleado
@@ -134,12 +133,10 @@ const UserSchema = new Schema({
     // Apellidos del empleado
     lastName: {
         type: String,
-        required: true
     },
     // Correo electrónico del empleado
     email: {
         type: String,
-        required: true,
         unique: true
     },
     // Teléfono del empleado
@@ -163,12 +160,10 @@ const UserSchema = new Schema({
     // Número de Seguridad Social del empleado
     socialSecurityNumber: {
         type: String,
-        required: true
     },
     // Número de cuenta bancaria del empleado
     bankAccountNumber: {
         type: String,
-        required: true
     },
     // Curriculum Vitae del empleado (no requerido)
     cv: {

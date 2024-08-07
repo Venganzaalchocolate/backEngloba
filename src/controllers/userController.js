@@ -3,14 +3,15 @@ const {prevenirInyeccionCodigo, esPassSegura, validName, validEmail, catchAsync,
 
 // crear usuario
 const postCreateUser = async (req, res) => {
-    if (!req.body.name || !req.body.email || !req.body.password || !req.body.role || !req.body.dni) throw new ClientError("Los datos no son correctos", 400);
+    if (!req.body.firstName || !req.body.email || !req.body.password || !req.body.role || !req.body.phone) throw new ClientError("Los datos no son correctos", 400);
     const passSegura=generarHashpass(req.body.password);
 
     const newUser=new User({
-        name: req.body.name,
+        firstName: req.body.firstName,
         email: req.body.email,
         pass: await passSegura,
         role: req.body.role,
+        phone:req.body.phone,
         dni:req.body.dni
     })
     const savedUser = await newUser.save();
