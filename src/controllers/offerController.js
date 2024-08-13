@@ -35,14 +35,9 @@ const postCreateOfferJob = async (req, res) => {
 
 //recoge todos los usuarios
 const getOfferJobs = async (req, res) => {
-    try {
-        const OfferJobs = await OfferJob.find().populate('bag')
-        // Responde con la lista de usuarios paginada y código de estado 200 (OK)
-        response(res, 200, OfferJobs);
-    } catch (error) {
-        // Manejo de errores
-        response(res, 500, { error: 'Error al obtener los OfferJobas' });
-    }
+    const OfferJobs = await OfferJob.find().populate('bag')
+    // Responde con la lista de usuarios paginada y código de estado 200 (OK)
+    response(res, 200, OfferJobs);
 }
 
 const getOfferJobID = async (req, res) => {

@@ -61,14 +61,8 @@ const postUploadFile = async (req, res) => {
   if (!req.file || !req.body.nameFile) {
     throw new ClientError('No se proporcionó archivo, o nombre para el archivo', 400);
   } else {
-    try {
-      const archivoGuardado = await uploadFile(req.file, `${req.body.nameFile}.pdf`); // Pasar el flujo de datos del archivo directamente
-      console.log(archivoGuardado);
-      response(res, 200, archivoGuardado); // Enviar los datos del archivo guardado a la respuesta
-    } catch (error) {
-      console.error('Error al subir el archivo:', error);
-      response(res, error.statusCode || 500, error.message);
-    }
+    const archivoGuardado = await uploadFile(req.file, `${req.body.nameFile}.pdf`); // Pasar el flujo de datos del archivo directamente
+    response(res, 200, archivoGuardado); // Enviar los datos del archivo guardado a la respuesta
   }
 };
 
@@ -92,7 +86,6 @@ const getFile = async (req, res) => {
       // Enviar el stream como respuesta HTTP
       archivoStream.pipe(res);
     } catch (error) {
-      console.error('Error al obtener el archivo:', error);
       response(res, error.statusCode || 500, error.message);
     }
   }

@@ -92,17 +92,13 @@ const BagPutDeleteUser = async (req, res) => {
         };
     }
 
-    try {
-        let doc = await Bag.findOneAndUpdate(filter, updateText, { new: true });
-        if (doc) {
+    let doc = await Bag.findOneAndUpdate(filter, updateText, { new: true });
+    if (doc) {
             response(res, 200, doc);
-        } else {
+    } else {
             throw new ClientError("La bolsa no existe", 400);
-        }
-    } catch (err) {
-        // Manejo de errores, puedes agregar más detalles si lo necesitas
-        res.status(500).json({ message: err.message });
     }
+
 };
 
 

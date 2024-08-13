@@ -1,5 +1,5 @@
 const { UserCv } = require('../models/indexModels');
-const { prevenirInyeccionCodigo, esPassSegura, validName, validEmail, catchAsync, response, generarHashpass, ClientError, sendEmail } = require('../utils/indexUtils');
+const { prevenirInyeccionCodigo, esPassSegura, validName, validEmail, catchAsync, response, generarHashpass, ClientError, sendEmail, resError } = require('../utils/indexUtils');
 const { dateAndHour, getSpainCurrentDate } = require('../utils/utils');
 
 // crear usuario
@@ -59,21 +59,14 @@ const getUserCvs = async (req, res) => {
         filters["reject"] = req.body.reject == '0' ? null : { $ne: null };
     }
 
+    const totalDocs = await UserCv.countDocuments(filters);
+    // Calcular el número total de páginas
+    const totalPages = Math.ceil(totalDocs / limit);
+    // Utiliza el método find() de Mongoose con skip() y limit() para paginar
+    const users = await UserCv.find(filters).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).populate('offer')
+    // Responde con la lista de usuarios paginada y código de estado 200 (OK)
+    response(res, 200, { users, totalPages });
     
-    try {
-        // Obtener el total de documentos en la colección
-        const totalDocs = await UserCv.countDocuments(filters);
-        // Calcular el número total de páginas
-        const totalPages = Math.ceil(totalDocs / limit);
-
-        // Utiliza el método find() de Mongoose con skip() y limit() para paginar
-        const users = await UserCv.find(filters).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).populate('offer')
-        // Responde con la lista de usuarios paginada y código de estado 200 (OK)
-        response(res, 200, { users, totalPages });
-    } catch (error) {
-        // Manejo de errores
-        response(res, 500, { error: 'Error al obtener los usuarios' });
-    }
 }
 
 const getUserCvsFilter = async (req, res) => {
@@ -172,22 +165,6 @@ const UserCvPut = async (req, res) => {
     if (doc == null)  throw new ClientError("No existe el usuario", 400)
     response(res, 200, doc);
 }
-
-// const getEnums = async (req, res) => {
-//     let enumValues = {}
-//     enumValues['jobs'] = await UserCv.schema.path("jobs").caster.enumValues;
-//     enumValues['provinces'] = await UserCv.schema.path("provinces").caster.enumValues;
-//     enumValues['work_schedule'] = await UserCv.schema.path("work_schedule").caster.enumValues;
-//     enumValues['studies'] = await UserCv.schema.path("studies").caster.enumValues;
-//     if(enumValues.jobs==undefined) throw new ClientError('Error al solicitar los enums de los trabajos', 500)
-//     if(enumValues.provinces==undefined) throw new ClientError('Error al solicitar los enums de las provincias ', 500)
-//     if(enumValues.work_schedule==undefined) throw new ClientError('Error al solicitar los enums de los horarios', 500)
-//     if(enumValues.studies==undefined) throw new ClientError('Error al solicitar los enums de los estudios', 500)
-//     response(res, 200, enumValues);
-// }
-
-
-//work_schedule
 
 module.exports = {
     //gestiono los errores con catchAsync

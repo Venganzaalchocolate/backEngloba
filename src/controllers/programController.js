@@ -21,14 +21,9 @@ const postCreateProgram = async (req, res) => {
 
 //recoge todos los usuarios
 const getPrograms = async (req, res) => {
-    try {
         const programs = await Program.find()
         // Responde con la lista de usuarios paginada y código de estado 200 (OK)
         response(res, 200, programs);
-    } catch (error) {
-        // Manejo de errores
-        response(res, 500, { error: 'Error al obtener los programas' });
-    }
 }
 
 const getProgramID = async (req, res) => {
@@ -103,8 +98,8 @@ const addDispositive= async(req,res)=>{
 const crearProgrmasPrueba = async (req, res) => {
     const auxFunding = ['Concierto', 'FSE', 'IRPF', 'NextGen', 'IAM'];
     let contador = 0;
+    let auxProgram={}
 
-    try {
         for (let index = 0; index < 10; index++) {
             let auxData = {
                 funding: auxFunding[Math.floor(Math.random() * auxFunding.length)],
@@ -114,7 +109,7 @@ const crearProgrmasPrueba = async (req, res) => {
 
             const newProgram = new Program(auxData);
             const savedProgram = await newProgram.save();
-
+            
             // Generar dispositivos para el programa recién creado
             for (let j = 0; j < 5; j++) {
                 let auxFundingD = auxFunding[Math.floor(Math.random() * auxFunding.length)];
@@ -130,17 +125,12 @@ const crearProgrmasPrueba = async (req, res) => {
                 };
 
                 const filter = { _id: savedProgram._id };
-                await Program.findOneAndUpdate(filter, updateProgram, { new: true });
+                auxProgram=await Program.findOneAndUpdate(filter, updateProgram, { new: true });
             }
 
             contador++;
         }
-
-        res.status(200).json({ message: 'Programas de prueba creados exitosamente' });
-    } catch (error) {
-        console.error('Error al crear programas de prueba:', error);
-        res.status(500).json({ error: 'Error al crear programas de prueba' });
-    }
+        response(res, 200, auxProgram)
 };
 
 
