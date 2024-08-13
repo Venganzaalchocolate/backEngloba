@@ -25,7 +25,33 @@ app.use(express.json());
 // donde escucha el servidor 
 app.listen(port);
 
-app.use(cors());
+const allowedOrigin = process.env.CORS_ALLOWED_ORIGIN;
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Permitir solicitudes desde el frontend o desde herramientas de desarrollo como Postman
+    if (!origin || origin === allowedOrigin) {
+      callback(null, true);
+    } else {
+      callback(new Error('No permitido por CORS'));
+    }
+  }
+}));
+
+// Middleware para verificar los encabezados `origin` y `referer`
+app.use((req, res, next) => {
+  const origin = req.get('origin');
+  const referer = req.get('referer');
+
+  // Verificar que la solicitud provenga del origen permitido
+  if (origin === allowedOrigin || (referer && referer.startsWith(allowedOrigin))) {
+    next(); // Continuar con la siguiente función middleware o la ruta
+  } else {
+    resError(res,403,'Solicitud no permitida url no valida')
+   
+  }
+});
+
 //le ponemos un "prefijo" a las rutas
 app.use('/api',userRoutes)
 app.use('/api',loginRoutes)
