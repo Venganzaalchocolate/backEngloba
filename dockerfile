@@ -13,7 +13,7 @@ RUN npm install --only=production
 # Copia el resto de los archivos de la aplicación
 COPY . .
 
-# Expone el puerto que la aplicación va a utilizar
+# Expone el puerto que la aplicación va a utilizar 3
 EXPOSE 10000
 
 # Comando para ejecutar la aplicación en producción
