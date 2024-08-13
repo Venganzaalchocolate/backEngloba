@@ -47,10 +47,19 @@ const getUserCvs = async (req, res) => {
     if (req.body.offer) filters["offer"] = { $regex: req.body.offer, $options: 'i' };
     if (req.body.users) filters["_id"]={ $in: req.body.users }
 
-    if (req.body.view) (req.body.view=='0') ?filters["view"]=null:filters["view"] ={$ne:null}
-    if (req.body.favorite) (req.body.view=='0') ?filters["favorite"]=null:filters["favorite"] ={$ne:null}
-    if (req.body.reject) (req.body.view=='0') ? filters["reject"]=null : filters["reject"] ={$ne:null}
+    if (req.body.view !== undefined) {
+        filters["view"] = req.body.view == '0' ? null  : { $ne: null };
+    }
+    
+    if (req.body.favorite !== undefined) {
+        filters["favorite"] = (req.body.favorite=='0') ? null : { $ne: null };
+    }
+    
+    if (req.body.reject !== undefined) {
+        filters["reject"] = req.body.reject == '0' ? null : { $ne: null };
+    }
 
+    
     try {
         // Obtener el total de documentos en la colección
         const totalDocs = await UserCv.countDocuments(filters);
