@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-
 const Schema = mongoose.Schema;
 
 const fileSchema = new Schema({
@@ -27,36 +26,45 @@ const deviceSchema = new Schema({
     address: { 
         type: String
     },
-    files: [fileSchema],
     responsible: { 
-        type: Schema.Types.ObjectId 
+        type: Schema.Types.ObjectId,
+        ref: 'User'
     },
-    protectionPlan: [fileSchema],
-    organizationChart: [fileSchema],
-    operatingAuthorization: [fileSchema],
-    accidentInsurance: [fileSchema],
-    civilLiabilityInsurance: [fileSchema],
-    accidentInsuranceAgain: [fileSchema], // Duplicate entry in the provided table
-    pestControl: [fileSchema],
-    fireExtinguishers: [fileSchema],
-    homeInsurance: [fileSchema],
-    multiRiskInsurance: [fileSchema],
-    rent: [fileSchema],
-    fireDrill: [fileSchema]
+
+    contratoAdministracion: [fileSchema],
+    autorizacionFuncionamiento: [fileSchema],
+    seguros: [fileSchema],
+    libroQuejasSugerencias: [fileSchema],
+    libroFoliadoRegistroUsuarios: [fileSchema],
+    constanciaProyectoEducativo: [fileSchema],
+    constanciaCurriculumEducativo: [fileSchema],
+    constanciaReglamentoOrganizacion: [fileSchema],
+    constanciaMemoriaAnual: [fileSchema],
+    constanciaProgramacionAnual: [fileSchema],
+    planAutoproteccion: [fileSchema],
+    certificadoImplantacionPlanAutoproteccion: [fileSchema],
+    revisionExtintores: [fileSchema],
+    revisionesBIE: [fileSchema],
+    certificadoRevisionCalderas: [fileSchema],
+    certificadoRevisionElectricidad: [fileSchema],
+    simulacroEvacuacion: [fileSchema],
+    actaIdentificacionFunciones: [fileSchema],
+    puntosEmergenciaOperativos: [fileSchema],
+    senalizacionEvacuacion: [fileSchema],
+    senalizacionAscensoresEmergencia: [fileSchema],
+    menuVisadoNutricionista: [fileSchema],
+    contratoCatering: [fileSchema],
+    planHigiene: [fileSchema],
+    planLegionela: [fileSchema],
+    contratoDDD: [fileSchema],
+    firmaProtocoloAcoso: [fileSchema]
 });
 
-const finantialSchema= new Schema({
-    name: {
-        type:String,
-        required: true,
-        unique:true
-    }
-})
 
 const programSchema = new Schema({
-    funding: {
-        type: finantialSchema,
-        required: true
+    funding: { 
+        type: Schema.Types.ObjectId,
+        ref: 'Finantial'
     },
     name: { 
         type: String, 

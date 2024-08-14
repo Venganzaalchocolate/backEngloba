@@ -7,6 +7,7 @@ const Jobs=require('./jobs');
 const Provinces=require('./provinces');
 const Studies=require('./estudies')
 const Work_schedule=require('./work_schedule')
+const Finantial=require('./finantial')
 
 module.exports = {
     User,
@@ -17,6 +18,6 @@ module.exports = {
     Jobs,
     Provinces,
     Studies,
-    Work_schedule
-
+    Work_schedule,
+    Finantial
 }
