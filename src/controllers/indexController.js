@@ -5,7 +5,7 @@ const { getUserCvsFilter, postCreateUserCv, getUserCvID, getUserCvs, UserCvDelet
 const { uploadFile, listBucketContents, getFileCv } = require("./ovhController");
 const { postUploadFile, getFile } = require("./fileController");
 const { postCreateBag, getBags, getBagID, BagDeleteId, BagPut, getBagsFilter, BagPutDeleteUser } = require("./bagController");
-const { crearProgrmasPrueba, getPrograms, postCreateProgram } = require("./programController");
+const { getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, addDispositive, getDispositive, updateDispositive, deleteDispositive } = require("./programController");
 const { postCreateOfferJob, getOfferJobID, getOfferJobs, OfferJobDeleteId, OfferJobPut } = require("./offerController");
 const { getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory } = require("./enumsController");
 
@@ -19,7 +19,7 @@ module.exports = {
     uploadFile, listBucketContents, getFile,
     postUploadFile,
     postCreateBag, getBags, getBagID,BagDeleteId, BagPut,getBagsFilter, BagPutDeleteUser,
-    crearProgrmasPrueba, getPrograms, postCreateProgram,
+    getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, addDispositive, getDispositive, updateDispositive, deleteDispositive,
     postCreateOfferJob, getOfferJobID, getOfferJobs,OfferJobDeleteId, OfferJobPut,
     getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory
 }

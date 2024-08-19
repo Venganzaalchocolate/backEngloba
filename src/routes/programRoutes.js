@@ -1,14 +1,31 @@
 const express = require('express');
-const router = express.Router()
+const router = express.Router();
 const bodyParser = require('body-parser');
-const urlencodedParser = bodyParser.urlencoded({ extended: false })
-const {crearProgrmasPrueba, getPrograms, tokenValid, postCreateProgram} = require('../controllers/indexController');
+const urlencodedParser = bodyParser.urlencoded({ extended: false });
 
+const {
+    getPrograms,
+    getProgramID,
+    postCreateProgram,
+    ProgramPut,
+    ProgramDeleteId,
+    addDispositive,
+    getDispositive,
+    updateDispositive,
+    deleteDispositive,
+    tokenValid
+} = require('../controllers/indexController');
 
-router.get("/crearprogramasprueba",urlencodedParser, crearProgrmasPrueba);
-router.get("/programs",urlencodedParser, getPrograms);
+// Rutas para Programas
+router.get("/programs", urlencodedParser, getPrograms);
 router.post('/createprogram', urlencodedParser, tokenValid, postCreateProgram);
+router.put('/updateprogram', urlencodedParser, tokenValid, ProgramPut);
+router.delete('/deleteprogram', urlencodedParser, tokenValid, ProgramDeleteId);
 
-
+// Rutas para Dispositivos dentro de Programas usando el cuerpo de la solicitud
+router.post('/createdispositive', urlencodedParser, tokenValid, addDispositive); // Añadir un dispositivo a un programa
+router.post('/programs/device', urlencodedParser, tokenValid, getDispositive); // Obtener un dispositivo específico dentro de un programa
+router.put('/updatedevice', urlencodedParser, tokenValid, updateDispositive); // Actualizar un dispositivo específico dentro de un programa
+router.delete('/deletedispositive', urlencodedParser, tokenValid, deleteDispositive); // Eliminar un dispositivo específico dentro de un programa
 
 module.exports = router;

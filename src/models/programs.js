@@ -28,7 +28,8 @@ const deviceSchema = new Schema({
     },
     responsible: { 
         type: Schema.Types.ObjectId,
-        ref: 'User'
+        ref: 'User',
+        required: false
     },
 
     contratoAdministracion: [fileSchema],

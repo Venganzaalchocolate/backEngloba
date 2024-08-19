@@ -25,19 +25,19 @@ const putEnums = async (req, res) => {
 
     let auxNewEnum = null;
     switch (req.body.type) {
-        case 'Jobs':
+        case 'jobs':
             auxNewEnum = new Jobs({ name: req.body.name })
             break;
-        case 'Studies':
+        case 'studies':
             auxNewEnum = new Studies({ name: req.body.name })
             break;
-        case 'Provinces':
+        case 'provinces':
             auxNewEnum = new Provinces({ name: req.body.name })
             break;
-        case 'Work_schedule':
+        case 'work_schedule':
             auxNewEnum = new Work_schedule({ name: req.body.name })
             break;
-        case 'Finantial':
+        case 'finantial':
             auxNewEnum = new Finantial({ name: req.body.name })
             break;
         default:
@@ -54,19 +54,19 @@ const postEnums = async (req, res) => {
     if (!req.body.name || !req.body.type) throw new ClientError("Los datos no son correctos", 400);
     let Model;
     switch (req.body.type) {
-        case 'Jobs':
+        case 'jobs':
             Model = Jobs;
             break;
-        case 'Studies':
+        case 'studies':
             Model = Studies;
             break;
-        case 'Provinces':
+        case 'provinces':
             Model = Provinces;
             break;
-        case 'Work_schedule':
+        case 'work_schedule':
             Model = Work_schedule;
             break;
-        case 'Finantial':
+        case 'finantial':
             Model = Finantial;
             break;
         default:
@@ -82,19 +82,19 @@ const deleteEnums = async (req, res) => {
     if (!req.body.id || !req.body.type) throw new ClientError("Los datos no son correctos", 400);
     let Model;
     switch (req.body.type) {
-        case 'Jobs':
+        case 'jobs':
             Model = Jobs;
             break;
-        case 'Studies':
+        case 'studies':
             Model = Studies;
             break;
-        case 'Provinces':
+        case 'provinces':
             Model = Provinces;
             break;
-        case 'Work_schedule':
+        case 'work_schedule':
             Model = Work_schedule;
             break;
-        case 'Finantial':
+        case 'finantial':
             Model = Finantial;
             break;
         default:
@@ -124,16 +124,16 @@ const postSubcategory = async (req, res) => {
 
     let Model;
     switch (req.body.type) {
-        case 'Jobs':
+        case 'jobs':
             Model = Jobs;
             break;
-        case 'Studies':
+        case 'studies':
             Model = Studies;
             break;
-        case 'Provinces':
+        case 'provinces':
             Model = Provinces;
             break;
-        case 'Finantial':
+        case 'finantial':
             Model = Finantial;
             break;
         default:
@@ -158,16 +158,16 @@ const deleteSubcategory = async (req, res) => {
 
     let Model;
     switch (req.body.type) {
-        case 'Jobs':
+        case 'jobs':
             Model = Jobs;
             break;
-        case 'Studies':
+        case 'studies':
             Model = Studies;
             break;
-        case 'Provinces':
+        case 'provinces':
             Model = Provinces;
             break;
-        case 'Finantial':
+        case 'finantial':
             Model = Finantial;
             break;
         default:
