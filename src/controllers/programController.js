@@ -9,8 +9,8 @@ const postCreateProgram = async (req, res) => {
 
     const dataProgram = {
         funding: req.body.funding,
-        name: req.body.name.toLowerCase(),
-        acronym: req.body.acronym.toLowerCase(),
+        name: req.body.name,
+        acronym: req.body.acronym,
         devices: req.body.devices || []
     };
 
@@ -46,8 +46,8 @@ const ProgramDeleteId = async (req, res) => {
 const ProgramPut = async (req, res) => {
     const filter = { _id: req.body._id };
     const updateText = {};
-    if (!!req.body.name) updateText['name'] = req.body.name.toLowerCase();
-    if (!!req.body.acronym) updateText['acronym'] = req.body.acronym.toLowerCase();
+    if (!!req.body.name) updateText['name'] = req.body.name;
+    if (!!req.body.acronym) updateText['acronym'] = req.body.acronym;
     if (!!req.body.funding) updateText['funding'] = req.body.funding;
 
     let doc = await Program.findOneAndUpdate(filter, updateText, { new: true });
