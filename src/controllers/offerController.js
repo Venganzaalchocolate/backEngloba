@@ -5,14 +5,13 @@ const {  catchAsync, response, ClientError } = require('../utils/indexUtils');
 // crear usuario
 const postCreateOfferJob = async (req, res) => {
 
-    if (!req.body.job_title
-        || !req.body.functions ||  !req.body.work_schedule 
+    if (!req.body.functions ||  !req.body.work_schedule 
         || !req.body.essentials_requirements ||  !req.body.conditions || !req.body.provinces
         || !req.body.location || !req.body.create ||  !req.body.expected_incorporation_date || !req.body.bag) throw new ClientError("Los datos no son correctos", 400);
     
     let dataOfferJob = {
         entity: 'ASOCIACIÓN ENGLOBA',
-        job_title: req.body.job_title,
+        job_title: req.body.functions+' - '+req.body.provinces,
         functions: req.body.functions,
         work_schedule:req.body.work_schedule,
         essentials_requirements:req.body.essentials_requirements,
@@ -63,7 +62,6 @@ const OfferJobPut = async (req, res) => {
     
     const dataOfferJob = {};
     if (!!req.body.entity) dataOfferJob['entity'] = req.body.entity;
-    if (!!req.body.job_title) dataOfferJob['job_title'] = req.body.job_title;
     if (!!req.body.functions) dataOfferJob['functions'] = req.body.functions;
     if (!!req.body.work_schedule) dataOfferJob['work_schedule'] = req.body.work_schedule;
     if (!!req.body.essentials_requirements) dataOfferJob['essentials_requirements'] = req.body.essentials_requirements;
@@ -76,7 +74,7 @@ const OfferJobPut = async (req, res) => {
     if (req.body.active!=undefined) dataOfferJob['active'] = req.body.active;
     if (!!req.body.bag) dataOfferJob['bag'] = req.body.bag;
 
-    let doc = await OfferJob.findOneAndUpdate(filter, dataOfferJob,  { new: true });
+    let doc = await OfferJob.findOneAndUpdate(filter, dataOfferJob,  { new: true }).populate('bag');
     if (doc == null)  throw new ClientError("No existe el OfferJob", 400)
     response(res, 200, doc);
 }

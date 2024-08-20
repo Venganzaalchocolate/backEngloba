@@ -12,7 +12,7 @@ const dateAndHour = () => {
 const getSpainCurrentDate = () => {
     const currentDate = new Date();
     const year = currentDate.getFullYear();
-
+    
     // Horario de verano empieza el último domingo de marzo
     const startDST = new Date(year, 2, 31 - (new Date(year, 2, 31).getDay()));
     // Horario de verano termina el último domingo de octubre
@@ -26,8 +26,24 @@ const getSpainCurrentDate = () => {
     }
 
     const spainDate = new Date(currentDate.getTime() + spainOffset * 60 * 60 * 1000);
-    return spainDate;
+    
+    // Obtener día, mes y año
+    const day = spainDate.getDate();
+    const month = spainDate.getMonth() + 1; // Los meses son de 0 a 11, por eso sumamos 1
+    const yearFormatted = spainDate.getFullYear();
+    
+    // Obtener horas, minutos y segundos
+    const hours = spainDate.getHours();
+    const minutes = spainDate.getMinutes();
+    const seconds = spainDate.getSeconds();
+    
+    // Formatear en día_mes_año_hh:minuto:segundo
+    const formattedDate = `${day}_${month}_${yearFormatted} ${hours}:${minutes}:${seconds}`;
+    
+    return formattedDate;
 };
+
+
 
 module.exports = {
     dateAndHour,

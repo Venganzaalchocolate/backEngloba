@@ -1,16 +1,17 @@
 const {Bag, Program} = require('../models/indexModels');
 const {prevenirInyeccionCodigo, esPassSegura, validName, validEmail, catchAsync, response, generarHashpass, ClientError, sendEmail } = require('../utils/indexUtils');
+const { getSpainCurrentDate } = require('../utils/utils');
 
 // crear usuario
 const postCreateBag = async (req, res) => {
-    if (!req.body.name || !req.body.sepe || !req.body.dispositive || !req.body.create) throw new ClientError("Los datos no son correctos", 400);
+    if (!req.body.sepe || !req.body.dispositive || !req.body.create) throw new ClientError("Los datos no son correctos", 400);
 
     const nameDispositive= await Program.findOne(
         { 'devices._id': req.body.dispositive },
         { 'devices.$': 1 } // Esto proyecta solo el dispositivo que coincide con el ID
     );
     const newBag=new Bag({
-        name: req.body.name,
+        name: nameDispositive.devices[0].name+'_'+getSpainCurrentDate(),
         sepe: req.body.sepe,
         date: new Date(),
         dispositive:{
