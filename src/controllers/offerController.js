@@ -61,6 +61,8 @@ const OfferJobPut = async (req, res) => {
     if (!req.body.id) throw new ClientError("Los datos no son correctos", 400);
     
     const dataOfferJob = {};
+    if(!!req.body.functions && !!req.body.provinces) dataOfferJob['job_title']= req.body.functions+' - '+req.body.provinces
+    if(!!req.body.provinces) dataOfferJob['province'] = req.body.provinces;
     if (!!req.body.entity) dataOfferJob['entity'] = req.body.entity;
     if (!!req.body.functions) dataOfferJob['functions'] = req.body.functions;
     if (!!req.body.work_schedule) dataOfferJob['work_schedule'] = req.body.work_schedule;
