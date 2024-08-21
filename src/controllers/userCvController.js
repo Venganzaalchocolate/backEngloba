@@ -7,10 +7,8 @@ const postCreateUserCv = async (req, res) => {
 
     if (!req.body.name || !req.body.email || !req.body.phone || !req.body.jobs || !req.body.studies || !req.body.provinces || !req.body.work_schedule) throw new ClientError("Los datos no son correctos", 400);
 
-    const spainDate = getSpainCurrentDate();
-    req.body.name.toLowerCase()
     let dataUser = {
-        date: spainDate,
+        date: new Date(),
         name: req.body.name.toLowerCase(),
         email: req.body.email.toLowerCase(),
         phone: req.body.phone,
@@ -22,7 +20,6 @@ const postCreateUserCv = async (req, res) => {
     if (!!req.body.about) dataUser['about'] = req.body.about
     if (!!req.body.offer) dataUser['offer'] = req.body.offer
     if (!!req.body.job_exchange) dataUser['job_exchange'] = req.body.job_exchange
-
 
     const newUserCv = new UserCv(dataUser)
     const savedUserCv = await newUserCv.save();
