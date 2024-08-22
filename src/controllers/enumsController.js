@@ -1,4 +1,4 @@
-const { Jobs, Studies, Provinces, Work_schedule, Finantial } = require('../models/indexModels');
+const { Jobs, Studies, Provinces, Work_schedule, Finantial, OfferJob } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 
 const getEnums = async (req, res) => {
@@ -8,12 +8,14 @@ const getEnums = async (req, res) => {
     enumValues['work_schedule'] = await Work_schedule.find();
     enumValues['studies'] = await Studies.find();
     enumValues['finantial']=await Finantial.find();
+    enumValues['offer']=await OfferJob.find({active:true})
 
     if (enumValues.jobs == undefined) throw new ClientError('Error al solicitar los enums de los trabajos', 500)
     if (enumValues.provinces == undefined) throw new ClientError('Error al solicitar los enums de las provincias ', 500)
     if (enumValues.work_schedule == undefined) throw new ClientError('Error al solicitar los enums de los horarios', 500)
     if (enumValues.studies == undefined) throw new ClientError('Error al solicitar los enums de los estudios', 500)
     if (enumValues.finantial == undefined) throw new ClientError('Error al solicitar los enums de las financiaciones', 500)
+    if (enumValues.offer == undefined) throw new ClientError('Error al solicitar los enums de las ofertas', 500)
     response(res, 200, enumValues);
 }
 

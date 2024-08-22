@@ -73,7 +73,7 @@ const OfferJobPut = async (req, res) => {
     if (!!req.body.location) dataOfferJob['location'] = req.body.location;
     if (!!req.body.date) dataOfferJob['date'] = req.body.date;
     if (!!req.body.create) dataOfferJob['create'] = req.body.create;
-    if (!!req.body.expected_incorporation_date) dataOfferJob['expected_incorporation_date'] = new Date(req.body.expected_incorporation_date);
+    if (!!req.body.expected_incorporation_date) dataOfferJob['expected_incorporation_date'] = req.body.expected_incorporation_date;
     if (req.body.active!=undefined) dataOfferJob['active'] = req.body.active;
     if (!!req.body.bag) dataOfferJob['bag'] = req.body.bag;
 
