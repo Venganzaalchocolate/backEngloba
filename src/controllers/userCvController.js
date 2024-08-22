@@ -1,6 +1,6 @@
 const { UserCv } = require('../models/indexModels');
 const { prevenirInyeccionCodigo, esPassSegura, validName, validEmail, catchAsync, response, generarHashpass, ClientError, sendEmail, resError } = require('../utils/indexUtils');
-const { dateAndHour, getSpainCurrentDate } = require('../utils/utils');
+const { dateAndHour, getSpainCurrentDate, createAccentInsensitiveRegex } = require('../utils/utils');
 
 // crear usuario
 const postCreateUserCv = async (req, res) => {
@@ -34,7 +34,10 @@ const getUserCvs = async (req, res) => {
 
 
     const filters = {};
-    if (req.body.name) filters["name"] = { $regex: req.body.name, $options: 'i' };
+    if (req.body.name) {
+        const nameRegex = createAccentInsensitiveRegex(req.body.name);
+        filters["name"] = { $regex: nameRegex };
+    }
     if (req.body.email) filters["email"] = { $regex: req.body.email, $options: 'i' };
     if (req.body.phone) filters["phone"] = { $regex: req.body.phone, $options: 'i' };
     if (req.body.jobs && req.body.jobs.length > 0) filters["jobs"] = { $in: req.body.jobs };

@@ -43,9 +43,28 @@ const getSpainCurrentDate = () => {
     return formattedDate;
 };
 
+function createAccentInsensitiveRegex(str) {
+    const accentMap = {
+        'a': '[aáàâäãå]',
+        'e': '[eéèêë]',
+        'i': '[iíìîï]',
+        'o': '[oóòôöõ]',
+        'u': '[uúùûü]',
+        'n': '[nñ]',
+        'c': '[cç]'
+    };
+
+    const regexStr = str.split('').map(char => {
+        const lowerChar = char.toLowerCase();
+        return accentMap[lowerChar] || char;
+    }).join('');
+
+    return new RegExp(regexStr, 'i');
+}
 
 
 module.exports = {
     dateAndHour,
-    getSpainCurrentDate
+    getSpainCurrentDate,
+    createAccentInsensitiveRegex
 };
