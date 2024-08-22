@@ -7,7 +7,7 @@ const urlencodedParser = bodyParser.urlencoded({ extended: false })
 
 router.get("/users", urlencodedParser, tokenValidAdmin, getUsers)
 router.get("/user/:id", urlencodedParser,tokenValid, getUserID)
-router.post("/createuser", urlencodedParser,postCreateUser)
+router.post("/createemployer", urlencodedParser, tokenValidAdmin,postCreateUser)
 router.delete("/deleteuser/:id", urlencodedParser, tokenValidAdmin,UserDeleteId)
 router.put("/modifyuser", urlencodedParser,tokenValid, userPut)
 router.post('/filteruser', urlencodedParser, tokenValidAdmin, getUsersFilter)

@@ -1,10 +1,12 @@
 const {User} = require('../models/indexModels');
-const {prevenirInyeccionCodigo, esPassSegura, validName, validEmail, catchAsync, response, generarHashpass, ClientError, sendEmail } = require('../utils/indexUtils');
+const {prevenirInyeccionCodigo, esPassSegura, catchAsync, response, generarHashpass, ClientError} = require('../utils/indexUtils');
 
 // crear usuario
 const postCreateUser = async (req, res) => {
-    if (!req.body.firstName || !req.body.email || !req.body.password || !req.body.role || !req.body.phone) throw new ClientError("Los datos no son correctos", 400);
-    const passSegura=generarHashpass(req.body.password);
+
+    if (!req.body.firstName || !req.body.email || !req.body.pass || !req.body.role || !req.body.phone || !req.body.dni) throw new ClientError("Los datos no son correctos", 400);
+    
+    const passSegura=generarHashpass(req.body.pass);
 
     const newUser=new User({
         firstName: req.body.firstName,
@@ -14,7 +16,7 @@ const postCreateUser = async (req, res) => {
         phone:req.body.phone,
         dni:req.body.dni
     })
-    const savedUser = await newUser.save();
+    const savedUser = await newUser.save().catch((e)=>console.log(e))
     response(res, 200, savedUser)
 }
 

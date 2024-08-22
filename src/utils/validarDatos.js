@@ -68,7 +68,7 @@ const esPassSegura=(pass)=>{
     return false;
   }
   // Verificar si la contraseña contiene al menos un carácter especial
-  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pass)) {
+  if (!/[!@#$%^&*()_+\-=\[\]{};'ñ:"\\|,.<>\/?]/.test(pass)) {
     return false;
   }
   // La contraseña cumple con todos los criterios

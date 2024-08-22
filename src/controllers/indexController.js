@@ -4,7 +4,7 @@ const {tokenValid, tokenValidAdmin} = require("./authController");
 const { getUserCvsFilter, postCreateUserCv, getUserCvID, getUserCvs, UserCvDeleteId, UserCvPut } = require("./userCvController");
 const { uploadFile, listBucketContents, getFileCv } = require("./ovhController");
 const { postUploadFile, getFile } = require("./fileController");
-const { postCreateBag, getBags, getBagID, BagDeleteId, BagPut, getBagsFilter, BagPutDeleteUser } = require("./bagController");
+const { postCreateBag, getBags, getBagID, bagDeactivateId, BagPut, getBagsFilter, BagPutDeleteUser } = require("./bagController");
 const { getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, addDispositive, getDispositive, updateDispositive, deleteDispositive } = require("./programController");
 const { postCreateOfferJob, getOfferJobID, getOfferJobs, OfferJobDeleteId, OfferJobPut } = require("./offerController");
 const { getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory } = require("./enumsController");
@@ -18,7 +18,7 @@ module.exports = {
     getUserCvsFilter, postCreateUserCv, getUserCvID, getUserCvs, UserCvDeleteId, UserCvPut,
     uploadFile, listBucketContents, getFile,
     postUploadFile,
-    postCreateBag, getBags, getBagID,BagDeleteId, BagPut,getBagsFilter, BagPutDeleteUser,
+    postCreateBag, getBags, getBagID,bagDeactivateId, BagPut,getBagsFilter, BagPutDeleteUser,
     getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, addDispositive, getDispositive, updateDispositive, deleteDispositive,
     postCreateOfferJob, getOfferJobID, getOfferJobs,OfferJobDeleteId, OfferJobPut,
     getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory

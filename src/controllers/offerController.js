@@ -27,7 +27,8 @@ const postCreateOfferJob = async (req, res) => {
     if(!!req.body.optionals_requirements) dataOfferJob['optionals_requirements']=req.body.optionals_requirements
     const newOfferJob = new OfferJob(dataOfferJob)
     const savedOfferJob = await newOfferJob.save();
-    response(res, 200, savedOfferJob)
+    const populatedOfferJob = await OfferJob.findById(savedOfferJob._id).populate('bag');
+    response(res, 200, populatedOfferJob)
 }
 
 

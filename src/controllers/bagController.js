@@ -1,4 +1,4 @@
-const {Bag, Program} = require('../models/indexModels');
+const {Bag, Program, OfferJob} = require('../models/indexModels');
 const {prevenirInyeccionCodigo, esPassSegura, validName, validEmail, catchAsync, response, generarHashpass, ClientError, sendEmail } = require('../utils/indexUtils');
 const { getSpainCurrentDate } = require('../utils/utils');
 
@@ -27,7 +27,7 @@ const postCreateBag = async (req, res) => {
 //recoge todos los usuarios
 const getBags= async (req,res)=>{
     // Utiliza el método find() de Mongoose para obtener todos los documentos en la colección
-    const bags = await Bag.find();
+    const bags = await Bag.find({ active: true });
     // Responde con la lista de usuarios y código de estado 200 (OK)
     response(res, 200, bags);
 }
@@ -53,10 +53,19 @@ const getBagID= async (req,res)=>{
 }
 
 // borrar un usuario
-const BagDeleteId=async (req, res)=>{
-    const id = req.params.id;
-    const BagDelete = await Bag.deleteOne({_id:id});
-    response(res, 200, BagDelete);
+const bagDeactivateId=async (req, res)=>{
+
+    if(!req.body._id)throw new ClientError('No se ha proporcionado la id de la bolsa', 400)
+    const filter = { _id: req.body._id };
+    const updateText = {};
+    updateText['active']=false
+    const offersDeactivate= await OfferJob.updateMany({bag:req.body._id},{active:false})
+    let doc = await Bag.findOneAndUpdate(filter, updateText, { new: true });
+    if (doc) {
+        response(res, 200, doc);
+    } else {
+        throw new ClientError("La bolsa no existe", 400);
+    }
 }
 
 // modificar el usuario
@@ -110,7 +119,7 @@ module.exports = {
     postCreateBag:catchAsync(postCreateBag),
     getBags:catchAsync(getBags),
     getBagID:catchAsync(getBagID),
-    BagDeleteId:catchAsync(BagDeleteId),
+    bagDeactivateId:catchAsync(bagDeactivateId),
     BagPut:catchAsync(BagPut),
     getBagsFilter:catchAsync(getBagsFilter),
     BagPutDeleteUser:catchAsync(BagPutDeleteUser)

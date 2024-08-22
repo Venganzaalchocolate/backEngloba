@@ -23,7 +23,7 @@ const tokenValidAdmin=async (req, res, next)=>{
         token=req.headers.authorization.split(' ')[1];
         verificacion=await verifyToken(token);
         if(verificacion==null) res.status(401).send({error:true, message: "El token no es valido, pero pasa bien"});
-        if(verificacion.role && (verificacion.role=='admin' || verificacion.role=='global') ) next();
+        if(verificacion.role && (verificacion.role=='root') ) next();
         else res.status(401).send({error:true, message: "El usuario no está autorizado"})
     } catch (error) {
         res.status(401).send({error:true, message: "El token no es valido"})
