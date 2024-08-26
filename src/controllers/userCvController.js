@@ -63,6 +63,7 @@ const getUserCvs = async (req, res) => {
     }
 
     const totalDocs = await UserCv.countDocuments(filters);
+
     // Calcular el número total de páginas
     const totalPages = Math.ceil(totalDocs / limit);
     // Utiliza el método find() de Mongoose con skip() y limit() para paginar
