@@ -50,7 +50,7 @@ app.use((err, req, res, next) => {
   // Asegurarse de que el encabezado CORS esté presente en las respuestas de error
   res.header('Access-Control-Allow-Origin', process.env.CORS_ALLOWED_ORIGIN);
   const statusCode = err.status || 500;
-  const message =(statusCode==429)?"Ha alcanzado el número máximo de solicitudes, intentélo más tarde":'Error interno del servidor';
+  const message =(statusCode==429)?"Ha alcanzado el número máximo de solicitudes, intentélo más tarde": ((statusCode==500))?'Error interno en el servidor':err.message;
   resError(res, statusCode, message);
 });
 

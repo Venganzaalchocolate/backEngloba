@@ -1,6 +1,7 @@
 const { UserCv } = require('../models/indexModels');
 const { prevenirInyeccionCodigo, esPassSegura, validName, validEmail, catchAsync, response, generarHashpass, ClientError, sendEmail, resError } = require('../utils/indexUtils');
 const { dateAndHour, getSpainCurrentDate, createAccentInsensitiveRegex } = require('../utils/utils');
+const { deleteFile } = require('./ovhController');
 
 // crear usuario
 const postCreateUserCv = async (req, res) => {
@@ -95,9 +96,11 @@ const getUserCvID = async (req, res) => {
 
 // borrar un usuario
 const UserCvDeleteId = async (req, res) => {
-    const id = req.params.id;
-    const UserCvDelete = await UserCv.deleteOne({ _id: id });
-    response(res, 200, UserCvDelete);
+    const filter = { _id: req.body._id };
+    const deleteFileAux= await deleteFile(req.body._id)
+    if(deleteFileAux) responseDelete=await UserCv.deleteOne(filter);
+    else throw new ClientError('No se ha podido borrar el cv', 400)
+    response(res, 200, {userDelete:true});
 }
 
 // modificar el usuario

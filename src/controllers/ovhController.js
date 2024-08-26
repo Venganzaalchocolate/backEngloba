@@ -210,9 +210,24 @@ const deleteAllFiles = async () => {
   }
 };
 
+const deleteFile = async (fileName) => {
+  try {
+    const fileToDelete = `${fileName}.pdf`;
+    // Verifica si el archivo existe antes de intentar eliminarlo
+    await minioClient.statObject(containerName, fileToDelete);
+    // Si el archivo existe, procede a eliminarlo
+    await minioClient.removeObject(containerName, fileToDelete);
+
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
+
 module.exports = {
   uploadFile,
   listBucketContents,
   getFileCv,
   deleteAllFiles,
+  deleteFile
 };
