@@ -64,6 +64,11 @@ const userCv = mongoose.Schema({
         default: undefined 
     },
 
+    notes:{
+        type: [commentSchema],
+        default: undefined
+    },
+
     view:{
         type: Schema.Types.ObjectId,
         default: null,

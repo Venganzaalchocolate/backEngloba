@@ -57,6 +57,6 @@ const offerJob= mongoose.Schema({
         required:true,
         ref:'Bag'
     }
-})
+}, { timestamps: true })
 
 module.exports=mongoose.model('OfferJob', offerJob)

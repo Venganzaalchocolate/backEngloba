@@ -211,6 +211,6 @@ const UserSchema = new Schema({
     payrolls: [PayrollSchema]
     // subida de archivos firmados
     // uploadFileSigned: pdf
-});
+}, { timestamps: true });
 
 module.exports=mongoose.model('User', UserSchema)

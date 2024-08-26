@@ -159,6 +159,17 @@ const UserCvPut = async (req, res) => {
         };
     }
 
+    if (req.body.notes) {
+        updateText['view'] = req.body.id
+        updateText['$push'] = {
+            notes: {
+                userCv: req.body.id,
+                nameUser: req.body.nameUserComment,
+                date: dateNow,
+                message: req.body.notes
+            }
+        };
+    }
 
 
     if (!!req.body.view || req.body.view==null) updateText['view'] = req.body.view
