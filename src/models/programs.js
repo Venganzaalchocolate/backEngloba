@@ -16,7 +16,7 @@ const fileSchema = new Schema({
     date: { 
         type: Date 
     }
-});
+}, { timestamps: true });
 
 const deviceSchema = new Schema({
     name: { 
@@ -31,7 +31,10 @@ const deviceSchema = new Schema({
         ref: 'User',
         required: false
     },
-
+    province:{
+        type:Schema.Types.ObjectId,
+        ref:'Provinces',
+    },
     contratoAdministracion: [fileSchema],
     autorizacionFuncionamiento: [fileSchema],
     seguros: [fileSchema],
@@ -76,7 +79,26 @@ const programSchema = new Schema({
         required: true 
     },
     files: [fileSchema],
-    devices: [deviceSchema]
+    devices: [deviceSchema],
+    about: {
+        description: { 
+            type: String
+        },
+        objectives: { 
+            type: String
+        },
+        profile: { 
+            type: String
+        },
+        table:{
+            title: {
+                type:String
+            },
+            content:{
+                type:[String]
+            }
+        }
+      }
 });
 
 module.exports = mongoose.model('Program', programSchema);

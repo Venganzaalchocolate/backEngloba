@@ -152,7 +152,10 @@ const UserSchema = new Schema({
         enum: ['baja', 'activo', 'en proceso de contratación', 'excedencia'],
         default:  'en proceso de contratación'
     },
-    
+    dispositiveNow:{
+        type: Schema.Types.ObjectId,
+        ref: 'Device'
+    },
     // Periodos de contratación del empleado
     hiringPeriods: [PeriodSchema],
     // Periodos de excedencia o baja laboral del empleado

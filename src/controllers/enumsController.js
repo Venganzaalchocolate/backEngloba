@@ -1,4 +1,4 @@
-const { Jobs, Studies, Provinces, Work_schedule, Finantial, OfferJob } = require('../models/indexModels');
+const { Jobs, Studies, Provinces, Work_schedule, Finantial, OfferJob, Program, User } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 
 const getEnums = async (req, res) => {
@@ -16,6 +16,18 @@ const getEnums = async (req, res) => {
     if (enumValues.studies == undefined) throw new ClientError('Error al solicitar los enums de los estudios', 500)
     if (enumValues.finantial == undefined) throw new ClientError('Error al solicitar los enums de las financiaciones', 500)
     if (enumValues.offer == undefined) throw new ClientError('Error al solicitar los enums de las ofertas', 500)
+    response(res, 200, enumValues);
+}
+
+const getEnumEmployers=async (req, res) => {
+    let enumValues = {}
+    enumValues['provinces'] = await Provinces.find();
+    enumValues['programs'] = await Program.find();
+    enumValues['status']= User.schema.path('employmentStatus').enumValues;
+
+    if (enumValues.programs == undefined) throw new ClientError('Error al solicitar los enums de los trabajos', 500)
+    if (enumValues.provinces == undefined) throw new ClientError('Error al solicitar los enums de las provincias ', 500)
+   
     response(res, 200, enumValues);
 }
 
@@ -186,5 +198,6 @@ module.exports = {
     postEnums: catchAsync(postEnums),
     deleteEnums: catchAsync(deleteEnums),
     postSubcategory:catchAsync(postSubcategory),
-    deleteSubcategory:catchAsync(deleteSubcategory)
+    deleteSubcategory:catchAsync(deleteSubcategory),
+    getEnumEmployers:catchAsync(getEnumEmployers)
 }
