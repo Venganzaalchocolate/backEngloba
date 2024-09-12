@@ -1,4 +1,4 @@
-const User=require("./user");
+
 const UserCv=require('./userCV');
 const Bag=require('./bag');
 const Program=require('./programs')
@@ -8,6 +8,7 @@ const Provinces=require('./provinces');
 const Studies=require('./estudies')
 const Work_schedule=require('./work_schedule')
 const Finantial=require('./finantial')
+const User=require("./user");
 
 module.exports = {
     User,

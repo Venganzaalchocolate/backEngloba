@@ -29,6 +29,8 @@ const postCreateUserCv = async (req, res) => {
 
 //recoge todos los usuarios
 const getUserCvs = async (req, res) => {
+    
+    
     if (!req.body.page || !req.body.limit) throw new ClientError("Faltan datos no son correctos", 400);
     const page = parseInt(req.body.page) || 1; // Página actual, por defecto página 1
     const limit = parseInt(req.body.limit) || 10; // Tamaño de página, por defecto 10 documentos por página
@@ -62,12 +64,15 @@ const getUserCvs = async (req, res) => {
         filters["reject"] = req.body.reject == '0' ? null : { $ne: null };
     }
 
+    
     const totalDocs = await UserCv.countDocuments(filters);
 
     // Calcular el número total de páginas
     const totalPages = Math.ceil(totalDocs / limit);
     // Utiliza el método find() de Mongoose con skip() y limit() para paginar
+
     const users = await UserCv.find(filters).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).populate('offer')
+
     // Responde con la lista de usuarios paginada y código de estado 200 (OK)
     response(res, 200, { users, totalPages });
     
