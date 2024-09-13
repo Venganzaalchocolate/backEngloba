@@ -1,5 +1,5 @@
 const { UserCv } = require('../models/indexModels');
-const { prevenirInyeccionCodigo, esPassSegura, validName, validEmail, catchAsync, response, generarHashpass, ClientError, sendEmail, resError } = require('../utils/indexUtils');
+const { catchAsync, response, ClientError, resError } = require('../utils/indexUtils');
 const { dateAndHour, getSpainCurrentDate, createAccentInsensitiveRegex } = require('../utils/utils');
 const { deleteFile } = require('./ovhController');
 
@@ -29,8 +29,6 @@ const postCreateUserCv = async (req, res) => {
 
 //recoge todos los usuarios
 const getUserCvs = async (req, res) => {
-    
-    
     if (!req.body.page || !req.body.limit) throw new ClientError("Faltan datos no son correctos", 400);
     const page = parseInt(req.body.page) || 1; // Página actual, por defecto página 1
     const limit = parseInt(req.body.limit) || 10; // Tamaño de página, por defecto 10 documentos por página

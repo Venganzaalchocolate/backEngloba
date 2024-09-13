@@ -1,5 +1,3 @@
-const { generarHashpass } = require('./indexUtils');
-
 const validEmail =(email)=>{
   // Expresión regular para validar una dirección de correo electrónico
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
