@@ -5,7 +5,7 @@ const { resError } = require('../utils/indexUtils');
 // Configuración de Rate Limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 500, // Limitar a 5000 solicitudes por IP cada 15 minutos
+  max: 500, // Limitar a 500 solicitudes por IP cada 15 minutos
   message: 'Has excedido el límite de solicitudes. Por favor, intenta de nuevo más tarde.',
   standardHeaders: true, 
   legacyHeaders: false, 

@@ -80,7 +80,7 @@ app.use((err, req, res, next) => {
 
 // Iniciar el servidor
 const startServer = async () => {
-  await watchFolder('1CWzMZ0EnMwQdYbvFJuwnqXTQULxU4uox', 'https://backengloba.onrender.com/api/googlenotificationchange');
+  // await watchFolder('1CWzMZ0EnMwQdYbvFJuwnqXTQULxU4uox', 'https://backengloba.onrender.com/api/googlenotificationchange');
   await connectToDatabase();
   
   app.listen(port, () => {

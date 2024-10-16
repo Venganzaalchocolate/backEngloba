@@ -2,17 +2,16 @@
 const fs = require('fs');
 const { google } = require('googleapis');
 const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 
 
-// Cargar credenciales desde una ruta diferente según el entorno
-const keyFilePath = process.env.NODE_ENV === 'production'
-  ? path.join('/etc/secrets/credenciales.json')
-  : path.join(__dirname, '../database/credenciales.json');
-// Cargar credenciales desde un archivo JSON
 const auth = new google.auth.GoogleAuth({
-  keyFile: keyFilePath,
+  keyFile: process.env.NODE_ENV === 'production'
+    ? '/etc/secrets/credenciales.json'  // Ruta en producción en Render
+    : path.join(__dirname, 'credenciales.json'),  // Ruta local en desarrollo
   scopes: ['https://www.googleapis.com/auth/drive'],
 });
+
 
 // Crear el cliente de Google Drive
 const drive = google.drive({ version: 'v3', auth });
@@ -42,22 +41,25 @@ async function uploadFile() {
 }
 
 
-const watchFolder = async (folderId, webhookUrl) => {
 
-  try {
-    const res = await drive.files.watch({
-      fileId: folderId,
-      requestBody: {
-        id: 'unique-channel-id', // Identificador único para el canal de notificación
-        type: 'webhook',
-        address: webhookUrl, // URL del webhook
-      },
-    });
-    console.log('Webhook registrado:', res.data);
-  } catch (error) {
-    console.error('Error al configurar el webhook:', error);
-  }
-};
+// Generar un ID único para el canal
+const channelId = uuidv4();
+
+// Función para configurar el webhook
+async function watchFolder() {
+  const drive = google.drive({ version: 'v3', auth });
+  
+  const res = await drive.files.watch({
+    fileId: '1CWzMZ0EnMwQdYbvFJuwnqXTQULxU4uox',
+    requestBody: {
+      id: channelId,  // Usar el ID único generado
+      type: 'webhook',
+      address: 'https://backengloba.onrender.com/api/googlenotificationchange',
+    },
+  });
+
+  console.log('Webhook configurado', res.data);
+}
 
 
 
