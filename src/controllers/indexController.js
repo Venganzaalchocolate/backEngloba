@@ -5,9 +5,11 @@ const { getUserCvsFilter, postCreateUserCv, getUserCvID, getUserCvs, UserCvDelet
 const { uploadFile, listBucketContents, getFileCv, deleteFile } = require("./ovhController");
 const { postUploadFile, getFile, deleteIdFile } = require("./fileController");
 const { postCreateBag, getBags, getBagID, bagDeactivateId, BagPut, getBagsFilter, BagPutDeleteUser } = require("./bagController");
-const { getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, addDispositive, getDispositive, updateDispositive, deleteDispositive } = require("./programController");
+const { getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, addDispositive, getDispositive, updateDispositive, deleteDispositive, getDispositiveResponsable } = require("./programController");
 const { postCreateOfferJob, getOfferJobID, getOfferJobs, OfferJobDeleteId, OfferJobPut } = require("./offerController");
 const { getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers } = require("./enumsController");
+const { listFiles, watchFolder, notification } = require("./googleController");
+
 
 
 
@@ -19,7 +21,8 @@ module.exports = {
     uploadFile, listBucketContents, getFile, deleteFile,
     postUploadFile, deleteIdFile,
     postCreateBag, getBags, getBagID,bagDeactivateId, BagPut,getBagsFilter, BagPutDeleteUser,
-    getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, addDispositive, getDispositive, updateDispositive, deleteDispositive,
+    getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, addDispositive, getDispositive, updateDispositive, deleteDispositive,getDispositiveResponsable,
     postCreateOfferJob, getOfferJobID, getOfferJobs,OfferJobDeleteId, OfferJobPut,
-    getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers
+    getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers,
+    listFiles,watchFolder,notification
 }

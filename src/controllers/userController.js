@@ -5,22 +5,50 @@ const mongoose = require('mongoose');
 const { createAccentInsensitiveRegex } = require('../utils/utils');
 const { uploadFile } = require('./ovhController');
 
-// crear usuario
-const postCreateUser = async (req, res) => {
 
+const postCreateUser = async (req, res) => {
     const files = req.files;
     const requiredFields = ['firstName', 'phone', 'email', 'dni'];
+
     // Verificar si algún campo requerido está ausente o vacío
     for (const field of requiredFields) {
         if (!req.body[field]) {
             throw new ClientError(`El campo ${field} es requerido`, 400);
         }
     }
-    // Generar una contraseña segura usando el dni
-    const passSegura = await generarHashpass(req.body.dni);
 
-    // Crear la instancia del usuario sin guardar los archivos aún
-    const newUser = new User({
+    // Generar una contraseña segura usando el dni
+    let passSegura;
+
+    if(!req.body.password){
+        passSegura = await generarHashpass(req.body.dni);  
+    } else {
+        passSegura = await generarHashpass(req.body.password);  
+    }
+    
+
+    // Parsear el campo hiringPeriods de JSON si existe
+    let hiringPeriods = [];
+    if (req.body.hiringPeriods) {
+        try {
+            hiringPeriods = JSON.parse(req.body.hiringPeriods);
+        } catch (error) {
+            throw new ClientError('El periodo de contratación no tiene un formato válido', 400);
+        }
+    }
+
+    // Parsear responsibleDevices de JSON si existe
+    let responsibleDevices = {};
+    if (req.body.responsibleDevices) {
+        try {
+            responsibleDevices = JSON.parse(req.body.responsibleDevices);
+        } catch (error) {
+            throw new ClientError('El responsibleDevices no tiene un formato válido', 400);
+        }
+    }
+
+    // Inicializamos el objeto del nuevo usuario
+    let newUserData = {
         firstName: req.body.firstName,
         email: req.body.email,
         pass: passSegura,
@@ -29,17 +57,40 @@ const postCreateUser = async (req, res) => {
         dni: req.body.dni,
         lastName: req.body.lastName || '',
         employmentStatus: req.body.employmentStatus || 'en proceso de contratación',
-        dispositiveNow: req.body.dispositiveNow === "null" ? null : req.body.dispositiveNow,
         socialSecurityNumber: req.body.socialSecurityNumber || '',
         bankAccountNumber: req.body.bankAccountNumber || '',
-        hiringPeriods: req.body.hiringPeriods || [],
+        hiringPeriods: hiringPeriods,  // Esto es un array de objetos
         leavePeriods: req.body.leavePeriods || [],
-        payrolls: req.body.payrolls || []
-    });
+        payrolls: req.body.payrolls || [],
+    };
+
+    // Si existe al menos un hiringPeriod con un device, asignamos dispositiveNow
+    if (hiringPeriods.length > 0 && hiringPeriods[0].device) {
+        newUserData.dispositiveNow = hiringPeriods[0].device;
+    }
+
+    // Crear la instancia del usuario sin guardar los archivos aún
+    const newUser = new User(newUserData);
 
     // Guardar el usuario en la base de datos para obtener su ID
     const savedUser = await newUser.save();
     const userId = savedUser._id;
+
+    // Actualizar los dispositivos responsables en la colección Program
+    const deviceIds = Object.keys(responsibleDevices);  // Obtener los IDs de dispositivos del objeto responsibleDevices
+    for (const deviceId of deviceIds) {
+        // Buscar el programa que contiene este dispositivo
+        const program = await Program.findOne({ 'devices._id': deviceId });
+        if (program) {
+            // Buscar el dispositivo dentro del programa
+            const device = program.devices.id(deviceId);
+            if (device) {
+                // Asignar el campo `responsible` con el ID del nuevo usuario
+                device.responsible = userId;
+                await program.save().catch((x)=>console.log(x));  // Guardar los cambios en el programa
+            }
+        }
+    }
 
     // Crear un array para almacenar las promesas de subida de archivos
     let fileUploadPromises = [];
@@ -48,12 +99,11 @@ const postCreateUser = async (req, res) => {
     for (const fieldName in files) {
         const fileArray = files[fieldName];
         for (const file of fileArray) {
-            // Generar un nombre único para el archivo usando el ID del usuario, la clave del campo, y la fecha actual
-            const timestamp = Date.now();
-            const uniqueFileName = `${userId}-${fieldName}-${timestamp}.${file.originalname.split('.').pop()}`;
+            const uniqueFileName = `${userId}-${fieldName}.${file.originalname.split('.').pop()}`;
 
             // Llamar a la función uploadFile y almacenar la promesa
             const uploadPromise = uploadFile(file, uniqueFileName);
+            console.log(uploadFile)
             fileUploadPromises.push(uploadPromise);
 
             // Asociar el nombre del archivo subido al campo correspondiente en el usuario
@@ -62,16 +112,16 @@ const postCreateUser = async (req, res) => {
     }
 
     // Esperar a que todos los archivos se suban
-    await Promise.all(fileUploadPromises);
-
+    const subida=await Promise.all(fileUploadPromises).catch((e)=>console.log(e));
     // Guardar nuevamente el usuario con los nombres de archivos actualizados
     await savedUser.save();
 
     // Responder con el usuario guardado
     response(res, 200, savedUser);
-
-
 };
+
+
+
 
 
 //recoge todos los usuarios
@@ -96,6 +146,8 @@ const getUsers = async (req, res) => {
     if (req.body.phone) filters["phone"] = { $regex: req.body.phone, $options: 'i' };
     if (req.body.dni) filters["dni"] = { $regex: req.body.dni, $options: 'i' };
     if (req.body.status) filters["employmentStatus"] = req.body.status;
+
+    if(req.body.dispositiveNow) filters["dispositiveNow"]=req.body.dispositiveNow
     // Filtrado por ID del programa
     if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
         // Buscar el programa específico por ID
@@ -156,18 +208,97 @@ const UserDeleteId = async (req, res) => {
 
 // modificar el usuario
 const userPut = async (req, res) => {
-    const filter = { _id: req.body.id };
-    const updateText = {};
-    if (req.body.nombre != null) updateText['name'] = prevenirInyeccionCodigo(req.body.nombre);
-    if (req.body.email != null) updateText['email'] = prevenirInyeccionCodigo(req.body.email);
-    if (req.body.direccion != null) updateText['direction'] = prevenirInyeccionCodigo(req.body.direccion);
-    if (req.body.password != null && esPassSegura(req.body.password)) updateText['pass'] = await generarHashpass(req.body.password);
-    if (req.body.role != null && (req.body.role == 'normal' || req.body.role == 'admin')) updateText['role'] = req.body.role;
-    let doc = await User.findOneAndUpdate(filter, updateText);
-    if (doc != null) doc = await User.findById(req.body.id)
-    else throw new ClientError("No existe el usuario", 400)
-    response(res, 200, doc);
-}
+    const files = req.files;
+
+    // Verificar si el ID de usuario está presente en el cuerpo de la solicitud
+    if (!req.body._id) {
+        throw new ClientError('El ID de usuario es requerido', 400);
+    }
+    
+    // Inicializar el objeto de actualización
+    let updateFields = {};
+    
+    // Si se proporciona un password, generar una nueva contraseña segura
+    if (!!req.body.password) {
+        updateFields.pass = await generarHashpass(req.body.password);
+    }
+    
+    // Parsear el campo hiringPeriods de JSON si existe
+    if (req.body.hiringPeriods) {
+        try {
+            updateFields.hiringPeriods = JSON.parse(req.body.hiringPeriods);
+        } catch (error) {
+            throw new ClientError('El periodo de contratación no tiene un formato válido', 400);
+        }
+    }
+    
+    // Parsear responsibleDevices de JSON si existe
+    if (req.body.responsibleDevices) {
+        try {
+            updateFields.responsibleDevices = JSON.parse(req.body.responsibleDevices);
+        } catch (error) {
+            throw new ClientError('El responsibleDevices no tiene un formato válido', 400);
+        }
+    }
+    
+    // Actualizar los campos del usuario con los datos del cuerpo de la solicitud
+    updateFields.firstName = req.body.firstName;
+    updateFields.email = req.body.email;
+    updateFields.role = req.body.role;
+    updateFields.phone = req.body.phone;
+    updateFields.dni = req.body.dni;
+    updateFields.lastName = req.body.lastName;
+    updateFields.employmentStatus = req.body.employmentStatus;
+    updateFields.socialSecurityNumber = req.body.socialSecurityNumber;
+    updateFields.bankAccountNumber = req.body.bankAccountNumber;
+    updateFields.leavePeriods = req.body.leavePeriods;
+    updateFields.payrolls = req.body.payrolls;
+    updateFields.vacationDays=req.body.vacationDays;
+    updateFields.personalDays=req.body.personalDays;
+    
+    // Validar y actualizar dispositiveNow
+    if (req.body.dispositiveNow !== undefined && req.body.dispositiveNow !== "undefined") {
+        updateFields.dispositiveNow = req.body.dispositiveNow === "null" ? null : req.body.dispositiveNow;
+    }
+    
+    // Crear un array para almacenar las promesas de subida de archivos
+    let fileUploadPromises = [];
+    
+    if (files) {
+        for (const fieldName in files) {
+            const fileArray = files[fieldName];
+    
+            // Verificar si fileArray existe y es un array antes de iterar
+            if (Array.isArray(fileArray)) {
+                for (const file of fileArray) {
+                    // Generar un nombre único para el archivo usando el ID del usuario, la clave del campo, y la fecha actual
+                    const uniqueFileName = `${req.body._id}-${fieldName}.pdf`;
+    
+                    // Llamar a la función uploadFile y almacenar la promesa
+                    const uploadPromise = uploadFile(file, uniqueFileName);
+                    fileUploadPromises.push(uploadPromise);
+    
+                    // Asociar el nombre del archivo subido al campo correspondiente en el usuario
+                    updateFields[fieldName] = uniqueFileName;
+                }
+            }
+        }
+    }
+    // Esperar a que todos los archivos se suban (si los hay)
+    const fileUpdate=await Promise.all(fileUploadPromises)
+
+    // Realizar la actualización con findOneAndUpdate
+    const updatedUser = await User.findOneAndUpdate(
+        { _id: req.body._id },
+        { $set: updateFields },
+        { new: true, runValidators: true }
+    );
+    
+    // Responder con el usuario actualizado
+    response(res, 200, updatedUser);
+    
+};
+
 
 
 

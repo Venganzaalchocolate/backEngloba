@@ -191,6 +191,19 @@ const deleteDispositive = async (req, res) => {
     response(res, 200, updatedProgram);
 };
 
+
+const getDispositiveResponsable= async (req, res) => {
+
+    
+    if (!req.body._id) {
+        throw new ClientError("Los datos no son correctos", 400);
+    }
+
+    const programs = await Program.find({ 'devices.responsible': req.body._id }, { 'devices.$': 1 });
+    response(res, 200, programs);
+};
+
+
 module.exports = {
     postCreateProgram: catchAsync(postCreateProgram),
     getPrograms: catchAsync(getPrograms),
@@ -201,4 +214,5 @@ module.exports = {
     getDispositive: catchAsync(getDispositive),
     updateDispositive: catchAsync(updateDispositive),
     deleteDispositive: catchAsync(deleteDispositive),
+    getDispositiveResponsable:catchAsync(getDispositiveResponsable)
 };

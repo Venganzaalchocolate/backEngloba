@@ -13,7 +13,8 @@ const {
     getDispositive,
     updateDispositive,
     deleteDispositive,
-    tokenValid
+    tokenValid,
+    getDispositiveResponsable,
 } = require('../controllers/indexController');
 
 // Rutas para Programas
@@ -27,5 +28,6 @@ router.post('/createdispositive', urlencodedParser, tokenValid, addDispositive);
 router.post('/programs/device', urlencodedParser, tokenValid, getDispositive); // Obtener un dispositivo específico dentro de un programa
 router.put('/updatedevice', urlencodedParser, tokenValid, updateDispositive); // Actualizar un dispositivo específico dentro de un programa
 router.delete('/deletedispositive', urlencodedParser, tokenValid, deleteDispositive); // Eliminar un dispositivo específico dentro de un programa
+router.post('/dispositiveresponsable', urlencodedParser, getDispositiveResponsable)
 
 module.exports = router;

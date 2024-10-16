@@ -13,10 +13,15 @@ const fileSchema = new Schema({
         required: true 
     },
     description: { 
-        type: String 
+        type: String,
+        maxlength: 200
     },
     date: { 
         type: Date 
+    },
+    notes:{
+        type:String,
+        maxlength: 200
     }
 });
 
@@ -90,21 +95,36 @@ const LeavePeriodSchema = new Schema({
 
 // Esquema para Nóminas
 const PayrollSchema = new Schema({
-    // Fecha de la nómina (mes/año)
-    payrollDate: {
-        type: String,
-        required: true
+     // Mes de la nómina (1-12)
+     payrollMonth: {
+        type: Number,
+        required: true,
+        min: 1, // El valor mínimo debe ser 1
+        max: 12, // El valor máximo debe ser 12
+        validate: {
+            validator: Number.isInteger,
+            message: 'El mes debe ser un número entero.'
+        }
+    },
+    // Año de la nómina (por ejemplo, entre 2000 y el año actual)
+    payrollYear: {
+        type: Number,
+        required: true,
+        min: 2000, // Establece un año mínimo, por ejemplo, 2000
+        max: new Date().getFullYear(), // Establece como máximo el año actual
+        validate: {
+            validator: Number.isInteger,
+            message: 'El año debe ser un número entero.'
+        }
     },
     // Archivo PDF de la nómina
     pdf: {
         type: String,
         required: true
     },
-    // Indicador de si la nómina ha sido vista
-    seen: {
-        type: Boolean,
-        required: true,
-        default: false
+    // Archivo de la firma
+    sign: {
+        type: String
     }
 });
 
@@ -172,7 +192,7 @@ const UserSchema = new Schema({
     cv: {
         type: String
     },
-
+    // cursos
     degree: {
         type: [fileSchema]
     },
@@ -186,7 +206,7 @@ const UserSchema = new Schema({
     model145: {
         type: String
     },
-    // Certificado de Prevención de Incendios del empleado (no requerido)
+    // Certificado de Prevención de Incendios del empleado (no requerido) FECHA
     firePrevention: {
         type: String
     },
@@ -211,9 +231,11 @@ const UserSchema = new Schema({
         type: String
     },
     // Nóminas del empleado
-    payrolls: [PayrollSchema]
+    payrolls: [PayrollSchema],
     // subida de archivos firmados
     // uploadFileSigned: pdf
+    vacationDays:[Date],
+    personalDays:[Date]
 }, { timestamps: true });
 
 module.exports=mongoose.model('User', UserSchema)

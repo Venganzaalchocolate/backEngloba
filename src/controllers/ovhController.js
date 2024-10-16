@@ -1,109 +1,4 @@
 
-// const Minio = require('minio');
-// const { Readable } = require('stream');
-// require('dotenv').config();
-
-// const containerName = process.env.ARSYS_CONTAINERNAME;
-// const endpoint = process.env.ARSYS_ENDPOINT.replace('https://', '').replace(/\/$/, '');
-// const accessKeyId = process.env.ARSYS_ACCESSKEYID;
-// const secretAccessKey = process.env.ARSYS_SECRETACCESSKEY;
-
-// const minioClient = new Minio.Client({
-//   endPoint: endpoint.split(':')[0],
-//   port: parseInt(endpoint.split(':')[1]) || 443,
-//   useSSL: true,
-//   accessKey: accessKeyId,
-//   secretKey: secretAccessKey,
-// });
-
-// // Función para subir un archivo
-// const uploadFile = async (file, name) => {
-//   try {
-//     const fileStream = Readable.from(file.buffer); // Crea un flujo legible desde el buffer del archivo
-//     await minioClient.putObject(containerName, name, fileStream, file.size, {
-//       'Content-Type': file.mimetype,
-//     });
-//     return name;
-//   } catch (error) {
-//     console.error('Error al subir el archivo a S3:', error);
-//     throw error;
-//   }
-// };
-
-// // Función para obtener un archivo
-// const getFileCv = async (nameFile) => {
-//   try {
-//     const stream = await minioClient.getObject(containerName, `${nameFile}.pdf`);
-//     return stream;
-//   } catch (error) {
-//     console.error('Error al obtener el archivo desde S3:', error);
-//     return null;
-//   }
-// };
-
-// // Función para listar el contenido de un contenedor
-// const listBucketContents = async () => {
-//   try {
-//     const stream = await minioClient.listObjectsV2(containerName, '', true);
-//     stream.on('data', function(obj) {
-//       console.log(obj.name);
-//     });
-//     stream.on('error', function(err) {
-//       console.error('Error al listar el contenido del bucket:', err);
-//     });
-//   } catch (error) {
-//     console.error('Error al listar el contenido del bucket:', error);
-//   }
-// };
-
-// // Función para eliminar todos los archivos
-// const deleteAllFiles = async () => {
-//   try {
-//     const objectsList = [];
-//     const stream = await minioClient.listObjectsV2(containerName, '', true);
-//     stream.on('data', function(obj) {
-//       objectsList.push(obj.name);
-//     });
-//     stream.on('end', async function() {
-//       if (objectsList.length > 0) {
-//         const objectsToDelete = objectsList.map((object) => ({ name: object }));
-//         await minioClient.removeObjects(containerName, objectsToDelete);
-//         console.log('Todos los archivos han sido eliminados correctamente.');
-//       } else {
-//         console.log('No hay archivos para eliminar.');
-//       }
-//     });
-//     stream.on('error', function(err) {
-//       console.error('Error al listar el contenido del bucket:', err);
-//     });
-//   } catch (error) {
-//     console.error('Error al eliminar los archivos:', error);
-//   }
-// };
-
-// const deleteFile = async (fileName) => {
-//   try {
-//     const fileToDelete = `${fileName}.pdf`;
-//     // Verifica si el archivo existe antes de intentar eliminarlo
-//     await minioClient.statObject(containerName, fileToDelete);
-//     // Si el archivo existe, procede a eliminarlo
-//     await minioClient.removeObject(containerName, fileToDelete);
-
-//     return true;
-//   } catch (error) {
-//     return false;
-//   }
-// };
-
-// module.exports = {
-//   uploadFile,
-//   listBucketContents,
-//   getFileCv,
-//   deleteAllFiles,
-//   deleteFile
-// };
-
-
 const Minio = require('minio');
 const { Readable } = require('stream');
 require('dotenv').config();
@@ -123,7 +18,7 @@ const minioClient = new Minio.Client({
   secretKey: secretAccessKey,
 });
 
-const RETRY_LIMIT = 5; // Número máximo de intentos para operaciones fallidas
+const RETRY_LIMIT = 3; // Número máximo de intentos para operaciones fallidas
 const BACKOFF_FACTOR = 1000; // Tiempo base (en milisegundos) para el backoff exponencial
 
 // Función que maneja reintentos con backoff exponencial
@@ -134,7 +29,7 @@ const retryOperation = async (fn, retries = RETRY_LIMIT) => {
       return await fn(); // Intenta ejecutar la función
     } catch (error) {
       attempt++;
-      if (attempt >= retries) throw error; // Si se alcanzó el límite de reintentos, lanza el error
+      if (attempt >= retries) return false; // Si se alcanzó el límite de reintentos, lanza el error
       const backoff = Math.pow(2, attempt) * BACKOFF_FACTOR; // Calcula el tiempo de espera basado en el número de intentos
       console.log(`Reintentando operación en ${backoff}ms... (${attempt}/${retries})`);
       await new Promise(res => setTimeout(res, backoff)); // Espera antes de volver a intentar

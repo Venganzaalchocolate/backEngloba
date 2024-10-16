@@ -1,4 +1,3 @@
-// middleware/securityMiddleware.js
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
 const { resError } = require('../utils/indexUtils');
@@ -6,12 +5,12 @@ const { resError } = require('../utils/indexUtils');
 // Configuración de Rate Limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 1000, // Limitar a 2 solicitudes por IP cada 15 minutos para pruebas
+  max: 500, // Limitar a 5000 solicitudes por IP cada 15 minutos
   message: 'Has excedido el límite de solicitudes. Por favor, intenta de nuevo más tarde.',
-  standardHeaders: true, // Devuelve información de límite en los headers `RateLimit-*`
-  legacyHeaders: false, // Desactiva los headers `X-RateLimit-*`
-  handler: (req, res) => {  // Asegúrate de definir un handler personalizado
-    res.header('Access-Control-Allow-Origin', process.env.CORS_ALLOWED_ORIGIN); // Asegura CORS en el handler de errores
+  standardHeaders: true, 
+  legacyHeaders: false, 
+  handler: (req, res) => {  
+    res.header('Access-Control-Allow-Origin', process.env.CORS_ALLOWED_ORIGIN);
     resError(res, 429, 'Has excedido el límite de solicitudes. Por favor, intenta de nuevo más tarde.');
   }
 });
@@ -26,8 +25,20 @@ const corsOptions = {
       callback(new Error('No permitido por CORS'));
     }
   },
-  optionsSuccessStatus: 200, // Para lidiar con navegadores que manejen mal CORS
-  credentials: true, // Permitir envío de cookies y credenciales si es necesario
+  optionsSuccessStatus: 200,
+  credentials: true,
+};
+
+// Middleware para verificar solicitudes de Google
+const verifyGoogleRequest = (req, res, next) => {
+  const userAgent = req.get('User-Agent');
+  const googleToken = req.get('X-Goog-Channel-Token'); // Revisa encabezados específicos de Google
+  
+  if (userAgent && userAgent.includes('APIs-Google') && googleToken) {
+    return next(); // Es una solicitud válida de Google
+  } else {
+    resError(res, 403, 'Acceso no permitido');
+  }
 };
 
 // Middleware para verificar los encabezados `origin` y `referer`
@@ -37,7 +48,7 @@ const verifyOriginAndReferer = (req, res, next) => {
   const allowedOrigin = process.env.CORS_ALLOWED_ORIGIN;
 
   if (origin === allowedOrigin || (referer && referer.startsWith(allowedOrigin))) {
-    next(); // Continuar con la siguiente función middleware o la ruta
+    next();
   } else {
     resError(res, 403, 'Solicitud no permitida, URL no válida');
   }
@@ -47,5 +58,6 @@ const verifyOriginAndReferer = (req, res, next) => {
 module.exports = {
   limiter,
   corsOptions,
+  verifyGoogleRequest, // Añadido para verificar solicitudes de Google
   verifyOriginAndReferer,
 };

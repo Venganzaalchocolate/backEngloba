@@ -1,6 +1,6 @@
 const {User} = require('../models/indexModels');
-const {catchAsync, response, ClientError, comprobarPass, generarToken, verifyToken} = require('../utils/indexUtils')
-const jwt=require('jsonwebtoken')
+const {catchAsync, response, ClientError, comprobarPass, generarToken, verifyToken, generarHashpass} = require('../utils/indexUtils')
+const jwt=require('jsonwebtoken');
 
 //comprueba un usuario
 const login= async (req,res)=>{

@@ -16,6 +16,10 @@ const jobs = mongoose.Schema({
     subcategories: {
         type: [SubcategorySchema],
         default: undefined 
+    },
+    public:{
+        type: Boolean,
+        default: false
     }
     
 });

@@ -18,8 +18,8 @@ const getFile = async (req, res) => {
   if (!req.body.id) {
     throw new ClientError('No se proporcionó id', 400);
   } else {
-    try {
       const archivoStream = await getFileCv(req.body.id);
+      
       if (!archivoStream) {
         throw new ClientError('Archivo no encontrado', 404);
       }
@@ -31,9 +31,6 @@ const getFile = async (req, res) => {
 
       // Enviar el stream como respuesta HTTP
       archivoStream.pipe(res);
-    } catch (error) {
-      response(res, error.statusCode || 500, error.message);
-    }
   }
 };
 
