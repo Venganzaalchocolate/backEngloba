@@ -555,6 +555,18 @@ const payroll = async (req, res) => {
 };
 
 const hirings = async (req, res) => {
+        // Convertir los IDs enviados en el cuerpo de la solicitud a ObjectId
+    const convertIds = (hirings) => {
+        return hirings.map(hiring => {
+            hiring.position = mongoose.Types.ObjectId(hiring.position._id);
+            hiring.device = mongoose.Types.ObjectId(hiring.device.id);
+            hiring.leavePeriods = hiring.leavePeriods.map(period => {
+                period.leaveType = mongoose.Types.ObjectId(period.leaveType.id);
+                return period;
+            });
+            return hiring;
+        });
+    };
     // Verificar campos generales requeridos
     if (!req.body.userId) {
         throw new ClientError('El campo userId es requerido', 400);
@@ -569,10 +581,12 @@ const hirings = async (req, res) => {
     }
     const id = req.body.userId;
     let data = {}
+    const cuerpo=convertIds(req.body.hirings)
+
     if (req.body.type === 'put') {
         data = await User.findOneAndUpdate(
             { _id: id },
-            { $set: { hiringPeriod: req.body.hirings } }, // Actualización
+            { $set: { hiringPeriod: cuerpo } }, // Actualización
             { new: true } // Devolver el documento actualizado
         )
     }

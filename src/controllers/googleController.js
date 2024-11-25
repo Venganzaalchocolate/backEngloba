@@ -38,12 +38,12 @@ async function saveCurrentState(files) {
   }
 }
 
+// Decodificar y cargar las credenciales desde la variable de entorno
+const credentials = JSON.parse(Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString('utf-8'));
 
 const auth = new google.auth.GoogleAuth({
-  keyFile: process.env.NODE_ENV === 'production'
-    ? '/etc/secrets/credenciales.json'
-    : path.join(__dirname, '../database/credenciales.json'),
-  scopes: ['https://www.googleapis.com/auth/drive'],
+  credentials, // Usar las credenciales decodificadas
+  scopes: ['https://www.googleapis.com/auth/drive'], // Alcances requeridos
 });
 
 const drive = google.drive({ version: 'v3', auth });
@@ -280,11 +280,7 @@ async function deleteFilesByEmail(email) {
   }
 }
 
-//deleteFilesByEmail('serviciodrive@proyectoenglobadrive.iam.gserviceaccount.com')
-// Ejecutar la tarea con cron
-// cron.schedule('* * * * *', () => {
-//   checkForChangesAndBackup();
-// });
+
 
 
 // Función para subir un archivo a Google Drive
