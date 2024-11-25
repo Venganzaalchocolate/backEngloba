@@ -554,46 +554,67 @@ const payroll = async (req, res) => {
     }
 };
 
-const hirings = async (req, res) => {
-        // Convertir los IDs enviados en el cuerpo de la solicitud a ObjectId
-    const convertIds = (hirings) => {
-        return hirings.map(hiring => {
-            hiring.position = mongoose.Types.ObjectId(hiring.position._id);
-            hiring.device = mongoose.Types.ObjectId(hiring.device.id);
+// Función para convertir IDs dentro de los datos de contratación
+const convertIds = (hirings) => {
+    return hirings.map(hiring => {
+        // Validar y convertir position._id
+        if (!hiring.position || !hiring.position._id) {
+            throw new ClientError('El campo position._id es requerido', 400);
+        }
+        hiring.position = new mongoose.Types.ObjectId(hiring.position._id);
+
+        // Validar y convertir device.id
+        if (!hiring.device || !hiring.device.id) {
+            throw new ClientError('El campo device.id es requerido', 400);
+        }
+        hiring.device = new mongoose.Types.ObjectId(hiring.device.id);
+
+        // Validar y convertir leavePeriods.leaveType.id
+        if (Array.isArray(hiring.leavePeriods)) {
             hiring.leavePeriods = hiring.leavePeriods.map(period => {
-                period.leaveType = mongoose.Types.ObjectId(period.leaveType.id);
+                if (!period.leaveType || !period.leaveType.id) {
+                    throw new ClientError('El campo leaveType.id es requerido en leavePeriods', 400);
+                }
+                period.leaveType = new mongoose.Types.ObjectId(period.leaveType.id);
                 return period;
             });
-            return hiring;
-        });
-    };
-    // Verificar campos generales requeridos
-    if (!req.body.userId) {
-        throw new ClientError('El campo userId es requerido', 400);
-    }
+        } else {
+            hiring.leavePeriods = []; // Manejar el caso en el que leavePeriods no sea un array
+        }
 
-    if (!req.body.type) {
-        throw new ClientError('La acción es requerida', 400);
-    }
+        return hiring;
+    });
+};
 
-    if (!req.body.hirings) {
-        throw new ClientError('Los datos son requeridos', 400);
-    }
-    const id = req.body.userId;
-    let data = {}
-    const cuerpo=convertIds(req.body.hirings)
+// Controlador principal
+const hirings = async (req, res) => {
+        // Validar campos generales requeridos
+        if (!req.body.userId) {
+            throw new ClientError('El campo userId es requerido', 400);
+        }
+        if (!req.body.type) {
+            throw new ClientError('La acción es requerida', 400);
+        }
+        if (!Array.isArray(req.body.hirings)) {
+            throw new ClientError('El campo hirings debe ser un array', 400);
+        }
 
-    if (req.body.type === 'put') {
-        data = await User.findOneAndUpdate(
-            { _id: id },
-            { $set: { hiringPeriod: cuerpo } }, // Actualización
-            { new: true } // Devolver el documento actualizado
-        )
-    }
+        // Convertir los IDs en los datos de contratación
+        const cuerpo = convertIds(req.body.hirings);
 
-    response(res, 200, data)
-}
+        // Realizar la operación en MongoDB
+        let data;
+        if (req.body.type === 'put') {
+            data = await User.findOneAndUpdate(
+                { _id: req.body.userId },
+                { $set: { hiringPeriods: cuerpo } }, // Actualización completa del array
+                { new: true } // Devolver el documento actualizado
+            );
+        }
 
+        response(res,200,data)
+        // Responder con los datos actualizados
+};
 
 
 module.exports = {
