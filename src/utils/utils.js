@@ -62,9 +62,29 @@ function createAccentInsensitiveRegex(str) {
     return new RegExp(regexStr, 'i');
 }
 
+// Función genérica para transformar y validar arrays de fechas
+const parseAndValidateDates = (dates, fieldName) => {
+    try {
+        const parsedDates = JSON.parse(dates);
+        if (!Array.isArray(parsedDates)) {
+            throw new Error(`${fieldName} debe ser un array.`);
+        }
+        return parsedDates.map((date) => {
+            const parsedDate = new Date(date);
+            if (isNaN(parsedDate)) {
+                throw new Error(`Fecha no válida en ${fieldName}: ${date}`);
+            }
+            return parsedDate;
+        });
+    } catch (error) {
+        throw new ClientError(`Error al procesar ${fieldName}: ${error.message}`, 400);
+    }
+};
+
 
 module.exports = {
     dateAndHour,
     getSpainCurrentDate,
-    createAccentInsensitiveRegex
+    createAccentInsensitiveRegex,
+    parseAndValidateDates
 };

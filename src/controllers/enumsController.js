@@ -1,4 +1,4 @@
-const { Jobs, Studies, Provinces, Work_schedule, Finantial, OfferJob, Program, User } = require('../models/indexModels');
+const { Jobs, Studies, Provinces, Work_schedule, Finantial, OfferJob, Program, User, Leavetype } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 
 const getEnums = async (req, res) => {
@@ -19,11 +19,15 @@ const getEnums = async (req, res) => {
     response(res, 200, enumValues);
 }
 
+
 const getEnumEmployers=async (req, res) => {
     let enumValues = {}
     enumValues['provinces'] = await Provinces.find();
-    enumValues['programs'] = await Program.find();
+    enumValues['programs'] = await Program.find().select('name _id devices.name devices._id');
     enumValues['status']= User.schema.path('employmentStatus').enumValues;
+    enumValues['leavetype']=await Leavetype.find();
+    enumValues['jobs']=await Jobs.find();
+    enumValues['work_schedule'] = await Work_schedule.find();
 
     if (enumValues.programs == undefined) throw new ClientError('Error al solicitar los enums de los trabajos', 500)
     if (enumValues.provinces == undefined) throw new ClientError('Error al solicitar los enums de las provincias ', 500)

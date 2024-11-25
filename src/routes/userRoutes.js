@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router()
-const {postCreateUser, getUserID, getUsers, UserDeleteId, userPut, tokenValid, tokenValidAdmin, getUsersFilter, postCreateUserRandom} = require('../controllers/indexController')
+const {postCreateUser, getUserID, getUsers, UserDeleteId, userPut, tokenValid, tokenValidAdmin, getUsersFilter, payroll, hirings} = require('../controllers/indexController')
 const bodyParser = require('body-parser');
 const urlencodedParser = bodyParser.urlencoded({ extended: false })
 // Configura `multer` para almacenamiento en memoria
@@ -12,7 +12,8 @@ router.post("/users", urlencodedParser, tokenValid, getUsers)
 router.get("/user/:id", urlencodedParser,tokenValid, getUserID)
 router.delete("/deleteuser/:id", urlencodedParser, tokenValidAdmin,UserDeleteId)
 router.post('/filteruser', urlencodedParser, tokenValidAdmin, getUsersFilter)
-router.get('/createusertest', urlencodedParser, postCreateUserRandom)
+router.post("/payroll", upload.single('pdf'), payroll)
+router.post("/hirings", tokenValid, hirings)
 
 
 router.put("/modifyuser",  upload.fields([
@@ -38,5 +39,7 @@ router.post('/createemployer', upload.fields([
     { name: 'ethicalChannel', maxCount: 1 },
     { name: 'dniCopy', maxCount: 1 }
   ]), postCreateUser);
+
+  
 
 module.exports = router;

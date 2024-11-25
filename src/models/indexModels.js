@@ -9,6 +9,7 @@ const Studies=require('./estudies')
 const Work_schedule=require('./work_schedule')
 const Finantial=require('./finantial')
 const User=require("./user");
+const Leavetype=require('./leavetype')
 
 module.exports = {
     User,
@@ -20,5 +21,7 @@ module.exports = {
     Provinces,
     Studies,
     Work_schedule,
-    Finantial
+    Finantial,
+    Leavetype
+
 }

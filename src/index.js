@@ -13,6 +13,7 @@ const enumsRoutes = require('./routes/enumsRoutes');
 const googleRoutes=require('./routes/googleRoutes')
 const { connectToDatabase } = require('./database/connect');
 const { listFiles, watchFolder } = require('./controllers/googleController');
+const { createLeaveTypes, addFictitiousHiringPeriod, updateUsersDispositiveNow } = require('./controllers/controladordepruebas');
 
 
 require('dotenv').config();
@@ -43,8 +44,7 @@ app.use(limiter);
 // Verificar encabezados `origin`, `referer` y solicitudes de Google
 app.use(verifyOriginAndReferer);
 
-// Solo aplica verificación de Google en las rutas relevantes
-app.use('/api/googlenotificationchange', verifyGoogleRequest);
+
 
 // Rutas con prefijo `/api`
 app.use('/api', userRoutes);
@@ -80,9 +80,8 @@ app.use((err, req, res, next) => {
 
 // Iniciar el servidor
 const startServer = async () => {
-  // await watchFolder('1CWzMZ0EnMwQdYbvFJuwnqXTQULxU4uox', 'https://backengloba.onrender.com/api/googlenotificationchange');
+
   await connectToDatabase();
-  
   app.listen(port, () => {
     console.log(`Servidor ejecutándose en el puerto ${port}`);
   });

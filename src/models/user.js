@@ -2,6 +2,29 @@ const mongoose = require("mongoose");
 const Bag = require("./bag")
 const { Schema } = mongoose;
 
+// Esquema para Periodos de Excedencia o Baja Laboral
+const LeavePeriodSchema = new Schema({
+    // Tipo de excedencia (voluntaria, cuidado de hijo a cargo, cargo público, baja laboral)
+    leaveType: {
+        type: Schema.Types.ObjectId,
+        ref: 'Leavetype',
+        required: true
+    },
+    // Fecha de inicio de la excedencia o baja laboral
+    startLeaveDate: {
+        type: Date,
+        required: true
+    },
+    // Fecha prevista de fin de la excedencia o baja laboral
+    expectedEndLeaveDate: {
+        type: Date
+    },
+    // Fecha real de fin de la excedencia o baja laboral
+    actualEndLeaveDate: {
+        type: Date
+    }
+});
+
 
 const fileSchema = new Schema({
     fileName: { 
@@ -29,13 +52,13 @@ const fileSchema = new Schema({
 const PeriodSchema = new Schema({
     // Cargo que desempeña el empleado durante el periodo de contratación
     position: {
-        type: String,
+        type: Schema.Types.ObjectId,
         required: true
     },
     // Categoría del puesto del empleado
     category: {
         type: String,
-        enum:['grupo 1', 'grupo 2', 'grupo 3'],
+        enum:['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15'],
         required: true
     },
     // Fecha de inicio del periodo de contratación
@@ -64,34 +87,16 @@ const PeriodSchema = new Schema({
         }
     },
     // Proceso de selección asociado al periodo de contratación (referencia a otra colección)
-    selectionProcess: {
+    selectionProcess: { 
         type: Schema.Types.ObjectId,
         ref: 'Bag'
-    }
+    },
+
+    leavePeriods:[LeavePeriodSchema]
+
 });
 
-// Esquema para Periodos de Excedencia o Baja Laboral
-const LeavePeriodSchema = new Schema({
-    // Tipo de excedencia (voluntaria, cuidado de hijo a cargo, cargo público, baja laboral)
-    leaveType: {
-        type: String,
-        enum: ['excedencia voluntaria', 'excedencia forzosa', 'enfermedad común', 'accidente laboral', 'maternidad', 'riesgo emparazo', 'lactancia'],
-        required: true
-    },
-    // Fecha de inicio de la excedencia o baja laboral
-    startLeaveDate: {
-        type: Date,
-        required: true
-    },
-    // Fecha prevista de fin de la excedencia o baja laboral
-    expectedEndLeaveDate: {
-        type: Date
-    },
-    // Fecha real de fin de la excedencia o baja laboral
-    actualEndLeaveDate: {
-        type: Date
-    }
-});
+
 
 // Esquema para Nóminas
 const PayrollSchema = new Schema({
@@ -169,17 +174,19 @@ const UserSchema = new Schema({
     // Estado laboral del empleado
     employmentStatus: {
         type: String,
-        enum: ['baja', 'activo', 'en proceso de contratación', 'excedencia'],
+        enum: ['ya no trabaja con nosotros', 'activo', 'en proceso de contratación'],
         default:  'en proceso de contratación'
     },
     dispositiveNow:{
-        type: Schema.Types.ObjectId,
-        ref: 'Device'
+        _id: {
+            type: Schema.Types.ObjectId, // ID del dispositivo
+        },
+        name: {
+            type: String // Nombre del dispositivo
+        }
     },
     // Periodos de contratación del empleado
     hiringPeriods: [PeriodSchema],
-    // Periodos de excedencia o baja laboral del empleado
-    leavePeriods: [LeavePeriodSchema],
     // Número de Seguridad Social del empleado
     socialSecurityNumber: {
         type: String,
@@ -235,7 +242,8 @@ const UserSchema = new Schema({
     // subida de archivos firmados
     // uploadFileSigned: pdf
     vacationDays:[Date],
-    personalDays:[Date]
+    personalDays:[Date],
+    filesMiscelanea:[fileSchema]
 }, { timestamps: true });
 
 module.exports=mongoose.model('User', UserSchema)

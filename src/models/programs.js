@@ -27,7 +27,7 @@ const deviceSchema = new Schema({
         type: String
     },
     responsible: { 
-        type: Schema.Types.ObjectId,
+        type: [Schema.Types.ObjectId],
         ref: 'User',
         required: false
     },
