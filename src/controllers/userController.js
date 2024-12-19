@@ -150,7 +150,7 @@ const createProgramDevicesIndex = (programs) => {
             // Crear un diccionario donde la clave es el ID del dispositivo y el valor incluye id y name
             program.devices.forEach(device => {
                 index[device._id.toString()] = {
-                    id: device._id.toString(),
+                    _id: device._id.toString(),
                     name: device.name
                 };
             });
@@ -176,7 +176,7 @@ const processUsers = (users, leaveTypeIndex, jobSubcategories, programDevices) =
                         return {
                             ...leavePeriod,
                             leaveType: matchedLeaveType
-                                ? { id: matchedLeaveType._id, name: matchedLeaveType.name }
+                                ? { _id: matchedLeaveType._id, name: matchedLeaveType.name }
                                 : leavePeriod.leaveType
                         };
                     })
@@ -212,15 +212,15 @@ const getUsers = async (req, res) => {
     const limit = parseInt(req.body.limit) || 10;
     const filters = {};
 
-    // Consultas a la base de datos
-    const leaveTypes = await Leavetype.find(); // Obtener todos los tipos de permisos
-    const jobs = await Jobs.find(); // Obtener todos los trabajos
+    // // Consultas a la base de datos
+    // const leaveTypes = await Leavetype.find(); // Obtener todos los tipos de permisos
+    // const jobs = await Jobs.find(); // Obtener todos los trabajos
     const programs = await Program.find().select('name _id devices.name devices._id'); // Obtener todos los programas
 
-    // Crear índices para acceso rápido
-    const leaveTypeIndex = createLeaveTypeIndex(leaveTypes);
-    const jobSubcategories = createJobSubcategoriesIndex(jobs);
-    const programDevices = createProgramDevicesIndex(programs);
+    // // Crear índices para acceso rápido
+    // const leaveTypeIndex = createLeaveTypeIndex(leaveTypes);
+    // const jobSubcategories = createJobSubcategoriesIndex(jobs);
+    // const programDevices = createProgramDevicesIndex(programs);
 
     // Aplicar filtros de búsqueda
     if (req.body.firstName) filters["firstName"] = { $regex: new RegExp(req.body.firstName, 'i') };
@@ -255,10 +255,10 @@ const getUsers = async (req, res) => {
         .limit(limit); // Limitar registros por página
 
     // Procesar usuarios para enriquecer los datos
-    const userModificados = processUsers(users, leaveTypeIndex, jobSubcategories, programDevices);
+    // const userModificados = processUsers(users, leaveTypeIndex, jobSubcategories, programDevices);
 
     // Responder con los usuarios procesados y paginados
-    response(res, 200, { users: userModificados, totalPages });
+    response(res, 200, { users: users, totalPages });
 };
 
 
@@ -411,7 +411,6 @@ const userPut = async (req, res) => {
         { $set: updateFields },
         { new: true, runValidators: true }
     ).catch((e) => {
-        console.error(e);
         throw new ClientError('Error al actualizar el usuario', 500);
     });
 
@@ -473,7 +472,6 @@ const createPayroll = async (idUser, file, payrollYear, payrollMonth) => {
                 payrollYear: parseInt(payrollYear, 10),
                 pdf: fileAux.id
             };
-
 
             // Añadir la nómina al array de payrolls del usuario
             userAux.payrolls.push(newPayroll);
@@ -558,24 +556,24 @@ const payroll = async (req, res) => {
 const convertIds = (hirings) => {
     return hirings.map(hiring => {
         // Validar y convertir position._id
-        if (!hiring.position || !hiring.position._id) {
+        if (!hiring.position) {
             throw new ClientError('El campo position._id es requerido', 400);
         }
-        hiring.position = new mongoose.Types.ObjectId(hiring.position._id);
+        hiring.position = new mongoose.Types.ObjectId(hiring.position);
 
         // Validar y convertir device.id
-        if (!hiring.device || !hiring.device.id) {
+        if (!hiring.device) {
             throw new ClientError('El campo device.id es requerido', 400);
         }
-        hiring.device = new mongoose.Types.ObjectId(hiring.device.id);
+        hiring.device = new mongoose.Types.ObjectId(hiring.device);
 
         // Validar y convertir leavePeriods.leaveType.id
         if (Array.isArray(hiring.leavePeriods)) {
             hiring.leavePeriods = hiring.leavePeriods.map(period => {
-                if (!period.leaveType || !period.leaveType.id) {
-                    throw new ClientError('El campo leaveType.id es requerido en leavePeriods', 400);
+                if (!period.leaveType || !period.leaveType) {
+                    throw new ClientError('El campo leaveType es requerido en leavePeriods', 400);
                 }
-                period.leaveType = new mongoose.Types.ObjectId(period.leaveType.id);
+                period.leaveType = new mongoose.Types.ObjectId(period.leaveType);
                 return period;
             });
         } else {
@@ -588,32 +586,80 @@ const convertIds = (hirings) => {
 
 // Controlador principal
 const hirings = async (req, res) => {
-        // Validar campos generales requeridos
-        if (!req.body.userId) {
-            throw new ClientError('El campo userId es requerido', 400);
-        }
-        if (!req.body.type) {
-            throw new ClientError('La acción es requerida', 400);
-        }
+
+    // Validar campos generales requeridos
+    if (!req.body.userId) {
+        throw new ClientError('El campo userId es requerido', 400);
+    }
+    if (!req.body.type) {
+        throw new ClientError('La acción es requerida', 400);
+    }
+
+
+    // Realizar la operación en MongoDB
+    let data;
+    if (req.body.type === 'put') {
         if (!Array.isArray(req.body.hirings)) {
             throw new ClientError('El campo hirings debe ser un array', 400);
         }
-
-        // Convertir los IDs en los datos de contratación
         const cuerpo = convertIds(req.body.hirings);
-
-        // Realizar la operación en MongoDB
-        let data;
-        if (req.body.type === 'put') {
-            data = await User.findOneAndUpdate(
-                { _id: req.body.userId },
-                { $set: { hiringPeriods: cuerpo } }, // Actualización completa del array
-                { new: true } // Devolver el documento actualizado
-            );
+        data = await User.findOneAndUpdate(
+            { _id: req.body.userId },
+            { $set: { hiringPeriods: cuerpo } }, // Actualización completa del array
+            { new: true } // Devolver el documento actualizado
+        );
+    } else if (req.body.type === 'create') {
+        if (typeof req.body.hirings !== 'object' || Array.isArray(req.body.hirings)) {
+            throw new ClientError('El campo hirings debe ser un objeto', 400);
         }
 
-        response(res,200,data)
-        // Responder con los datos actualizados
+        // Procesar el objeto de hiring
+        const newHiring = convertIds([req.body.hirings])[0];
+
+        // Agregar el nuevo elemento al array hiringPeriods
+        data = await User.findOneAndUpdate(
+            { _id: req.body.userId },
+            { $push: { hiringPeriods: newHiring } }, // Agregar al array existente
+            { new: true } // Devolver el documento actualizado
+        )
+    } else if (req.body.type === 'createLeave') {
+        if (typeof req.body.leave !== 'object' || Array.isArray(req.body.leave)) {
+            throw new ClientError('El campo leave debe ser un objeto', 400);
+        }
+
+        let dataAux=req.body.leave
+        dataAux.leaveType=new mongoose.Types.ObjectId(dataAux.leaveType);
+
+        data = await User.findOneAndUpdate(
+            { _id: new mongoose.Types.ObjectId(req.body.userId), "hiringPeriods._id": new mongoose.Types.ObjectId(req.body.hirindId) }, // Filtra por userId y el hiringId específico
+            {
+                $push: {
+                    "hiringPeriods.$.leavePeriods": dataAux // Agrega el nuevo período de excedencia al campo leavePeriods
+                }
+            },
+            { new: true } // Devuelve el documento actualizado
+        ).catch((x)=>{throw new ClientError('No se ha podido crear el periodo de contratación', 400)})
+
+    } else if(req.body.type === 'delete'){
+
+        data = await User.findOneAndUpdate(
+            {
+                _id: new mongoose.Types.ObjectId(req.body.userId),
+                'hiringPeriods._id': new mongoose.Types.ObjectId(req.body.hirindId), // Filtra el hiringPeriod específico
+            },
+            {
+                $set: { 'hiringPeriods.$.active': false } // Actualiza el campo active a false
+            },
+            {
+                new: true, // Devuelve el documento actualizado
+                runValidators: true // Asegura que se validen los datos durante la actualización
+            }
+        ).catch((x)=>{throw new ClientError('No se ha podido eliminar el periodo de contratación', 400)});
+    } else {
+        throw new ClientError('El tipo no es valido', 400);
+    }
+    response(res, 200, data)
+    // Responder con los datos actualizados
 };
 
 

@@ -40,7 +40,6 @@ async function saveCurrentState(files) {
 
 // Decodificar y cargar las credenciales desde la variable de entorno
 const credentials = JSON.parse(Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString('utf-8'));
-
 const auth = new google.auth.GoogleAuth({
   credentials, // Usar las credenciales decodificadas
   scopes: ['https://www.googleapis.com/auth/drive'], // Alcances requeridos

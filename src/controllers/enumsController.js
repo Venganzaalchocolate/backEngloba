@@ -1,6 +1,45 @@
 const { Jobs, Studies, Provinces, Work_schedule, Finantial, OfferJob, Program, User, Leavetype } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 
+// Función para crear índice de leaveTypes
+const createCategoriesIndex = (x) => {
+    const index = {};
+    x.forEach(x => {
+        // Crear un diccionario donde la clave es el ID y el valor es el leaveType completo
+        index[x._id.toString()] = x;
+    });
+    return index;
+};
+
+// Función para crear índice de subcategorías de trabajos //jobs
+const createSubcategoriesIndex = (x) => {
+    const index = {};
+    x.forEach(x => {
+        // Crear un diccionario donde la clave es el ID de la subcategoría y el valor es la subcategoría completa
+        x.subcategories?.forEach(sub => {
+            index[sub._id.toString()] = sub;
+        });
+    });
+    return index;
+};
+
+// Función para crear índice de dispositivos
+const createProgramDevicesIndex = (programs) => {
+    const index = {};
+    programs.forEach(program => {
+        if (Array.isArray(program.devices)) {
+            // Crear un diccionario donde la clave es el ID del dispositivo y el valor incluye id y name
+            program.devices.forEach(device => {
+                index[device._id.toString()] = {
+                    _id: device._id.toString(),
+                    name: device.name,
+                };
+            });
+        }
+    });
+    return index;
+};
+
 const getEnums = async (req, res) => {
     let enumValues = {}
     enumValues['jobs'] = await Jobs.find();
@@ -9,6 +48,10 @@ const getEnums = async (req, res) => {
     enumValues['studies'] = await Studies.find();
     enumValues['finantial']=await Finantial.find();
     enumValues['offer']=await OfferJob.find({active:true})
+    
+
+
+
 
     if (enumValues.jobs == undefined) throw new ClientError('Error al solicitar los enums de los trabajos', 500)
     if (enumValues.provinces == undefined) throw new ClientError('Error al solicitar los enums de las provincias ', 500)
@@ -28,6 +71,10 @@ const getEnumEmployers=async (req, res) => {
     enumValues['leavetype']=await Leavetype.find();
     enumValues['jobs']=await Jobs.find();
     enumValues['work_schedule'] = await Work_schedule.find();
+
+    enumValues['jobsIndex']=createSubcategoriesIndex(enumValues['jobs'])
+    enumValues['leavesIndex']=createCategoriesIndex(enumValues['leavetype'])
+    enumValues['programsIndex']=createProgramDevicesIndex(enumValues['programs'])
 
     if (enumValues.programs == undefined) throw new ClientError('Error al solicitar los enums de los trabajos', 500)
     if (enumValues.provinces == undefined) throw new ClientError('Error al solicitar los enums de las provincias ', 500)

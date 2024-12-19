@@ -22,6 +22,9 @@ const LeavePeriodSchema = new Schema({
     // Fecha real de fin de la excedencia o baja laboral
     actualEndLeaveDate: {
         type: Date
+    },
+    active: {
+        type: Boolean
     }
 });
 
@@ -59,7 +62,6 @@ const PeriodSchema = new Schema({
     category: {
         type: String,
         enum:['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15'],
-        required: true
     },
     // Fecha de inicio del periodo de contratación
     startDate: {
@@ -82,7 +84,7 @@ const PeriodSchema = new Schema({
         },
         type: {
             type: String,
-            enum: ['total', 'parcial'],
+            enum: ['completa', 'parcial'],
             required: true 
         }
     },
@@ -92,7 +94,10 @@ const PeriodSchema = new Schema({
         ref: 'Bag'
     },
 
-    leavePeriods:[LeavePeriodSchema]
+    leavePeriods:[LeavePeriodSchema],
+    active: {
+        type: Boolean
+    }
 
 });
 
