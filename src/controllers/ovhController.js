@@ -41,6 +41,7 @@ const retryOperation = async (fn, retries = RETRY_LIMIT) => {
 const uploadFile = async (file, name) => {
   return retryOperation(async () => {
     const fileStream = Readable.from(file.buffer); // Crea un flujo legible desde el buffer del archivo
+
     await minioClient.putObject(containerName, name, fileStream, file.size, {
       'Content-Type': file.mimetype, // Define el tipo de contenido del archivo
     });

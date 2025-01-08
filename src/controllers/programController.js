@@ -126,7 +126,7 @@ const updateDispositive = async (req, res) => {
     const updateText = {
         name: req.body.name || dispositive.name,
         address: req.body.address || dispositive.address,
-        responsible: req.body.responsible || dispositive.responsible,
+        responsible: (req.body.responsible && req.body.responsible!='delete')? req.body.responsible : (req.body.responsible && req.body.responsible=='delete')?null :dispositive.responsible,
         contratoAdministracion: req.body.contratoAdministracion || dispositive.contratoAdministracion,
         autorizacionFuncionamiento: req.body.autorizacionFuncionamiento || dispositive.autorizacionFuncionamiento,
         seguros: req.body.seguros || dispositive.seguros,

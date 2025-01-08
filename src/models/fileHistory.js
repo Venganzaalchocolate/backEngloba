@@ -1,29 +1,16 @@
 const mongoose = require('mongoose');
 
-const fileSchema = new mongoose.Schema({
-  id: {
-    type: String,
-    required: true,
-    unique: true
-  },
-  name: {
-    type: String,
-    required: true
-  },
-  mimeType: {
-    type: String,
-    required: true
-  },
-  modifiedTime: {
-    type: Date,
-    required: true
-  },
-  isFolder: {
-    type: Boolean,
-    required: true
-  }
+const fileHistorySchema = new mongoose.Schema({
+  id: String,
+  name: String,
+  mimeType: String,
+  modifiedTime: String,
+  isFolder: Boolean,
+  backupType: String // p.ej.: "12h" o "3d"
 });
 
-const Filehistory = mongoose.model('Filehistory', fileSchema);
+// Índice único compuesto (id + backupType), 
+// evita duplicar el mismo archivo en el mismo tipo de backup.
+fileHistorySchema.index({ id: 1, backupType: 1 }, { unique: true });
 
-module.exports = Filehistory;
+module.exports = mongoose.model('FileHistory', fileHistorySchema);

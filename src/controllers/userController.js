@@ -3,205 +3,94 @@ const { prevenirInyeccionCodigo, esPassSegura, catchAsync, response, generarHash
 const { faker } = require('@faker-js/faker');
 const mongoose = require('mongoose');
 const { createAccentInsensitiveRegex, parseAndValidateDates } = require('../utils/utils');
-const { uploadFile } = require('./ovhController');
 const { uploadFileToDrive, getFileById, deleteFileById } = require('./googleController');
+const user = require('../models/user');
 
-
-
-const postCreateUser = async (req, res) => {
-    const files = req.files;
-    const requiredFields = ['firstName', 'phone', 'email', 'dni'];
-
-    // Verificar si algún campo requerido está ausente o vacío
-    for (const field of requiredFields) {
-        if (!req.body[field]) {
+// Función para validar campos requeridos
+const validateRequiredFields = (body, fields) => {
+    for (const field of fields) {
+        if (!body[field]) {
             throw new ClientError(`El campo ${field} es requerido`, 400);
         }
     }
-
-    // Generar una contraseña segura usando el dni
-    let passSegura;
-
-    if (!req.body.password) {
-        passSegura = await generarHashpass(req.body.dni);
-    } else {
-        passSegura = await generarHashpass(req.body.password);
-    }
-
-
-    // Parsear el campo hiringPeriods de JSON si existe
-    let hiringPeriods = [];
-    if (req.body.hiringPeriods) {
-        try {
-            hiringPeriods = JSON.parse(req.body.hiringPeriods);
-        } catch (error) {
-            throw new ClientError('El periodo de contratación no tiene un formato válido', 400);
-        }
-    }
-
-    // Parsear responsibleDevices de JSON si existe
-    let responsibleDevices = {};
-    if (req.body.responsibleDevices) {
-        try {
-            responsibleDevices = JSON.parse(req.body.responsibleDevices);
-        } catch (error) {
-            throw new ClientError('El responsibleDevices no tiene un formato válido', 400);
-        }
-    }
-
-    // Inicializamos el objeto del nuevo usuario
-    let newUserData = {
-        firstName: req.body.firstName,
-        email: req.body.email,
-        pass: passSegura,
-        role: req.body.role || 'employer',
-        phone: req.body.phone,
-        dni: req.body.dni,
-        lastName: req.body.lastName || '',
-        employmentStatus: req.body.employmentStatus || 'en proceso de contratación',
-        socialSecurityNumber: req.body.socialSecurityNumber || '',
-        bankAccountNumber: req.body.bankAccountNumber || '',
-        hiringPeriods: hiringPeriods,  // Esto es un array de objetos
-        leavePeriods: req.body.leavePeriods || [],
-        payrolls: req.body.payrolls || [],
-    };
-
-    // Si existe al menos un hiringPeriod con un device, asignamos dispositiveNow
-    if (hiringPeriods.length > 0 && hiringPeriods[0].device) {
-        newUserData.dispositiveNow = hiringPeriods[0].device;
-    }
-
-    // Crear la instancia del usuario sin guardar los archivos aún
-    const newUser = new User(newUserData);
-    // Guardar el usuario en la base de datos para obtener su ID
-    const savedUser = await newUser.save();
-    const userId = savedUser._id;
-    // Actualizar los dispositivos responsables en la colección Program
-    const deviceIds = Object.keys(responsibleDevices);  // Obtener los IDs de dispositivos del objeto responsibleDevices
-    for (const deviceId of deviceIds) {
-        // Buscar el programa que contiene este dispositivo
-        const program = await Program.findOne({ 'devices._id': deviceId });
-        if (program) {
-            // Buscar el dispositivo dentro del programa
-            const device = program.devices.id(deviceId);
-            if (device) {
-                // Asignar el campo `responsible` con el ID del nuevo usuario
-                device.responsible = userId;
-                await program.save().catch((x) => console.log(x));  // Guardar los cambios en el programa
-            }
-        }
-    }
-
-    // Crear un array para almacenar las promesas de subida de archivos
-    let fileUploadPromises = [];
-
-    // Iterar sobre los archivos y subir cada uno
-    for (const fieldName in files) {
-        const fileArray = files[fieldName];
-        for (const file of fileArray) {
-            const uniqueFileName = `${userId}-${fieldName}.${file.originalname.split('.').pop()}`;
-
-            // Llamar a la función uploadFile y almacenar la promesa
-            const uploadPromise = uploadFile(file, uniqueFileName);
-            fileUploadPromises.push(uploadPromise);
-
-            // Asociar el nombre del archivo subido al campo correspondiente en el usuario
-            savedUser[fieldName] = uniqueFileName;
-        }
-    }
-
-    // Esperar a que todos los archivos se suban
-    const subida = await Promise.all(fileUploadPromises).catch((e) => console.log(e));
-    // Guardar nuevamente el usuario con los nombres de archivos actualizados
-    await savedUser.save();
-
-    // Responder con el usuario guardado
-    response(res, 200, savedUser);
 };
 
+// Función para convertir IDs dentro de los datos de contratación
+const convertIds = (hirings) => {
+    return hirings.map(hiring => {
+        // Validar y convertir position._id
+        if (!hiring.position) {
+            throw new ClientError('El campo position._id es requerido', 400);
+        }
+        hiring.position = new mongoose.Types.ObjectId(hiring.position);
 
-// Función para crear índice de leaveTypes
-const createLeaveTypeIndex = (leaveTypes) => {
-    const index = {};
-    leaveTypes.forEach(leave => {
-        // Crear un diccionario donde la clave es el ID y el valor es el leaveType completo
-        index[leave._id.toString()] = leave;
-    });
-    return index;
-};
+        // Validar y convertir device.id
+        if (!hiring.device) {
+            throw new ClientError('El campo device.id es requerido', 400);
+        }
+        hiring.device = new mongoose.Types.ObjectId(hiring.device);
 
-// Función para crear índice de subcategorías de trabajos
-const createJobSubcategoriesIndex = (jobs) => {
-    const index = {};
-    jobs.forEach(job => {
-        // Crear un diccionario donde la clave es el ID de la subcategoría y el valor es la subcategoría completa
-        job.subcategories?.forEach(sub => {
-            index[sub._id.toString()] = sub;
-        });
-    });
-    return index;
-};
-
-// Función para crear índice de dispositivos
-const createProgramDevicesIndex = (programs) => {
-    const index = {};
-    programs.forEach(program => {
-        if (Array.isArray(program.devices)) {
-            // Crear un diccionario donde la clave es el ID del dispositivo y el valor incluye id y name
-            program.devices.forEach(device => {
-                index[device._id.toString()] = {
-                    _id: device._id.toString(),
-                    name: device.name
-                };
+        // Validar y convertir leavePeriods.leaveType.id
+        if (Array.isArray(hiring.leavePeriods)) {
+            hiring.leavePeriods = hiring.leavePeriods.map(period => {
+                if (!period.leaveType || !period.leaveType) {
+                    throw new ClientError('El campo leaveType es requerido en leavePeriods', 400);
+                }
+                period.leaveType = new mongoose.Types.ObjectId(period.leaveType);
+                return period;
             });
+        } else {
+            hiring.leavePeriods = []; // Manejar el caso en el que leavePeriods no sea un array
         }
-    });
-    return index;
-};
 
-// Función para procesar usuarios
-const processUsers = (users, leaveTypeIndex, jobSubcategories, programDevices) => {
-    return users.map(user => {
-        // Convertir usuario a un objeto plano si es un documento de Mongoose
-        const plainUser = user.toObject ? user.toObject() : user;
-
-        // Procesar cada periodo de contratación
-        plainUser.hiringPeriods = Array.isArray(plainUser.hiringPeriods)
-            ? plainUser.hiringPeriods.map(hiringPeriod => {
-                // Procesar cada leavePeriod en el hiringPeriod
-                hiringPeriod.leavePeriods = Array.isArray(hiringPeriod.leavePeriods)
-                    ? hiringPeriod.leavePeriods.map(leavePeriod => {
-                        // Buscar el leaveType correspondiente por ID
-                        const matchedLeaveType = leaveTypeIndex[leavePeriod.leaveType?.toString()];
-                        return {
-                            ...leavePeriod,
-                            leaveType: matchedLeaveType
-                                ? { _id: matchedLeaveType._id, name: matchedLeaveType.name }
-                                : leavePeriod.leaveType
-                        };
-                    })
-                    : [];
-
-                // Buscar la subcategoría correspondiente por ID
-                const matchedSubcategory = jobSubcategories[hiringPeriod.position?.toString()];
-                if (matchedSubcategory) {
-                    hiringPeriod.position = matchedSubcategory;
-                }
-
-                // Buscar el dispositivo correspondiente por ID
-                const deviceId = hiringPeriod.device?.toString();
-                const matchedDevice = programDevices[deviceId];
-                if (matchedDevice) {
-                    hiringPeriod.device = matchedDevice;
-                }
-
-                return hiringPeriod;
-            })
-            : [];
-
-        return plainUser;
+        return hiring;
     });
 };
+
+const postCreateUser = async (req, res) => {
+    const requiredFields=['dni','firstName','lastName','email','phone','hiringPeriods','role']
+    const {
+        dni,
+        firstName,
+        lastName,
+        email,
+        phone,
+        hiringPeriods,
+        employmentStatus = "en proceso de contratación",
+        role,
+      } = req.body;
+
+      validateRequiredFields(req.body, requiredFields);
+      const pass=(!!req.body.pass)?await generarHashpass(req.body.pass): await generarHashpass(dni);
+      // Procesar el objeto de hiring
+      const newHiring = convertIds(hiringPeriods)[0];
+      const userData = {
+        dni,
+        role,
+        pass,
+        firstName,
+        lastName,
+        email,
+        phone,
+        // hiringPeriods puede ser un array de objetos;
+        // si necesitas transformarlos, hazlo aquí (p. ej. convertIds)
+        hiringPeriods: newHiring,
+        dispositiveNow:newHiring.device,
+        employmentStatus,
+      };
+
+      const newUser=await User.create(userData).catch((error)=>error)
+
+      if(newUser.code==11000){
+        const [[key, value]] = Object.entries(newUser.keyValue);
+        throw new ClientError(`${value} esta duplicado, no se pudo crear el usuario`)
+      } 
+        
+    // Responder con el usuario guardado
+    response(res, 200, newUser);
+};
+
+
 
 // Controlador para obtener usuarios
 const getUsers = async (req, res) => {
@@ -217,10 +106,6 @@ const getUsers = async (req, res) => {
     // const jobs = await Jobs.find(); // Obtener todos los trabajos
     const programs = await Program.find().select('name _id devices.name devices._id'); // Obtener todos los programas
 
-    // // Crear índices para acceso rápido
-    // const leaveTypeIndex = createLeaveTypeIndex(leaveTypes);
-    // const jobSubcategories = createJobSubcategoriesIndex(jobs);
-    // const programDevices = createProgramDevicesIndex(programs);
 
     // Aplicar filtros de búsqueda
     if (req.body.firstName) filters["firstName"] = { $regex: new RegExp(req.body.firstName, 'i') };
@@ -254,9 +139,6 @@ const getUsers = async (req, res) => {
         .skip((page - 1) * limit) // Saltar registros según la página
         .limit(limit); // Limitar registros por página
 
-    // Procesar usuarios para enriquecer los datos
-    // const userModificados = processUsers(users, leaveTypeIndex, jobSubcategories, programDevices);
-
     // Responder con los usuarios procesados y paginados
     response(res, 200, { users: users, totalPages });
 };
@@ -285,6 +167,59 @@ const getUserID = async (req, res) => {
     response(res, 200, usuario);
 }
 
+// Descargar archivos de usuario
+const getFileUser = async (req, res) => {
+    try {
+      const userId = req.body.id; // ID del usuario
+      const fileId = req.body.idFile; // ID del archivo en Google Drive
+  
+      // Buscar al usuario y verificar que el archivo existe en el array `files`
+      const user = await User.findOne({
+        _id: userId,
+        'files.fileName': fileId, // Cambia `fileName` si el campo es diferente
+      });
+  
+      if (!user) {
+        throw new ClientError('Usuario o archivo no encontrado', 404);
+      }
+  
+      // Obtener el archivo de Google Drive
+      const { file, stream } = await getFileById(fileId);
+  
+      if (!stream) {
+        throw new ClientError('Archivo no encontrado en Google Drive', 404);
+      }
+  
+      // Configurar los headers para la descarga
+      res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
+      res.setHeader('Content-Type', file.mimeType);
+  
+      // Enviar el archivo como un stream
+      stream.pipe(res);
+
+    } catch (error) {
+      // Manejo de errores personalizados o genéricos
+      if (error instanceof ClientError) {
+        response(res, error.statusCode, { error: true, message: error.message });
+      } else {
+        console.error('Error interno:', error);
+        response(res, 500, { error: true, message: 'Error interno del servidor' });
+      }
+    }
+  };
+
+// if (!archivoStream) {
+    //     throw new ClientError('Archivo no encontrado', 404);
+    //   }
+    //   // Configurar la respuesta HTTP
+    //   res.writeHead(200, {
+    //     'Content-Type': 'application/pdf',
+    //     'Content-Disposition': 'attachment; filename=' + req.body.id,
+    //   });
+
+    //   // Enviar el stream como respuesta HTTP
+    //   archivoStream.pipe(res);
+
 // borrar un usuario
 const UserDeleteId = async (req, res) => {
     const id = req.params.id;
@@ -292,11 +227,9 @@ const UserDeleteId = async (req, res) => {
     response(res, 200, userDelete);
 }
 
-//modificar Usuario
 const userPut = async (req, res) => {
     const files = req.files;
 
-    // Verificar si el ID de usuario está presente en el cuerpo de la solicitud
     if (!req.body._id) {
         throw new ClientError('El ID de usuario es requerido', 400);
     }
@@ -304,12 +237,10 @@ const userPut = async (req, res) => {
     // Inicializar el objeto de actualización
     let updateFields = {};
 
-    // Si se proporciona un password, generar una nueva contraseña segura
-    if (!!req.body.password) {
+    if (req.body.password) {
         updateFields.pass = await generarHashpass(req.body.password);
     }
 
-    // Parsear campos complejos (arrays y objetos)
     const parseField = (field, fieldName) => {
         try {
             const parsedField = JSON.parse(field);
@@ -323,100 +254,95 @@ const userPut = async (req, res) => {
         }
     };
 
-
-    // Parsear y validar responsibleDevices
-    if (req.body.responsibleDevices) {
-        updateFields.responsibleDevices = parseField(req.body.responsibleDevices, 'responsibleDevices');
-    }
-
-    // Transformar vacationDays en un array de fechas
     if (req.body.vacationDays) {
-        try {
-            const vacationDays = parseField(req.body.vacationDays, 'vacationDays');
-            updateFields.vacationDays = vacationDays.map((date) => {
-                const parsedDate = new Date(date);
-                if (isNaN(parsedDate)) {
-                    throw new Error(`Fecha no válida en vacationDays: ${date}`);
-                }
-                return parsedDate;
-            });
-        } catch (error) {
-            throw new ClientError(`Error al procesar vacationDays: ${error.message}`, 400);
-        }
+        updateFields.vacationDays = parseField(req.body.vacationDays, 'vacationDays').map((date) => {
+            const parsedDate = new Date(date);
+            if (isNaN(parsedDate)) throw new ClientError(`Fecha no válida en vacationDays: ${date}`, 400);
+            return parsedDate;
+        });
     }
 
-    // Transformar personalDays en un array de fechas
     if (req.body.personalDays) {
-        try {
-            const personalDays = parseField(req.body.personalDays, 'personalDays');
-            updateFields.personalDays = personalDays.map((date) => {
-                const parsedDate = new Date(date);
-                if (isNaN(parsedDate)) {
-                    throw new Error(`Fecha no válida en personalDays: ${date}`);
-                }
-                return parsedDate;
-            });
-        } catch (error) {
-            throw new ClientError(`Error al procesar personalDays: ${error.message}`, 400);
-        }
+        updateFields.personalDays = parseField(req.body.personalDays, 'personalDays').map((date) => {
+            const parsedDate = new Date(date);
+            if (isNaN(parsedDate)) throw new ClientError(`Fecha no válida en personalDays: ${date}`, 400);
+            return parsedDate;
+        });
     }
 
+    updateFields = {
+        ...updateFields,
+        firstName: req.body.firstName,
+        email: req.body.email,
+        role: req.body.role,
+        phone: req.body.phone,
+        dni: req.body.dni,
+        lastName: req.body.lastName,
+        employmentStatus: req.body.employmentStatus,
+        socialSecurityNumber: req.body.socialSecurityNumber,
+        bankAccountNumber: req.body.bankAccountNumber,
+    };
 
-    // Actualizar los campos del usuario con los datos del cuerpo de la solicitud
-    updateFields.firstName = req.body.firstName;
-    updateFields.email = req.body.email;
-    updateFields.role = req.body.role;
-    updateFields.phone = req.body.phone;
-    updateFields.dni = req.body.dni;
-    updateFields.lastName = req.body.lastName;
-    updateFields.employmentStatus = req.body.employmentStatus;
-    updateFields.socialSecurityNumber = req.body.socialSecurityNumber;
-    updateFields.bankAccountNumber = req.body.bankAccountNumber;
+    const folderId = process.env.GOOGLE_DRIVE_APPFILE;
 
-    // Validar y actualizar dispositiveNow
-    if (req.body.dispositiveNow !== undefined && req.body.dispositiveNow !== 'undefined') {
-        updateFields.dispositiveNow = req.body.dispositiveNow === 'null' ? null : req.body.dispositiveNow;
-    }
+    // Obtener los archivos existentes en la base de datos
+    const user = await User.findById(req.body._id).select('files');
+    const existingFiles = user.files || [];
 
-    // Crear un array para almacenar las promesas de subida de archivos
-    let fileUploadPromises = [];
+    if (files && files.length > 0) {
+        const newFiles = []; // Array para almacenar los nuevos archivos procesados
 
-    if (files) {
-        for (const fieldName in files) {
-            const fileArray = files[fieldName];
+        for (const file of files) {
+            const uniqueFileName = `${req.body._id}-${file.fieldname}.pdf`;
+            const fileTag = file.fieldname;
+            const description = `Archivo subido para ${fileTag}`;
+            const nameDateFile = file.fieldname + '-date';
+            let date = null;
 
-            // Verificar si fileArray existe y es un array antes de iterar
-            if (Array.isArray(fileArray)) {
-                for (const file of fileArray) {
-                    // Generar un nombre único para el archivo usando el ID del usuario, la clave del campo, y la fecha actual
-                    const uniqueFileName = `${req.body._id}-${fieldName}.pdf`;
+            if (req.body[nameDateFile]) {
+                const timestamp = Date.parse(req.body[nameDateFile]);
+                if (!isNaN(timestamp)) date = new Date(req.body[nameDateFile]);
+            }
 
-                    // Llamar a la función uploadFile y almacenar la promesa
-                    const uploadPromise = uploadFile(file, uniqueFileName);
-                    fileUploadPromises.push(uploadPromise);
-
-                    // Asociar el nombre del archivo subido al campo correspondiente en el usuario
-                    updateFields[fieldName] = uniqueFileName;
-                }
+            try {
+                // Subir el archivo a Google Drive
+                const fileDriveData=await uploadFileToDrive(file, folderId, uniqueFileName);
+                // Agregar el archivo al array de nuevos archivos
+                newFiles.push({
+                    fileName: fileDriveData.id,
+                    fileTag,
+                    description,
+                    date,
+                });
+            } catch (error) {
+                throw new ClientError(`Error al procesar el archivo ${file.fieldname}`, 500);
             }
         }
+
+        // Combinar los archivos existentes con los nuevos
+        const combinedFiles = [
+            ...existingFiles.filter((file) => !newFiles.some((newFile) => newFile.fileTag === file.fileTag)),
+            ...newFiles,
+        ];
+
+        updateFields.files = combinedFiles;
     }
 
-    // Esperar a que todos los archivos se suban (si los hay)
-    await Promise.all(fileUploadPromises);
+    // Realizar la actualización en la base de datos
+    try {
+        const updatedUser = await User.findOneAndUpdate(
+            { _id: req.body._id },
+            { $set: updateFields },
+            { new: true, runValidators: true }
+        );
 
-    // Realizar la actualización con findOneAndUpdate
-    const updatedUser = await User.findOneAndUpdate(
-        { _id: req.body._id },
-        { $set: updateFields },
-        { new: true, runValidators: true }
-    ).catch((e) => {
+        response(res, 200, updatedUser);
+    } catch (error) {
         throw new ClientError('Error al actualizar el usuario', 500);
-    });
-
-    // Responder con el usuario actualizado
-    response(res, 200, updatedUser);
+    }
 };
+
+// TODO PEDIR ARCHIVOS del usuario
 
 
 
@@ -460,10 +386,11 @@ const createPayroll = async (idUser, file, payrollYear, payrollMonth) => {
         }
 
         // Formatear el nombre del archivo
-        file['originalname'] = `${userAux.dni}_${payrollMonth}_${payrollYear}_${userAux.firstName}_${userAux.lastName}.pdf`;
+        const fileNameAux = `${userAux.dni}_${payrollMonth}_${payrollYear}_${userAux.firstName}_${userAux.lastName}.pdf`;
 
+        const folderId=process.env.GOOGLE_DRIVE_NOMINAS;
         // Subir archivo a Google Drive
-        const fileAux = await uploadFileToDrive(file, '1jQAvrTL7zasN1X5vpbX_bA2mH1eOghge');
+        const fileAux = await uploadFileToDrive(file, folderId, fileNameAux, true);
 
         if (fileAux) {
             // Crear objeto payroll
@@ -487,14 +414,7 @@ const createPayroll = async (idUser, file, payrollYear, payrollMonth) => {
     }
 };
 
-// Función para validar campos requeridos
-const validateRequiredFields = (body, fields) => {
-    for (const field of fields) {
-        if (!body[field]) {
-            throw new ClientError(`El campo ${field} es requerido`, 400);
-        }
-    }
-};
+
 
 const payroll = async (req, res) => {
     // Verificar campos generales requeridos
@@ -551,38 +471,37 @@ const payroll = async (req, res) => {
         }
     }
 };
+const changeDispositiveNow = async (user) => {
+    // Verifica si existe el array hiringPeriods
+    if (!user.hiringPeriods || user.hiringPeriods.length === 0) {
+      return user; // se devuelve sin cambios
+    }
+  
+    // Filtra únicamente los hiringPeriods activos
+    const activeHirings = user.hiringPeriods.filter((hp) => hp.active);
+  
+    // Si no hay ningún hiringPeriod activo, retornamos el user tal cual
+    if (!activeHirings || activeHirings.length === 0) {
+      return user;
+    }
+  
+    // 1. Ordenar los hiringPeriods activos por startDate (desc)
+    activeHirings.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+  
+    // 2. Asignar el device del hiringPeriod activo más reciente
+    const mostRecentDevice = activeHirings[0].device;
 
-// Función para convertir IDs dentro de los datos de contratación
-const convertIds = (hirings) => {
-    return hirings.map(hiring => {
-        // Validar y convertir position._id
-        if (!hiring.position) {
-            throw new ClientError('El campo position._id es requerido', 400);
-        }
-        hiring.position = new mongoose.Types.ObjectId(hiring.position);
-
-        // Validar y convertir device.id
-        if (!hiring.device) {
-            throw new ClientError('El campo device.id es requerido', 400);
-        }
-        hiring.device = new mongoose.Types.ObjectId(hiring.device);
-
-        // Validar y convertir leavePeriods.leaveType.id
-        if (Array.isArray(hiring.leavePeriods)) {
-            hiring.leavePeriods = hiring.leavePeriods.map(period => {
-                if (!period.leaveType || !period.leaveType) {
-                    throw new ClientError('El campo leaveType es requerido en leavePeriods', 400);
-                }
-                period.leaveType = new mongoose.Types.ObjectId(period.leaveType);
-                return period;
-            });
-        } else {
-            hiring.leavePeriods = []; // Manejar el caso en el que leavePeriods no sea un array
-        }
-
-        return hiring;
-    });
-};
+  
+    // 3. Actualizar en la base de datos usando findOneAndUpdate
+    const updatedUser = await User.findOneAndUpdate(
+      { _id: user._id },
+      { $set: { dispositiveNow: mostRecentDevice } },
+      { new: true }
+    );
+  
+    return updatedUser;
+  };
+  
 
 // Controlador principal
 const hirings = async (req, res) => {
@@ -658,7 +577,9 @@ const hirings = async (req, res) => {
     } else {
         throw new ClientError('El tipo no es valido', 400);
     }
-    response(res, 200, data)
+
+    const userChangeDispotive =await changeDispositiveNow(data)
+    response(res, 200, userChangeDispotive)
     // Responder con los datos actualizados
 };
 
@@ -673,4 +594,5 @@ module.exports = {
     getUsersFilter: catchAsync(getUsersFilter),
     payroll: catchAsync(payroll),
     hirings: catchAsync(hirings),
+    getFileUser:catchAsync(getFileUser)
 }

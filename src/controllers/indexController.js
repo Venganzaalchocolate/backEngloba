@@ -1,4 +1,4 @@
-const {postCreateUser, getUserID, getUsers, UserDeleteId, userPut, getUsersFilter, payroll, hirings}=require("./userController");
+const {postCreateUser, getUserID, getUsers, UserDeleteId, userPut, getUsersFilter, payroll, hirings, getFileUser}=require("./userController");
 const { login, validToken } = require("./loginController");
 const {tokenValid, tokenValidAdmin} = require("./authController");
 const { getUserCvsFilter, postCreateUserCv, getUserCvID, getUserCvs, UserCvDeleteId, UserCvPut } = require("./userCvController");
@@ -17,7 +17,7 @@ module.exports = {
     postCreateUser, getUserID, getUsers, UserDeleteId, userPut,getUsersFilter,
     login, validToken,
     tokenValid, tokenValidAdmin,
-    getUserCvsFilter, postCreateUserCv, getUserCvID, getUserCvs, UserCvDeleteId, UserCvPut, payroll, hirings,
+    getUserCvsFilter, postCreateUserCv, getUserCvID, getUserCvs, UserCvDeleteId, UserCvPut, payroll, hirings, getFileUser,
     uploadFile, listBucketContents, getFile, deleteFile,
     postUploadFile, deleteIdFile,
     postCreateBag, getBags, getBagID,bagDeactivateId, BagPut,getBagsFilter, BagPutDeleteUser,

@@ -33,6 +33,8 @@ const createProgramDevicesIndex = (programs) => {
                 index[device._id.toString()] = {
                     _id: device._id.toString(),
                     name: device.name,
+                    responsible: device.responsible,
+                    programId:program._id
                 };
             });
         }
@@ -66,7 +68,7 @@ const getEnums = async (req, res) => {
 const getEnumEmployers=async (req, res) => {
     let enumValues = {}
     enumValues['provinces'] = await Provinces.find();
-    enumValues['programs'] = await Program.find().select('name _id devices.name devices._id');
+    enumValues['programs'] = await Program.find().select('name _id devices.name devices._id devices.responsible');
     enumValues['status']= User.schema.path('employmentStatus').enumValues;
     enumValues['leavetype']=await Leavetype.find();
     enumValues['jobs']=await Jobs.find();

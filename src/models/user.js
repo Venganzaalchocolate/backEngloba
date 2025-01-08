@@ -183,12 +183,7 @@ const UserSchema = new Schema({
         default:  'en proceso de contratación'
     },
     dispositiveNow:{
-        _id: {
             type: Schema.Types.ObjectId, // ID del dispositivo
-        },
-        name: {
-            type: String // Nombre del dispositivo
-        }
     },
     // Periodos de contratación del empleado
     hiringPeriods: [PeriodSchema],
@@ -204,51 +199,13 @@ const UserSchema = new Schema({
     cv: {
         type: String
     },
-    // cursos
-    degree: {
-        type: [fileSchema]
-    },
-
-    // Certificado de Delitos Sexuales del empleado (no requerido) PDF
-    // esquema file de programs
-    sexualOffenseCertificate: {
-        type: String
-    },
-    // Modelo 145 del empleado (no requerido) PDF
-    model145: {
-        type: String
-    },
-    // Certificado de Prevención de Incendios del empleado (no requerido) FECHA
-    firePrevention: {
-        type: String
-    },
-    // Contrato del empleado (no requerido)
-    contract: {
-        type: String
-    },
-    // Vida laboral del empleado (no requerida)
-    employmentHistory: {
-        type: String
-    },
-    // Protocolo de Protección de Datos del empleado (no requerido)
-    dataProtection: {
-        type: String
-    },
-    // Canal Ético del empleado (no requerido)
-    ethicalChannel: {
-        type: String
-    },
-    // Copia del DNI del empleado (no requerida)
-    dniCopy: {
-        type: String
-    },
     // Nóminas del empleado
     payrolls: [PayrollSchema],
     // subida de archivos firmados
     // uploadFileSigned: pdf
     vacationDays:[Date],
     personalDays:[Date],
-    filesMiscelanea:[fileSchema]
+    files:[fileSchema]
 }, { timestamps: true });
 
 module.exports=mongoose.model('User', UserSchema)

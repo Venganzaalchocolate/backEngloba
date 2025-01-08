@@ -108,7 +108,7 @@ const validNumber=(texto, cero=false)=>{
     prevenirInyeccionCodigo,
     validText,
     validDecimalNumber,
-    validJobs
+    validJobs,
 
   };
 

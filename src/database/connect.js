@@ -1,6 +1,7 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 
+
 const connectToDatabase = async () => {
     try {
       const uri = `mongodb+srv://comunicacion:${process.env.PASS}@engloba.knu8mxl.mongodb.net/?retryWrites=true&w=majority&appName=${process.env.BBDDNAME}`;
@@ -11,6 +12,9 @@ const connectToDatabase = async () => {
       process.exit(1); // Finalizar el proceso en caso de error
     }
   };
+
+  
+
   
 
 module.exports = { connectToDatabase };
