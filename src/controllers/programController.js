@@ -1,5 +1,6 @@
 const { Program } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
+const mongoose = require('mongoose');
 
 // Crear programa con dispositivos
 const postCreateProgram = async (req, res) => {
@@ -62,7 +63,7 @@ const addDispositive = async (req, res) => {
     const newDevice = {
         name: req.body.name,
         address: req.body.address,
-        responsible: req.body.responsible || null, // Optional
+        responsible: req.body.responsible || [], // Optional
         contratoAdministracion: req.body.contratoAdministracion || [],
         autorizacionFuncionamiento: req.body.autorizacionFuncionamiento || [],
         seguros: req.body.seguros || [],
@@ -126,7 +127,7 @@ const updateDispositive = async (req, res) => {
     const updateText = {
         name: req.body.name || dispositive.name,
         address: req.body.address || dispositive.address,
-        responsible: (req.body.responsible && req.body.responsible!='delete')? req.body.responsible : (req.body.responsible && req.body.responsible=='delete')?null :dispositive.responsible,
+        responsible: (req.body.responsible && req.body.responsible != 'delete') ? req.body.responsible : (req.body.responsible && req.body.responsible == 'delete') ? null : dispositive.responsible,
         contratoAdministracion: req.body.contratoAdministracion || dispositive.contratoAdministracion,
         autorizacionFuncionamiento: req.body.autorizacionFuncionamiento || dispositive.autorizacionFuncionamiento,
         seguros: req.body.seguros || dispositive.seguros,
@@ -192,16 +193,57 @@ const deleteDispositive = async (req, res) => {
 };
 
 
-const getDispositiveResponsable= async (req, res) => {
-
-    
+const getDispositiveResponsable = async (req, res) => {
     if (!req.body._id) {
         throw new ClientError("Los datos no son correctos", 400);
     }
 
-    const programs = await Program.find({ 'devices.responsible': req.body._id }, { 'devices.$': 1 });
-    response(res, 200, programs);
+    const userId = new mongoose.Types.ObjectId(req.body._id);
+
+    // Pipeline que:
+    // 1. MATCH: Filtra los Program que tengan al usuario en cualquier device.responsible
+    // 2. PROJECT + $filter: Mantiene solo los devices donde figure ese userId en el array de responsables
+    const programs = await Program.aggregate([
+        {
+            $match: {
+                "devices.responsible": userId
+            }
+        },
+        {
+            $project: {
+                name: 1,
+                acronym: 1,
+                devices: {
+                    $filter: {
+                        input: "$devices",
+                        as: "device",
+                        cond: {
+                            // En lugar de "$$device.responsible", usamos $ifNull para devolver [] si es null
+                            $in: [
+                                userId,
+                                { $ifNull: ["$$device.responsible", []] }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+
+    ])
+
+    // Procesamos los datos para obtener el formato solicitado
+    const result = programs.flatMap(program =>
+        program.devices.map(device => ({
+            idProgram: program._id,
+            dispositiveName: device.name,
+            dispositiveId: device._id
+        }))
+    );
+
+    console.log(result)
+    response(res, 200, result);
 };
+
 
 
 module.exports = {
@@ -214,5 +256,5 @@ module.exports = {
     getDispositive: catchAsync(getDispositive),
     updateDispositive: catchAsync(updateDispositive),
     deleteDispositive: catchAsync(deleteDispositive),
-    getDispositiveResponsable:catchAsync(getDispositiveResponsable)
+    getDispositiveResponsable: catchAsync(getDispositiveResponsable)
 };

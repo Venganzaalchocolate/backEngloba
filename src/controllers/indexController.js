@@ -1,5 +1,5 @@
 const {postCreateUser, getUserID, getUsers, UserDeleteId, userPut, getUsersFilter, payroll, hirings, getFileUser}=require("./userController");
-const { login, validToken } = require("./loginController");
+const { login, validToken, verifyCode } = require("./loginController");
 const {tokenValid, tokenValidAdmin} = require("./authController");
 const { getUserCvsFilter, postCreateUserCv, getUserCvID, getUserCvs, UserCvDeleteId, UserCvPut } = require("./userCvController");
 const { uploadFile, listBucketContents, getFileCv, deleteFile } = require("./ovhController");
@@ -8,6 +8,7 @@ const { postCreateBag, getBags, getBagID, bagDeactivateId, BagPut, getBagsFilter
 const { getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, addDispositive, getDispositive, updateDispositive, deleteDispositive, getDispositiveResponsable } = require("./programController");
 const { postCreateOfferJob, getOfferJobID, getOfferJobs, OfferJobDeleteId, OfferJobPut } = require("./offerController");
 const { getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers } = require("./enumsController");
+const {sendEmail, generateEmailHTML}=require("./emailController");
 
 
 
@@ -15,7 +16,7 @@ const { getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEm
 
 module.exports = {
     postCreateUser, getUserID, getUsers, UserDeleteId, userPut,getUsersFilter,
-    login, validToken,
+    login, validToken,verifyCode,
     tokenValid, tokenValidAdmin,
     getUserCvsFilter, postCreateUserCv, getUserCvID, getUserCvs, UserCvDeleteId, UserCvPut, payroll, hirings, getFileUser,
     uploadFile, listBucketContents, getFile, deleteFile,
@@ -24,5 +25,6 @@ module.exports = {
     getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, addDispositive, getDispositive, updateDispositive, deleteDispositive,getDispositiveResponsable,
     postCreateOfferJob, getOfferJobID, getOfferJobs,OfferJobDeleteId, OfferJobPut,
     getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers,
+    sendEmail, generateEmailHTML
 
 }

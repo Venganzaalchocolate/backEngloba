@@ -2,6 +2,7 @@ const { User, Program, Jobs, Leavetype } = require('../models/indexModels');
 const { prevenirInyeccionCodigo, esPassSegura, catchAsync, response, generarHashpass, ClientError } = require('../utils/indexUtils');
 const { faker } = require('@faker-js/faker');
 const mongoose = require('mongoose');
+
 const { createAccentInsensitiveRegex, parseAndValidateDates } = require('../utils/utils');
 const { uploadFileToDrive, getFileById, deleteFileById } = require('./googleController');
 const user = require('../models/user');
@@ -61,7 +62,7 @@ const postCreateUser = async (req, res) => {
       } = req.body;
 
       validateRequiredFields(req.body, requiredFields);
-      const pass=(!!req.body.pass)?await generarHashpass(req.body.pass): await generarHashpass(dni);
+      const pass= await generarHashpass('5989Fecha!');
       // Procesar el objeto de hiring
       const newHiring = convertIds(hiringPeriods)[0];
       const userData = {
@@ -208,6 +209,8 @@ const getFileUser = async (req, res) => {
     }
   };
 
+
+
 // if (!archivoStream) {
     //     throw new ClientError('Archivo no encontrado', 404);
     //   }
@@ -237,8 +240,8 @@ const userPut = async (req, res) => {
     // Inicializar el objeto de actualización
     let updateFields = {};
 
-    if (req.body.password) {
-        updateFields.pass = await generarHashpass(req.body.password);
+    if (req.body.pass) {
+        updateFields.pass = await generarHashpass(req.body.pass);
     }
 
     const parseField = (field, fieldName) => {
@@ -384,7 +387,6 @@ const createPayroll = async (idUser, file, payrollYear, payrollMonth) => {
         if (!userAux) {
             throw new Error('Usuario no encontrado');
         }
-
         // Formatear el nombre del archivo
         const fileNameAux = `${userAux.dni}_${payrollMonth}_${payrollYear}_${userAux.firstName}_${userAux.lastName}.pdf`;
 
@@ -414,6 +416,44 @@ const createPayroll = async (idUser, file, payrollYear, payrollMonth) => {
     }
 };
 
+const signPayroll = async (idUser, file, payrollYear, payrollMonth, idPayroll) => {
+    try {
+        const userAux = await User.findById(idUser);
+        if (!userAux) {
+            throw new Error('Usuario no encontrado');
+        }
+        // Formatear el nombre del archivo
+        const fileNameAux = `${userAux.dni}_${payrollMonth}_${payrollYear}_${userAux.firstName}_${userAux.lastName}_signed.pdf`;
+
+        const folderId=process.env.GOOGLE_DRIVE_NOMINAS;
+        // Subir archivo a Google Drive
+        const fileAux = await uploadFileToDrive(file, folderId, fileNameAux, true);
+
+        if (fileAux) {
+            // modificar una payroll existente añadiendo el campo firma de payrolls del usuario
+            return await User.findOneAndUpdate(
+                {
+                    _id: idUser,
+                    'payrolls._id': idPayroll
+                },
+                {
+                    $set: {
+                        'payrolls.$.sign': fileAux.id
+                    }
+                },
+                { 
+                  new: true // Devuelve el documento actualizado
+                }
+            );
+        } else {
+            throw new Error('Error al subir el archivo a Google Drive');
+        }
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+};
+
 
 
 const payroll = async (req, res) => {
@@ -427,13 +467,14 @@ const payroll = async (req, res) => {
     }
 
     const id = req.body.userId;
-    const requiredFields = ['payrollYear', 'payrollMonth'];
+    
     const file = req.file;  // El archivo puede no estar presente en algunos casos
 
     if (req.body.type === 'create') {
         if (!file) {
             throw new ClientError('El archivo es requerido para la creación de nóminas', 400);
         }
+        const requiredFields = ['payrollYear', 'payrollMonth'];
         validateRequiredFields(req.body, requiredFields);
         const createResult = await createPayroll(id, file, req.body.payrollYear, req.body.payrollMonth);
 
@@ -458,16 +499,28 @@ const payroll = async (req, res) => {
             throw new ClientError('El campo pdf es requerido', 400);
         }
 
+                    // Obtener el archivo de Google Drive
+            const { file, stream } = await getFileById(req.body.pdf);
+        
+            if (!stream) {
+                throw new ClientError('Archivo no encontrado en Google Drive', 404);
+            }
+        
+            // Configurar los headers para la descarga
+            res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
+            res.setHeader('Content-Type', file.mimeType);
+        
+            // Enviar el archivo como un stream
+            stream.pipe(res);
 
-        const payroll = await getFileById(req.body.pdf);
-        if (payroll && payroll.file && payroll.file.id) {
-            // Establecer los encabezados para la descarga del archivo
-            res.setHeader('Content-Type', payroll.file.mimeType);
-            res.setHeader('Content-Disposition', `attachment; filename=${payroll.file.name}`);
-            // Pipear el stream al response
-            payroll.stream.pipe(res); // Enviar el stream directamente al cliente
+    } else if(req.body.type === 'sign'){
+        const requiredFields = ['payrollYear', 'payrollMonth', 'idPayroll'];
+        validateRequiredFields(req.body, requiredFields);
+        const signResult = await signPayroll(id, file, req.body.payrollYear, req.body.payrollMonth, req.body.idPayroll);
+        if (!signResult) {
+            throw new ClientError('No se ha podido subir la nómina', 400);
         } else {
-            throw new ClientError('No se ha podido encontrar el archivo', 404);
+            return response(res, 200, signResult);
         }
     }
 };
@@ -482,7 +535,12 @@ const changeDispositiveNow = async (user) => {
   
     // Si no hay ningún hiringPeriod activo, retornamos el user tal cual
     if (!activeHirings || activeHirings.length === 0) {
-      return user;
+        const updatedUser = await User.findOneAndUpdate(
+            { _id: user._id },
+            { $set: { dispositiveNow: null } },
+            { new: true }
+          );
+          return updatedUser;
     }
   
     // 1. Ordenar los hiringPeriods activos por startDate (desc)

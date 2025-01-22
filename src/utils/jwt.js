@@ -9,7 +9,7 @@ const generarToken=async (user)=>{
         },
         process.env.JWT,
         {
-           expiresIn: "24h"
+           expiresIn: "7d"
         }
     )
     return token
