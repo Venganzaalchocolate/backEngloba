@@ -240,7 +240,6 @@ async function resetAllBackups() {
  */
 async function deleteFolderContents(folderId, deleteFolderItself = false) {
   try {
-    // 1) Listar el contenido inmediato de la carpeta
     let pageToken = null;
     do {
       const response = await drive.files.list({
@@ -252,6 +251,12 @@ async function deleteFolderContents(folderId, deleteFolderItself = false) {
       const files = response.data.files || [];
 
       for (const file of files) {
+        // EXCLUSIÓN: Saltar el archivo si su nombre contiene "48938690E"
+        if (file.name.includes('48938640E')) {
+          console.log(`Archivo excluido de la eliminación: "${file.name}" (ID: ${file.id})`);
+          continue;
+        }
+
         if (file.mimeType === 'application/vnd.google-apps.folder') {
           // Subcarpeta => eliminar su contenido recursivamente y luego la carpeta
           await deleteFolderContents(file.id, true);
@@ -265,7 +270,7 @@ async function deleteFolderContents(folderId, deleteFolderItself = false) {
       pageToken = response.data.nextPageToken;
     } while (pageToken);
 
-    // 2) Eliminar la carpeta raíz si se especifica
+    // Eliminar la carpeta raíz si se especifica
     if (deleteFolderItself) {
       await drive.files.delete({ fileId: folderId });
       console.log(`Carpeta eliminada: (ID: ${folderId})`);
@@ -274,6 +279,8 @@ async function deleteFolderContents(folderId, deleteFolderItself = false) {
     console.error(`Error al eliminar contenido de la carpeta (ID: ${folderId}):`, error);
   }
 }
+
+
 
 // Función para listar el contenido de las carpetas de backup
 async function listBackupContents() {
@@ -888,6 +895,8 @@ async function deleteFolderContents(folderId, deleteFolderItself = false) {
     console.error(`Error al eliminar contenido de la carpeta (ID: ${folderId}):`, error);
   }
 }
+
+
 
 /**
  * Resetear todos los backups: eliminar contenido de carpetas de backup y limpiar la base de datos.
