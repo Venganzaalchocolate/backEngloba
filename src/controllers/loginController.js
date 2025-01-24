@@ -38,6 +38,7 @@ const login = async (req, res) => {
         const passAux = req.body.password
         if (!await comprobarPass(passAux, user.pass)) throw new ClientError("La contraseña no es correcta", 403);
         const token = await generarToken(user)
+
         // Responde con la lista de usuario + el token generado y código de estado 200 (OK)
         const respuesta = { user, token }
         response(res, 200, respuesta);

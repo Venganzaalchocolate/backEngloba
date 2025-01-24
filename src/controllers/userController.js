@@ -62,13 +62,11 @@ const postCreateUser = async (req, res) => {
       } = req.body;
 
       validateRequiredFields(req.body, requiredFields);
-      const pass= await generarHashpass('5989Fecha!');
       // Procesar el objeto de hiring
       const newHiring = convertIds(hiringPeriods)[0];
       const userData = {
         dni,
         role,
-        pass,
         firstName,
         lastName,
         email,
@@ -80,7 +78,7 @@ const postCreateUser = async (req, res) => {
         employmentStatus,
       };
 
-      const newUser=await User.create(userData).catch((error)=>error)
+      const newUser=await User.create(userData)
 
       if(newUser.code==11000){
         const [[key, value]] = Object.entries(newUser.keyValue);

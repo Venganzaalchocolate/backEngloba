@@ -142,12 +142,11 @@ const PayrollSchema = new Schema({
 const UserSchema = new Schema({
     pass:{
         type: String,
-        required: true,
     },
     role:{
         type: String,
         default: 'user',
-        enum: ['global', 'root', 'auditor', 'employer', 'responsable'],
+        enum: ['global', 'root', 'auditor', 'employee', 'responsable'],
         require:true,
     },
     // DNI del empleado
