@@ -201,7 +201,6 @@ const getFileUser = async (req, res) => {
       if (error instanceof ClientError) {
         response(res, error.statusCode, { error: true, message: error.message });
       } else {
-        console.error('Error interno:', error);
         response(res, 500, { error: true, message: 'Error interno del servidor' });
       }
     }
@@ -409,7 +408,6 @@ const createPayroll = async (idUser, file, payrollYear, payrollMonth) => {
             throw new Error('Error al subir el archivo a Google Drive');
         }
     } catch (error) {
-        console.error(error);
         return null;
     }
 };
@@ -447,7 +445,6 @@ const signPayroll = async (idUser, file, payrollYear, payrollMonth, idPayroll) =
             throw new Error('Error al subir el archivo a Google Drive');
         }
     } catch (error) {
-        console.error(error);
         return null;
     }
 };

@@ -130,9 +130,8 @@ async function sendEmail(to,subject,text,html) {
       html
     });
 
-    console.log('Correo enviado:', info.messageId);
   } catch (error) {
-    console.error('Error al enviar correo:', error);
+    console.error('Error al enviar correo');
   }
 }
 

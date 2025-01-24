@@ -141,9 +141,8 @@ const updateUsersDispositiveNow = async () => {
             { $set: { dispositiveNow: newDispositiveNow } } // Modificar el campo dispositiveNow
         );
 
-        console.log(`${result.modifiedCount} usuarios actualizados con el nuevo dispositiveNow.`);
     } catch (error) {
-        console.error("Error al actualizar dispositiveNow:", error);
+        console.error("Error al actualizar dispositiveNow");
     }
 };
 
