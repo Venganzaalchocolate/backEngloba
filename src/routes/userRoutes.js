@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router()
-const {postCreateUser, getUserID, getUsers, UserDeleteId, userPut, tokenValid, tokenValidAdmin, getUsersFilter, payroll, hirings, getFileUser} = require('../controllers/indexController')
+const {postCreateUser,getUsersCvsIDs, getUserID, getUsers, UserDeleteId, userPut, tokenValid, tokenValidAdmin, getUsersFilter, payroll, hirings, getFileUser} = require('../controllers/indexController')
 const bodyParser = require('body-parser');
 const urlencodedParser = bodyParser.urlencoded({ extended: false })
 // Configura `multer` para almacenamiento en memoria
@@ -9,7 +9,7 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 router.post("/users", urlencodedParser, tokenValid, getUsers)
-router.get("/user/:id", urlencodedParser,tokenValid, getUserID)
+router.post("/userscv", urlencodedParser,tokenValid, getUsersCvsIDs)
 router.delete("/deleteuser/:id", urlencodedParser, tokenValid,UserDeleteId)
 router.post('/filteruser', urlencodedParser, tokenValid, getUsersFilter)
 router.post("/payroll", upload.single('pdf'), payroll)

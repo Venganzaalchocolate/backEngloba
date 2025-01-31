@@ -88,14 +88,18 @@ const getUserCvsFilter = async (req, res) => {
 
 
 //busca un usuario por ID
-const getUserCvID = async (req, res) => {
+const getUsersCvsIDs = async (req, res) => {
     // Obtén el ID del parámetro de la solicitud
-    const id = req.params.id;
+    const userIds = req.body.ids;
     // Utiliza el método findById() de Mongoose para buscar un usuario por su ID
     // Si no se encuentra el usuario, responde con un código de estado 404 (Not Found)
-    const usuario = await UserCv.findById(id).catch(error => { throw new ClientError('Usuario no encontrado', 404) });
+    const usuarios = await UserCv.find({ _id: { $in: userIds } })
     // Responde con el usuario encontrado y código de estado 200 (OK)
-    response(res, 200, usuario);
+    response(res, 200, usuarios);
+}
+
+const getUserCvID=()=>{
+
 }
 
 // borrar un usuario
@@ -194,4 +198,5 @@ module.exports = {
     UserCvDeleteId: catchAsync(UserCvDeleteId),
     UserCvPut: catchAsync(UserCvPut),
     getUserCvsFilter: catchAsync(getUserCvsFilter),
+    getUsersCvsIDs:catchAsync(getUsersCvsIDs)
 }
