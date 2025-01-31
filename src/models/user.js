@@ -204,7 +204,10 @@ const UserSchema = new Schema({
     // uploadFileSigned: pdf
     vacationDays:[Date],
     personalDays:[Date],
-    files:[fileSchema]
+    files:[fileSchema],
+    notes:{
+        type: String,
+    },
 }, { timestamps: true });
 
 module.exports=mongoose.model('User', UserSchema)

@@ -23,24 +23,39 @@ const createSubcategoriesIndex = (x) => {
     return index;
 };
 
-// Función para crear índice de dispositivos
+
+// crea un índice que tiene entradas tanto para programs como para devices
 const createProgramDevicesIndex = (programs) => {
     const index = {};
+  
     programs.forEach(program => {
-        if (Array.isArray(program.devices)) {
-            // Crear un diccionario donde la clave es el ID del dispositivo y el valor incluye id y name
-            program.devices.forEach(device => {
-                index[device._id.toString()] = {
-                    _id: device._id.toString(),
-                    name: device.name,
-                    responsible: device.responsible,
-                    programId:program._id
-                };
-            });
-        }
+      // Primero, creamos un registro donde la clave es el "programId"
+      index[program._id.toString()] = {
+        _id: program._id.toString(),
+        type: "program",
+        name: program.name,
+        responsible: program.responsible, // responsables del PROGRAMA
+        devicesIds: program.devices.map(d => d._id.toString()) // para saber qué devices pertenecen
+        // ... más campos si deseas
+      };
+  
+      // Luego, creamos registros para cada device
+      if (Array.isArray(program.devices)) {
+        program.devices.forEach(device => {
+          index[device._id.toString()] = {
+            _id: device._id.toString(),
+            type: "device",
+            name: device.name,
+            responsible: device.responsible,
+            coordinators: device.coordinators,
+            programId: program._id.toString()
+            // ... más campos si necesitas
+          };
+        });
+      }
     });
     return index;
-};
+  };
 
 const getEnums = async (req, res) => {
     let enumValues = {}
@@ -68,7 +83,7 @@ const getEnums = async (req, res) => {
 const getEnumEmployers=async (req, res) => {
     let enumValues = {}
     enumValues['provinces'] = await Provinces.find();
-    enumValues['programs'] = await Program.find().select('name _id devices.name devices._id devices.responsible');
+    enumValues['programs'] = await Program.find().select('name _id responsible devices.name devices._id devices.responsible devices.coordinators');
     enumValues['status']= User.schema.path('employmentStatus').enumValues;
     enumValues['leavetype']=await Leavetype.find();
     enumValues['jobs']=await Jobs.find();

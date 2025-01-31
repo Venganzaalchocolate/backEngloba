@@ -29,11 +29,18 @@ const deviceSchema = new Schema({
     responsible: { 
         type: [Schema.Types.ObjectId],
         ref: 'User',
-        required: false
+        required: false,
+        default: []
     },
     province:{
         type:Schema.Types.ObjectId,
         ref:'Provinces',
+    },
+    coordinators:{
+        type: [Schema.Types.ObjectId],
+        ref: 'User',
+        required: false,
+        default: []
     },
     contratoAdministracion: [fileSchema],
     autorizacionFuncionamiento: [fileSchema],
@@ -66,6 +73,12 @@ const deviceSchema = new Schema({
 
 
 const programSchema = new Schema({
+    responsible: { 
+        type: [Schema.Types.ObjectId],
+        ref: 'User',
+        required: false,
+        default: []
+    },
     funding: { 
         type: Schema.Types.ObjectId,
         ref: 'Finantial'

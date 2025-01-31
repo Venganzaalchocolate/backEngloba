@@ -40,6 +40,10 @@ const userCv = mongoose.Schema({
         required: true,
         unique:true
     },
+    dni:{
+        type: String,
+        unique:true
+    },
     jobs:{
         type: [String],
         require:true,

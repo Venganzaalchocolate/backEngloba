@@ -194,56 +194,351 @@ const deleteDispositive = async (req, res) => {
 
 
 const getDispositiveResponsable = async (req, res) => {
+    // Verificamos que el request tiene un _id en el body. Si no, lanzamos un error controlado.
     if (!req.body._id) {
-        throw new ClientError("Los datos no son correctos", 400);
+      throw new ClientError("Los datos no son correctos", 400);
     }
-
+  
+    // Convertimos el _id del usuario en un ObjectId de MongoDB para poder hacer la consulta.
     const userId = new mongoose.Types.ObjectId(req.body._id);
-
-    // Pipeline que:
-    // 1. MATCH: Filtra los Program que tengan al usuario en cualquier device.responsible
-    // 2. PROJECT + $filter: Mantiene solo los devices donde figure ese userId en el array de responsables
+  
+    // Ejecutamos una agregación en la colección Program para encontrar los programas en los que el usuario tiene un rol.
     const programs = await Program.aggregate([
-        {
-            $match: {
-                "devices.responsible": userId
-            }
-        },
-        {
-            $project: {
-                name: 1,
-                acronym: 1,
-                devices: {
-                    $filter: {
-                        input: "$devices",
-                        as: "device",
-                        cond: {
-                            // En lugar de "$$device.responsible", usamos $ifNull para devolver [] si es null
-                            $in: [
-                                userId,
-                                { $ifNull: ["$$device.responsible", []] }
-                            ]
-                        }
-                    }
-                }
-            }
+      {
+        // Filtramos los programas donde el usuario:
+        // - Es responsable de algún dispositivo (devices.responsible)
+        // - Es coordinador de algún dispositivo (devices.coordinators)
+        // - Es responsable del programa (responsible)
+        $match: {
+          $or: [
+            { "devices.responsible": userId },
+            { "devices.coordinators": userId },
+            { responsible: userId }
+          ]
         }
-
-    ])
-
-    // Procesamos los datos para obtener el formato solicitado
+      },
+      {
+        // Proyectamos solo los campos necesarios para la respuesta
+        $project: {
+          name: 1,      // Nombre del programa
+          acronym: 1,   // Acrónimo del programa
+          // Booleano que indica si este usuario es responsable del programa.
+          isProgramResponsible: {
+            $cond: {
+              if: { $in: [userId, { $ifNull: ["$responsible", []] }] },
+              then: true,
+              else: false
+            }
+          },
+          // Filtramos solo los dispositivos donde el usuario es responsable o coordinador
+          // y añadimos en cada dispositivo dos campos booleanos:
+          //   isDeviceResponsible   -> true si userId ∈ device.responsible
+          //   isDeviceCoordinator  -> true si userId ∈ device.coordinators
+          devices: {
+            $map: {
+              input: {
+                $filter: {
+                  input: "$devices",
+                  as: "dev",
+                  cond: {
+                    $or: [
+                      { $in: [userId, { $ifNull: ["$$dev.responsible", []] }] }, 
+                      { $in: [userId, { $ifNull: ["$$dev.coordinators", []] }] }
+                    ]
+                  }
+                }
+              },
+              as: "filteredDevice",
+              in: {
+                _id: "$$filteredDevice._id",
+                name: "$$filteredDevice.name",
+                isDeviceResponsible: {
+                  $in: [userId, { $ifNull: ["$$filteredDevice.responsible", []] }]
+                },
+                isDeviceCoordinator: {
+                  $in: [userId, { $ifNull: ["$$filteredDevice.coordinators", []] }]
+                }
+              }
+            }
+          }
+        }
+      }
+    ]);
+  
+    // Mapeamos los datos obtenidos para estructurar la respuesta final
     const result = programs.flatMap(program =>
-        program.devices.map(device => ({
-            idProgram: program._id,
-            dispositiveName: device.name,
-            dispositiveId: device._id
-        }))
+      (program.devices.length > 0 ? program.devices : [{}]).map(device => ({
+        idProgram: program._id,                  // ID del programa
+        programName: program.name,               // Nombre del programa
+        programAcronym: program.acronym,         // Acrónimo del programa
+        isProgramResponsible: program.isProgramResponsible,  // Booleano
+        dispositiveName: device.name || null,    // Nombre del dispositivo (si existe)
+        dispositiveId: device._id || null,       // ID del dispositivo (si existe)
+        isDeviceResponsible: device.isDeviceResponsible || false,
+        isDeviceCoordinator: device.isDeviceCoordinator || false
+      }))
     );
-
-    console.log(result)
+  
+    // Enviamos la respuesta al cliente con código 200 y los datos procesados
     response(res, 200, result);
+  };
+
+
+  
+
+  const handleCoordinators = async (req, res) => {
+  
+    const { action, deviceId, programId, coordinators = [], coordinatorId } = req.body;
+    console.log("-> Datos recibidos:", {
+      action,
+      programId,
+      deviceId,
+      coordinators,
+      coordinatorId
+    });
+  
+    // Validaciones mínimas
+    if (!action || !deviceId || !programId) {
+      throw new Error("Faltan datos: 'action', 'programId' o 'deviceId'.");
+    }
+  
+    let updatedProgram = null;
+    let deviceFound = null;
+  
+    switch (action) {
+  
+      /**
+       * LISTAR coordinadores
+       */
+      case "list": {
+        const program = await Program.findOne(
+          { _id: programId, "devices._id": deviceId },
+          { "devices.$": 1 } // Proyectar solo el subdocumento que coincida
+        ).lean();
+  
+  
+        if (!program || !program.devices || program.devices.length === 0) {
+          throw new Error("No se encontró el dispositivo en el programa.");
+        }
+  
+        // El device está en program.devices[0]
+        deviceFound = program.devices[0];
+  
+        return response(res, 200, 
+          deviceFound.coordinators
+        );
+      }
+  
+      /**
+       * AÑADIR coordinadores
+       */
+      case "add": {
+        console.log("[ADD] -> AÑADIR coordinadores al dispositivo:", deviceId);
+        const newCoordinators = Array.isArray(coordinators) ? coordinators : [coordinators];
+        console.log("[ADD] -> newCoordinators:", newCoordinators);
+  
+        updatedProgram = await Program.findOneAndUpdate(
+          { _id: programId, "devices._id": deviceId },
+          { 
+            $addToSet: { 
+              "devices.$.coordinators": { $each: newCoordinators } 
+            } 
+          },
+          { new: true }
+        );
+  
+  
+        if (!updatedProgram) {
+          throw new Error("No se encontró el programa o el dispositivo para añadir coordinadores.");
+        }
+  
+        deviceFound = updatedProgram.devices.find(
+          (dev) => dev._id.toString() === deviceId
+        );
+  
+        return response(res, 200, deviceFound);
+      }
+  
+      /**
+       * ACTUALIZAR (reemplazar) la lista completa de coordinadores
+       */
+      case "update": {
+        console.log("[UPDATE] -> Reemplazar la lista de coordinadores para deviceId =", deviceId);
+        const updatedCoordinators = Array.isArray(coordinators) ? coordinators : [coordinators];
+        console.log("[UPDATE] -> updatedCoordinators:", updatedCoordinators);
+  
+        updatedProgram = await Program.findOneAndUpdate(
+          { _id: programId, "devices._id": deviceId },
+          { 
+            $set: { 
+              "devices.$.coordinators": updatedCoordinators 
+            }
+          },
+          { new: true }
+        );
+  
+  
+        if (!updatedProgram) {
+          throw new Error("No se encontró el programa o el dispositivo para actualizar.");
+        }
+  
+        deviceFound = updatedProgram.devices.find(
+          (dev) => dev._id.toString() === deviceId
+        );
+  
+        return response(res, 200, deviceFound);
+      }
+  
+      /**
+       * ELIMINAR un coordinador específico
+       */
+      case "remove": {
+        if (!coordinatorId) {
+          throw new Error("Falta 'coordinatorId' para eliminar el coordinador.");
+        }
+  
+        updatedProgram = await Program.findOneAndUpdate(
+          { _id: programId, "devices._id": deviceId },
+          { 
+            $pull: { 
+              "devices.$.coordinators": coordinatorId 
+            } 
+          },
+          { new: true }
+        );
+  
+        if (!updatedProgram) {
+          throw new Error("No se encontró el programa o el dispositivo para eliminar el coordinador.");
+        }
+  
+        deviceFound = updatedProgram.devices.find(
+          (dev) => dev._id.toString() === deviceId
+        );
+  
+        return response(res, 200, deviceFound);
+      }
+  
+      /**
+       * ACCIÓN NO RECONOCIDA
+       */
+      default: {
+        throw new Error(`La acción '${action}' no está soportada.`);
+      }
+    }
+  };
+
+ // Controlador que gestiona responsables tanto de un PROGRAM como de un DEVICE.
+// Asume que en tu esquema "programSchema", "responsible" es [ObjectId] a nivel de programa
+// y "devices.responsible" es [ObjectId] a nivel de dispositivo.
+
+const handleResponsibles = async (req, res) => {
+  const { type, action, programId, deviceId, responsible = [], responsibleId } = req.body;
+  if (!type || !action || !programId) throw new Error("Faltan 'type', 'action' o 'programId'.");
+  if (type === "device" && !deviceId) throw new Error("Falta 'deviceId' para gestionar responsables de dispositivo.");
+
+  let updatedProgram, foundProgram, selectedDevice, dataToReturn;
+
+  switch (type) {
+    // =========== GESTIÓN DE RESPONSABLES EN PROGRAMA ===========
+    case "program":
+      switch (action) {
+        case "list":
+          foundProgram = await Program.findById(programId);
+          if (!foundProgram) throw new Error("No se encontró el programa.");
+          dataToReturn = foundProgram;
+          break;
+        case "add":
+          // Aseguramos array
+          const newResponsibles = Array.isArray(responsible) ? responsible : [responsible];
+          updatedProgram = await Program.findByIdAndUpdate(
+            programId,
+            { $addToSet: { responsible: { $each: newResponsibles } } },
+            { new: true }
+          );
+          if (!updatedProgram) throw new Error("No se encontró el programa para añadir responsables.");
+          dataToReturn = updatedProgram;
+          break;
+        case "update":
+          const updatedResponsibles = Array.isArray(responsible) ? responsible : [responsible];
+          updatedProgram = await Program.findByIdAndUpdate(
+            programId,
+            { $set: { responsible: updatedResponsibles } },
+            { new: true }
+          );
+          if (!updatedProgram) throw new Error("No se encontró el programa para actualizar.");
+          dataToReturn = updatedProgram;
+          break;
+        case "remove":
+          if (!responsibleId) throw new Error("Falta 'responsibleId' para eliminar el responsable.");
+          updatedProgram = await Program.findByIdAndUpdate(
+            programId,
+            { $pull: { responsible: responsibleId } },
+            { new: true }
+          );
+          if (!updatedProgram) throw new Error("No se encontró el programa para eliminar el responsable.");
+          dataToReturn = updatedProgram;
+          break;
+        default:
+          throw new Error(`Acción '${action}' no soportada para 'program'.`);
+      }
+      break;
+
+    // =========== GESTIÓN DE RESPONSABLES EN DISPOSITIVO ===========
+    case "device":
+      switch (action) {
+        case "list":
+          foundProgram = await Program.findOne({ _id: programId, "devices._id": deviceId });
+          if (!foundProgram) throw new Error("No se encontró el programa.");
+          selectedDevice = foundProgram.devices.find(dev => dev._id.toString() === deviceId);
+          if (!selectedDevice) throw new Error("No se encontró el dispositivo en el programa.");
+          dataToReturn = selectedDevice;
+          break;
+        case "add":
+          const newRespsDevice = Array.isArray(responsible) ? responsible : [responsible];
+          updatedProgram = await Program.findOneAndUpdate(
+            { _id: programId, "devices._id": deviceId },
+            { $set: { "devices.$.responsible": updatedRespsDevice } },
+            { new: true }
+          );
+          if (!updatedProgram) throw new Error("No se encontró el programa/dispositivo para añadir responsables.");
+          dataToReturn = updatedProgram.devices.find(dev => dev._id.toString() === deviceId);
+          break;
+        case "update":
+          const updatedRespsDevice = Array.isArray(responsible) ? responsible : [responsible];
+          updatedProgram = await Program.findOneAndUpdate(
+            { _id: programId, "devices._id": deviceId },
+            { $set: { "devices.$.responsible": updatedRespsDevice } },
+            { new: true }
+          );
+          if (!updatedProgram) throw new Error("No se encontró el programa/dispositivo para actualizar.");
+          dataToReturn = updatedProgram.devices.find(dev => dev._id.toString() === deviceId);
+          break;
+        case "remove":
+          if (!responsibleId) throw new Error("Falta 'responsibleId' para eliminar el responsable.");
+          updatedProgram = await Program.findOneAndUpdate(
+            { _id: programId, "devices._id": deviceId },
+            { $pull: { "devices.$.responsible": responsibleId } },
+            { new: true }
+          );
+          if (!updatedProgram) throw new Error("No se encontró el programa/dispositivo para eliminar el responsable.");
+          dataToReturn = updatedProgram.devices.find(dev => dev._id.toString() === deviceId);
+          break;
+        default:
+          throw new Error(`Acción '${action}' no soportada para 'device'.`);
+      }
+      break;
+
+    default:
+      throw new Error(`Tipo '${type}' no soportado (debe ser 'program' o 'device').`);
+  }
+
+  return response(res, 200, dataToReturn);
 };
 
+
+  
+
+  
 
 
 module.exports = {
@@ -256,5 +551,7 @@ module.exports = {
     getDispositive: catchAsync(getDispositive),
     updateDispositive: catchAsync(updateDispositive),
     deleteDispositive: catchAsync(deleteDispositive),
-    getDispositiveResponsable: catchAsync(getDispositiveResponsable)
+    getDispositiveResponsable: catchAsync(getDispositiveResponsable),
+    handleCoordinators:catchAsync(handleCoordinators),
+    handleResponsibles:catchAsync(handleResponsibles)
 };
