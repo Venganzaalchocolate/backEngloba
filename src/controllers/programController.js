@@ -289,13 +289,6 @@ const getDispositiveResponsable = async (req, res) => {
   const handleCoordinators = async (req, res) => {
   
     const { action, deviceId, programId, coordinators = [], coordinatorId } = req.body;
-    console.log("-> Datos recibidos:", {
-      action,
-      programId,
-      deviceId,
-      coordinators,
-      coordinatorId
-    });
   
     // Validaciones mínimas
     if (!action || !deviceId || !programId) {
@@ -333,9 +326,7 @@ const getDispositiveResponsable = async (req, res) => {
        * AÑADIR coordinadores
        */
       case "add": {
-        console.log("[ADD] -> AÑADIR coordinadores al dispositivo:", deviceId);
         const newCoordinators = Array.isArray(coordinators) ? coordinators : [coordinators];
-        console.log("[ADD] -> newCoordinators:", newCoordinators);
   
         updatedProgram = await Program.findOneAndUpdate(
           { _id: programId, "devices._id": deviceId },
@@ -363,9 +354,7 @@ const getDispositiveResponsable = async (req, res) => {
        * ACTUALIZAR (reemplazar) la lista completa de coordinadores
        */
       case "update": {
-        console.log("[UPDATE] -> Reemplazar la lista de coordinadores para deviceId =", deviceId);
         const updatedCoordinators = Array.isArray(coordinators) ? coordinators : [coordinators];
-        console.log("[UPDATE] -> updatedCoordinators:", updatedCoordinators);
   
         updatedProgram = await Program.findOneAndUpdate(
           { _id: programId, "devices._id": deviceId },
@@ -497,7 +486,7 @@ const handleResponsibles = async (req, res) => {
           const newRespsDevice = Array.isArray(responsible) ? responsible : [responsible];
           updatedProgram = await Program.findOneAndUpdate(
             { _id: programId, "devices._id": deviceId },
-            { $set: { "devices.$.responsible": updatedRespsDevice } },
+            { $set: { "devices.$.responsible": newRespsDevice } },
             { new: true }
           );
           if (!updatedProgram) throw new Error("No se encontró el programa/dispositivo para añadir responsables.");
@@ -507,7 +496,7 @@ const handleResponsibles = async (req, res) => {
           const updatedRespsDevice = Array.isArray(responsible) ? responsible : [responsible];
           updatedProgram = await Program.findOneAndUpdate(
             { _id: programId, "devices._id": deviceId },
-            { $set: { "devices.$.responsible": updatedRespsDevice } },
+            { $set: { "devices.$.responsible": newRespsDevice } },
             { new: true }
           );
           if (!updatedProgram) throw new Error("No se encontró el programa/dispositivo para actualizar.");

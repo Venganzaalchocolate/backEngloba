@@ -36,7 +36,8 @@ const fileSchema = new Schema({
     },
     fileTag: { 
         type: String, 
-        required: true 
+        required: true,
+        index: true  // Agrega un índice en fileName
     },
     description: { 
         type: String,

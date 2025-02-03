@@ -6,17 +6,20 @@ const { deleteFile } = require('./ovhController');
 // crear usuario
 const postCreateUserCv = async (req, res) => {
 
-    if (!req.body.name || !req.body.email || !req.body.phone || !req.body.jobs || !req.body.studies || !req.body.provinces || !req.body.work_schedule) throw new ClientError("Los datos no son correctos", 400);
+    if (!req.body.email || !req.body.phone || !req.body.jobs || !req.body.studies || !req.body.provinces || !req.body.work_schedule) throw new ClientError("Los datos no son correctos", 400);
 
     let dataUser = {
         date: new Date(),
-        name: req.body.name.toLowerCase(),
+        name: req.body.firstName.toLowerCase()+' '+req.body.lastName.toLowerCase(),
         email: req.body.email.toLowerCase(),
         phone: req.body.phone,
         jobs: req.body.jobs,
         studies:req.body.studies,
         provinces: req.body.provinces,
-        work_schedule:req.body.work_schedule
+        work_schedule:req.body.work_schedule,
+        dni:req.body.dni,
+        firstName:req.body.firstName.toLowerCase(),
+        lastName:req.body.lastName.toLowerCase(),
     }
     if (!!req.body.about) dataUser['about'] = req.body.about
     if (!!req.body.offer) dataUser['offer'] = req.body.offer

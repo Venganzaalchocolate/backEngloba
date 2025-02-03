@@ -8,7 +8,8 @@ const fileSchema = new Schema({
     },
     fileTag: { 
         type: String, 
-        required: true 
+        required: true,
+        index: true  // Agrega un índice en fileName
     },
     description: { 
         type: String 
@@ -42,33 +43,7 @@ const deviceSchema = new Schema({
         required: false,
         default: []
     },
-    contratoAdministracion: [fileSchema],
-    autorizacionFuncionamiento: [fileSchema],
-    seguros: [fileSchema],
-    libroQuejasSugerencias: [fileSchema],
-    libroFoliadoRegistroUsuarios: [fileSchema],
-    constanciaProyectoEducativo: [fileSchema],
-    constanciaCurriculumEducativo: [fileSchema],
-    constanciaReglamentoOrganizacion: [fileSchema],
-    constanciaMemoriaAnual: [fileSchema],
-    constanciaProgramacionAnual: [fileSchema],
-    planAutoproteccion: [fileSchema],
-    certificadoImplantacionPlanAutoproteccion: [fileSchema],
-    revisionExtintores: [fileSchema],
-    revisionesBIE: [fileSchema],
-    certificadoRevisionCalderas: [fileSchema],
-    certificadoRevisionElectricidad: [fileSchema],
-    simulacroEvacuacion: [fileSchema],
-    actaIdentificacionFunciones: [fileSchema],
-    puntosEmergenciaOperativos: [fileSchema],
-    senalizacionEvacuacion: [fileSchema],
-    senalizacionAscensoresEmergencia: [fileSchema],
-    menuVisadoNutricionista: [fileSchema],
-    contratoCatering: [fileSchema],
-    planHigiene: [fileSchema],
-    planLegionela: [fileSchema],
-    contratoDDD: [fileSchema],
-    firmaProtocoloAcoso: [fileSchema]
+    files: [fileSchema],
 });
 
 
