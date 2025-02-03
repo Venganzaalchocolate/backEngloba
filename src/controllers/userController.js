@@ -50,6 +50,7 @@ const convertIds = (hirings) => {
 
 const postCreateUser = async (req, res) => {
     const requiredFields=['dni','firstName','lastName','email','phone','hiringPeriods','role']
+
     const {
         dni,
         firstName,
@@ -59,6 +60,7 @@ const postCreateUser = async (req, res) => {
         hiringPeriods,
         employmentStatus = "en proceso de contratación",
         role,
+        notes,
       } = req.body;
 
       validateRequiredFields(req.body, requiredFields);
@@ -76,6 +78,7 @@ const postCreateUser = async (req, res) => {
         hiringPeriods: newHiring,
         dispositiveNow:newHiring.device,
         employmentStatus,
+        notes
       };
 
       const newUser=await User.create(userData)
