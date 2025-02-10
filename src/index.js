@@ -13,7 +13,6 @@ const enumsRoutes = require('./routes/enumsRoutes');
 const googleRoutes=require('./routes/googleRoutes')
 const { connectToDatabase } = require('./database/connect');
 const { listFiles, watchFolder } = require('./controllers/googleController');
-const { createLeaveTypes, addFictitiousHiringPeriod, updateUsersDispositiveNow } = require('./controllers/controladordepruebas');
 
 
 require('dotenv').config();
@@ -82,6 +81,7 @@ app.use((err, req, res, next) => {
 const startServer = async () => {
 
   await connectToDatabase();
+
   app.listen(port, () => {
     console.log(`Servidor ejecutándose en el puerto ${port}`);
   });

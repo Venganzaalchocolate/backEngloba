@@ -3,18 +3,11 @@ const { prevenirInyeccionCodigo, esPassSegura, catchAsync, response, generarHash
 const { faker } = require('@faker-js/faker');
 const mongoose = require('mongoose');
 
-const { createAccentInsensitiveRegex, parseAndValidateDates } = require('../utils/utils');
+const { createAccentInsensitiveRegex, parseAndValidateDates, validateRequiredFields } = require('../utils/utils');
 const { uploadFileToDrive, getFileById, deleteFileById } = require('./googleController');
 const user = require('../models/user');
 
-// Función para validar campos requeridos
-const validateRequiredFields = (body, fields) => {
-    for (const field of fields) {
-        if (!body[field]) {
-            throw new ClientError(`El campo ${field} es requerido`, 400);
-        }
-    }
-};
+
 
 // Función para convertir IDs dentro de los datos de contratación
 const convertIds = (hirings) => {

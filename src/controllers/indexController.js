@@ -9,6 +9,7 @@ const { getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteI
 const { postCreateOfferJob, getOfferJobID, getOfferJobs, OfferJobDeleteId, OfferJobPut } = require("./offerController");
 const { getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers } = require("./enumsController");
 const {sendEmail, generateEmailHTML}=require("./emailController");
+const {main}=require("./controladordepruebas")
 
 
 
@@ -25,6 +26,8 @@ module.exports = {
     getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, addDispositive, getDispositive, updateDispositive, deleteDispositive,getDispositiveResponsable,handleCoordinators, handleResponsibles,
     postCreateOfferJob, getOfferJobID, getOfferJobs,OfferJobDeleteId, OfferJobPut,
     getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers,
-    sendEmail, generateEmailHTML
+    sendEmail, generateEmailHTML,
+
+    main
 
 }

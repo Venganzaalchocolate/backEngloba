@@ -38,13 +38,15 @@ const fileSchema = new Schema({
         type: String, 
         required: true,
         index: true  // Agrega un índice en fileName
+        
     },
     description: { 
         type: String,
         maxlength: 200
     },
     date: { 
-        type: Date 
+        type: Date ,
+        index: true  // Agrega un índice en fileName
     },
     notes:{
         type:String,

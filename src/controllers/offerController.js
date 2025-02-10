@@ -1,41 +1,64 @@
-const { OfferJob } = require('../models/indexModels');
+const mongoose = require('mongoose');
+const { OfferJob, Offer } = require('../models/indexModels');
 const {  catchAsync, response, ClientError } = require('../utils/indexUtils');
+const { validateRequiredFields } = require('../utils/utils');
 
 
 // crear usuario
 const postCreateOfferJob = async (req, res) => {
 
-    if (!req.body.functions ||  !req.body.work_schedule 
-        || !req.body.essentials_requirements ||  !req.body.conditions || !req.body.provinces
-        || !req.body.location || !req.body.create ||  !req.body.expected_incorporation_date || !req.body.bag) throw new ClientError("Los datos no son correctos", 400);
+    const requiredFields=["programId","entity","job_title","functions", "work_schedule", "province", "location", "create", "expected_incorporation_date", "dispositiveId", "studies", "sepe"]
     
-    let dataOfferJob = {
-        entity: 'ASOCIACIÓN ENGLOBA',
-        job_title: req.body.functions+' - '+req.body.provinces,
-        functions: req.body.functions,
-        work_schedule:req.body.work_schedule,
-        essentials_requirements:req.body.essentials_requirements,
-        conditions:req.body.conditions,
-        province:req.body.provinces,
-        location:req.body.location,
-        date: new Date(),
-        create: req.body.create,
-        expected_incorporation_date:req.body.expected_incorporation_date,
-        bag:req.body.bag
-    }
+    const {
+        functions,
+        work_schedule,
+        essentials_requirements,
+        optionals_requirements,
+        conditions,
+        province,
+        location,
+        create,
+        expected_incorporation_date,
+        dispositiveId,
+        studies,
+        sepe,
+        job_title,
+        entity,
+        programId
+      } = req.body;
 
-    if(!!req.body.optionals_requirements) dataOfferJob['optionals_requirements']=req.body.optionals_requirements
-    const newOfferJob = new OfferJob(dataOfferJob)
-    const savedOfferJob = await newOfferJob.save();
-    const populatedOfferJob = await OfferJob.findById(savedOfferJob._id).populate('bag');
-    response(res, 200, populatedOfferJob)
+    validateRequiredFields(req.body, requiredFields);
+
+    const dataOfferJob = {
+        entity:entity,
+        job_title:job_title,
+        functions:functions,
+        work_schedule:work_schedule,
+        essentials_requirements: essentials_requirements || "",
+        optionals_requirements: optionals_requirements || "",
+        conditions:conditions,
+        province:province,
+        location:location,
+        create: new mongoose.Types.ObjectId(create),
+        expected_incorporation_date: expected_incorporation_date, // Asegurar formato string
+        dispositive: {
+            programId: new mongoose.Types.ObjectId(programId),
+            dispositiveId: new mongoose.Types.ObjectId(dispositiveId)
+        },
+        studies: Array.isArray(studies) ? studies : [], // Asegurar array
+        sepe: sepe === "si", // Convertir a booleano
+    };
+
+    const savedOfferJob = await Offer.create(dataOfferJob);
+
+    response(res, 200, savedOfferJob)
 }
 
 
 
 //recoge todos los usuarios
 const getOfferJobs = async (req, res) => {
-    const OfferJobs = await OfferJob.find().populate('bag')
+    const OfferJobs = await Offer.find()
     // Responde con la lista de usuarios paginada y código de estado 200 (OK)
     response(res, 200, OfferJobs);
 }
@@ -45,41 +68,86 @@ const getOfferJobID = async (req, res) => {
     const id = req.body.id;
     // Utiliza el método findById() de Mongoose para buscar un usuario por su ID
     // Si no se encuentra el usuario, responde con un código de estado 404 (Not Found)
-    const offerJobData = await OfferJob.findById(id).populate('bag').catch(error => { throw new ClientError('OfferJoba no encontrado', 404) });
+    const offerJobData = await Offer.findById(id).catch(error => { throw new ClientError('OfferJob no encontrado', 404) });
     // Responde con el usuario encontrado y código de estado 200 (OK)ç
     response(res, 200, offerJobData);
 }
 
 const OfferJobDeleteId = async (req, res) => {
     const id = req.params.id;
-    const OfferJobDelete = await OfferJob.deleteOne({ _id: id });
+    const OfferJobDelete = await Offer.deleteOne({ _id: id });
     response(res, 200, OfferJobDelete);
 }
 
 // modificar el usuario
 const OfferJobPut = async (req, res) => {
-    const filter = { _id: req.body.id };
-    if (!req.body.id) throw new ClientError("Los datos no son correctos", 400);
-    
-    const dataOfferJob = {};
-    if(!!req.body.functions && !!req.body.provinces) dataOfferJob['job_title']= req.body.functions+' - '+req.body.provinces
-    if(!!req.body.provinces) dataOfferJob['province'] = req.body.provinces;
-    if (!!req.body.entity) dataOfferJob['entity'] = req.body.entity;
-    if (!!req.body.functions) dataOfferJob['functions'] = req.body.functions;
-    if (!!req.body.work_schedule) dataOfferJob['work_schedule'] = req.body.work_schedule;
-    if (!!req.body.essentials_requirements) dataOfferJob['essentials_requirements'] = req.body.essentials_requirements;
-    if (!!req.body.optionals_requirements) dataOfferJob['optionals_requirements'] = req.body.optionals_requirements;
-    if (!!req.body.conditions) dataOfferJob['conditions'] = req.body.conditions;
-    if (!!req.body.location) dataOfferJob['location'] = req.body.location;
-    if (!!req.body.date) dataOfferJob['date'] = req.body.date;
-    if (!!req.body.create) dataOfferJob['create'] = req.body.create;
-    if (!!req.body.expected_incorporation_date) dataOfferJob['expected_incorporation_date'] = req.body.expected_incorporation_date;
-    if (req.body.active!=undefined) dataOfferJob['active'] = req.body.active;
-    if (!!req.body.bag) dataOfferJob['bag'] = req.body.bag;
+    const requiredFields=["id"]
+    validateRequiredFields(req.body, requiredFields);
 
-    let doc = await OfferJob.findOneAndUpdate(filter, dataOfferJob,  { new: true }).populate('bag');
-    if (doc == null)  throw new ClientError("No existe el OfferJob", 400)
-    response(res, 200, doc);
+    const {
+        functions,
+        work_schedule,
+        essentials_requirements,
+        optionals_requirements,
+        conditions,
+        province,
+        location,
+        create,
+        expected_incorporation_date,
+        dispositiveId,
+        studies,
+        sepe,
+        job_title,
+        entity,
+        programId,
+        id,
+        active,
+        userCv
+    } = req.body;
+
+    // Verificar si la oferta existe
+    const existingOffer = await Offer.findById(id);
+    if (!existingOffer) {
+        return response(res, 404, { error: "Oferta no encontrada." });
+    }
+
+    // Construir objeto con los campos a actualizar (solo los enviados)
+    const updatedFields = {};
+    if (entity) updatedFields.entity = entity;
+    
+    if (job_title) updatedFields.job_title = job_title;
+    if (functions) updatedFields.functions = functions;
+    if (userCv) updatedFields.userCv = userCv;
+    if (work_schedule) updatedFields.work_schedule = work_schedule;
+    if (essentials_requirements) updatedFields.essentials_requirements = essentials_requirements;
+    if (optionals_requirements) updatedFields.optionals_requirements = optionals_requirements;
+    if (conditions) updatedFields.conditions = conditions;
+    if (province) updatedFields.province = province;
+    if (location) updatedFields.location = location;
+    if (create) updatedFields.create = new mongoose.Types.ObjectId(create);
+    if (expected_incorporation_date) updatedFields.expected_incorporation_date = expected_incorporation_date;
+    if (studies) updatedFields.studies = Array.isArray(studies) ? studies : [];
+    if (typeof sepe !== "undefined") updatedFields.sepe = sepe === "si";
+
+    if (active){
+        if(active === "si"){
+            updatedFields.active = true
+        } else if (active === "no"){
+            updatedFields.active = false
+        }
+    } 
+    // Actualizar dispositive si se envían nuevos valores
+    if (programId && dispositiveId) {
+        updatedFields.dispositive = {
+            programId: new mongoose.Types.ObjectId(programId),
+            dispositiveId: new mongoose.Types.ObjectId(dispositiveId),
+        };
+    }
+
+    // Actualizar en la base de datos
+    const updatedOffer = await Offer.findByIdAndUpdate(id, updatedFields, { new: true });
+
+    response(res, 200, updatedOffer);
 }
 
 

@@ -1,3 +1,5 @@
+const { ClientError } = require("./clientError");
+
 const dateAndHour = () => {
     const currentDate = new Date();
     const formattedDate = currentDate.getDate() + '-' +
@@ -81,10 +83,21 @@ const parseAndValidateDates = (dates, fieldName) => {
     }
 };
 
+// Función para validar campos requeridos
+const validateRequiredFields = (body, fields) => {
+
+    for (const field of fields) {
+        if (!body[field]) {
+            throw new ClientError(`El campo ${field} es requerido`, 400);
+        }
+    }
+};
+
 
 module.exports = {
     dateAndHour,
     getSpainCurrentDate,
     createAccentInsensitiveRegex,
-    parseAndValidateDates
+    parseAndValidateDates,
+    validateRequiredFields
 };

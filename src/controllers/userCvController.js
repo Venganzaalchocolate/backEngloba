@@ -72,7 +72,7 @@ const getUserCvs = async (req, res) => {
     const totalPages = Math.ceil(totalDocs / limit);
     // Utiliza el método find() de Mongoose con skip() y limit() para paginar
 
-    const users = await UserCv.find(filters).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).populate('offer')
+    const users = await UserCv.find(filters).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit)
 
     // Responde con la lista de usuarios paginada y código de estado 200 (OK)
     response(res, 200, { users, totalPages });
@@ -192,6 +192,7 @@ const UserCvPut = async (req, res) => {
     if (doc == null)  throw new ClientError("No existe el usuario", 400)
     response(res, 200, doc);
 }
+
 
 module.exports = {
     //gestiono los errores con catchAsync
