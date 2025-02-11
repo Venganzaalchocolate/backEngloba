@@ -1,12 +1,28 @@
 const { User, Program, Jobs, Leavetype } = require('../models/indexModels');
-const { prevenirInyeccionCodigo, esPassSegura, catchAsync, response, generarHashpass, ClientError } = require('../utils/indexUtils');
-const { faker } = require('@faker-js/faker');
+const { catchAsync, response, generarHashpass, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
-
-const { createAccentInsensitiveRegex, parseAndValidateDates, validateRequiredFields } = require('../utils/utils');
+const { validateRequiredFields } = require('../utils/utils');
 const { uploadFileToDrive, getFileById, deleteFileById } = require('./googleController');
-const user = require('../models/user');
-
+    /*
+    disability:{
+        percentage:{
+            type:Number,
+            required: true,
+            default: 0
+        },
+        notes:{
+            type: String,
+        }
+    },
+    fostered:{
+        type:Boolean,
+        default: false
+    },
+    gender:{
+        enum: ['male', 'female'],
+        require:true,
+    }
+    */
 
 
 // Función para convertir IDs dentro de los datos de contratación
@@ -42,7 +58,8 @@ const convertIds = (hirings) => {
 };
 
 const postCreateUser = async (req, res) => {
-    const requiredFields=['dni','firstName','lastName','email','phone','hiringPeriods','role']
+
+    const requiredFields=['dni','firstName','lastName','email','phone','hiringPeriods','role', 'gender']
 
     const {
         dni,
@@ -54,6 +71,9 @@ const postCreateUser = async (req, res) => {
         employmentStatus = "en proceso de contratación",
         role,
         notes,
+        disability,
+        fostered,
+        gender
       } = req.body;
 
       validateRequiredFields(req.body, requiredFields);
@@ -71,8 +91,19 @@ const postCreateUser = async (req, res) => {
         hiringPeriods: newHiring,
         dispositiveNow:newHiring.device,
         employmentStatus,
-        notes
+        notes,
+        gender
       };
+
+      if (disability) {
+        userData.disability = disability;
+    }
+
+    if (fostered === "si") {
+        userData.fostered = true;
+    } else if (req.body.fostered === "no") {
+        userData.fostered = false;
+    }
 
       const newUser=await User.create(userData)
 
@@ -87,57 +118,44 @@ const postCreateUser = async (req, res) => {
 
 
 
-// Controlador para obtener usuarios
 const getUsers = async (req, res) => {
     if (!req.body.page || !req.body.limit) throw new ClientError("Faltan datos no son correctos", 400);
 
-    // Paginación
     const page = parseInt(req.body.page) || 1;
     const limit = parseInt(req.body.limit) || 10;
     const filters = {};
+    const programs = await Program.find().select('name _id devices.name devices._id');
 
-    // // Consultas a la base de datos
-    // const leaveTypes = await Leavetype.find(); // Obtener todos los tipos de permisos
-    // const jobs = await Jobs.find(); // Obtener todos los trabajos
-    const programs = await Program.find().select('name _id devices.name devices._id'); // Obtener todos los programas
-
-
-    // Aplicar filtros de búsqueda
     if (req.body.firstName) filters["firstName"] = { $regex: new RegExp(req.body.firstName, 'i') };
     if (req.body.lastName) filters["lastName"] = { $regex: new RegExp(req.body.lastName, 'i') };
     if (req.body.email) filters["email"] = { $regex: req.body.email, $options: 'i' };
     if (req.body.phone) filters["phone"] = { $regex: req.body.phone, $options: 'i' };
     if (req.body.dni) filters["dni"] = { $regex: req.body.dni, $options: 'i' };
     if (req.body.status) filters["employmentStatus"] = req.body.status;
+    if (req.body.gender) filters["gender"] = req.body.gender;
+    if (req.body.fostered === "si") filters["fostered"] = true;
+    if (req.body.fostered === "no") filters["fostered"] = false;
+    if (req.body.disabilityPercentage !== undefined) filters["disability.percentage"] = req.body.disabilityPercentage;
 
-    // Filtrar por programa, si se envía programId
     if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
         const program = programs.find(pr => pr._id.toString() === req.body.programId);
         if (!program) throw new ClientError("Programa no encontrado", 404);
         filters.dispositiveNow = { $in: program.devices.map(device => device._id) };
     }
 
-    // Filtrar por dispositivo específico
     if (req.body.dispositive && mongoose.Types.ObjectId.isValid(req.body.dispositive)) {
         filters["dispositiveNow"] = req.body.dispositive;
     }
 
-    // Contar documentos que cumplen los filtros
     const totalDocs = await User.countDocuments(filters);
-
-    // Calcular total de páginas
     const totalPages = Math.ceil(totalDocs / limit);
-
-    // Obtener usuarios con paginación
     const users = await User.find(filters)
-        .sort({ createdAt: -1 }) // Ordenar por fecha de creación descendente
-        .skip((page - 1) * limit) // Saltar registros según la página
-        .limit(limit); // Limitar registros por página
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
 
-    // Responder con los usuarios procesados y paginados
     response(res, 200, { users: users, totalPages });
 };
-
 
 
 
@@ -268,16 +286,25 @@ const userPut = async (req, res) => {
 
     updateFields = {
         ...updateFields,
-        firstName: req.body.firstName,
-        email: req.body.email,
-        role: req.body.role,
-        phone: req.body.phone,
-        dni: req.body.dni,
-        lastName: req.body.lastName,
-        employmentStatus: req.body.employmentStatus,
-        socialSecurityNumber: req.body.socialSecurityNumber,
-        bankAccountNumber: req.body.bankAccountNumber,
     };
+
+    if (req.body.firstName) updateFields.firstName = req.body.firstName;
+    if (req.body.lastName) updateFields.lastName = req.body.lastName;
+    if (req.body.email) updateFields.email = req.body.email;
+    if (req.body.role) updateFields.role = req.body.role;
+    if (req.body.phone) updateFields.phone = req.body.phone;
+    if (req.body.dni) updateFields.dni = req.body.dni;
+    if (req.body.employmentStatus) updateFields.employmentStatus = req.body.employmentStatus;
+    if (req.body.socialSecurityNumber) updateFields.socialSecurityNumber = req.body.socialSecurityNumber;
+    if (req.body.bankAccountNumber) updateFields.bankAccountNumber = req.body.bankAccountNumber;
+    if (req.body.disability) updateFields.disability = req.body.disability;
+    if (req.body.gender) updateFields.gender = req.body.gender;
+    
+    if (req.body.formerWard === "si") {
+        updateFields.formerWard = true;
+    } else if (req.body.formerWard === "no") {
+        updateFields.formerWard = false;
+    }
 
     const folderId = process.env.GOOGLE_DRIVE_APPFILE;
 

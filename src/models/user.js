@@ -143,8 +143,24 @@ const PayrollSchema = new Schema({
 
 // Esquema principal del Empleado
 const UserSchema = new Schema({
-    pass:{
-        type: String,
+    disability:{
+        percentage:{
+            type:Number,
+            required: true,
+            default: 0
+        },
+        notes:{
+            type: String,
+        }
+    },
+    fostered:{
+        type:Boolean,
+        default: false
+    },
+    gender:{
+        type:String,
+        enum: ['male', 'female'],
+        required:true,
     },
     role:{
         type: String,
