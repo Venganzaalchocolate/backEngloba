@@ -34,15 +34,15 @@ const login = async (req, res) => {
     const user = await User.findOne({ email: emailAux });
     if (!user) throw new ClientError("El email no es correcto", 403);
 
-    if (emailAux == 'responsable@engloba.org.es' || emailAux == 'root@engloba.org.es') {
-        const passAux = req.body.password
-        if (!await comprobarPass(passAux, user.pass)) throw new ClientError("La contraseña no es correcta", 403);
-        const token = await generarToken(user)
+    // if (emailAux == 'responsable@engloba.org.es' || emailAux == 'root@engloba.org.es') {
+    //     const passAux = req.body.password
+    //     if (!await comprobarPass(passAux, user.pass)) throw new ClientError("La contraseña no es correcta", 403);
+    //     const token = await generarToken(user)
 
-        // Responde con la lista de usuario + el token generado y código de estado 200 (OK)
-        const respuesta = { user, token }
-        response(res, 200, respuesta);
-    } else {
+    //     // Responde con la lista de usuario + el token generado y código de estado 200 (OK)
+    //     const respuesta = { user, token }
+    //     response(res, 200, respuesta);
+    // } else {
         // 2. Generar código de un solo uso
         const codigo = generarCodigoTemporal();
 
@@ -60,12 +60,6 @@ const login = async (req, res) => {
         // 5. Enviar el email al usuario con el código
         const asunto = "Tu código de verificación";
         const textoPlano = `Este es tu código de verificación de un solo uso: ${codigo}. Es válido durante 5 minutos.`;
-        // const contenidoHTML = `
-        //   <p>Hola ${user.firstName || ''},</p>
-        //   <p>Este es tu código de verificación de un solo uso:</p>
-        //   <h2>${codigo}</h2>
-        //   <p>El código expira en 5 minutos. Por favor no lo compartas con nadie.</p>
-        // `;
 
         const htmlContent = generateEmailHTML({
             logoUrl: "https://app.engloba.org.es/graphic/logotipo_blanco.png",
@@ -83,7 +77,7 @@ const login = async (req, res) => {
             message: `Código de verificación enviado a tu correo ${user.email}. Tienes 5 minutos para usarlo.`,
             userId: user._id
         });
-    }
+    // }
 
 };
 

@@ -45,6 +45,7 @@ function generateEmailHTML({
           padding: 10px 20px;
           background-color: #50529f;
           border-bottom: 1px solid #ddd;
+          color:white;
         }
         .header img {
           height: 50px; /* Ajusta el tamaño del logo */
@@ -77,11 +78,7 @@ function generateEmailHTML({
     </head>
     <body>
       <div class="header">
-        ${
-          logoUrl
-            ? `<img src="${logoUrl}" alt="Logo" />`
-            : ""
-        }
+        Asociación Engloba
       </div>
       <div class="content">
         <h1>${title}</h1>

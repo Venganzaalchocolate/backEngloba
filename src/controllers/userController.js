@@ -1,5 +1,5 @@
 const { User, Program, Jobs, Leavetype } = require('../models/indexModels');
-const { catchAsync, response, generarHashpass, ClientError } = require('../utils/indexUtils');
+const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { validateRequiredFields } = require('../utils/utils');
 const { uploadFileToDrive, getFileById, deleteFileById } = require('./googleController');
@@ -23,6 +23,10 @@ const { uploadFileToDrive, getFileById, deleteFileById } = require('./googleCont
         require:true,
     }
     */
+    const capitalize = (str) => {
+        if (!str || typeof str !== 'string') return str;
+        return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+      };
 
 
 // Función para convertir IDs dentro de los datos de contratación
@@ -58,64 +62,86 @@ const convertIds = (hirings) => {
 };
 
 const postCreateUser = async (req, res) => {
-
-    const requiredFields=['dni','firstName','lastName','email','phone','hiringPeriods','role', 'gender']
-
+    const requiredFields = [
+      'dni',
+      'firstName',
+      'lastName',
+      'email',
+      'phone',
+      'hiringPeriods',
+      'role',
+      'gender'
+    ];
+  
     const {
-        dni,
-        firstName,
-        lastName,
-        email,
-        phone,
-        hiringPeriods,
-        employmentStatus = "en proceso de contratación",
-        role,
-        notes,
-        disability,
-        fostered,
-        gender
-      } = req.body;
-
-      validateRequiredFields(req.body, requiredFields);
-      // Procesar el objeto de hiring
-      const newHiring = convertIds(hiringPeriods)[0];
-      const userData = {
-        dni,
-        role,
-        firstName,
-        lastName,
-        email,
-        phone,
-        // hiringPeriods puede ser un array de objetos;
-        // si necesitas transformarlos, hazlo aquí (p. ej. convertIds)
-        hiringPeriods: newHiring,
-        dispositiveNow:newHiring.device,
-        employmentStatus,
-        notes,
-        gender
-      };
-
-      if (disability) {
-        userData.disability = disability;
+      dni,
+      firstName,
+      lastName,
+      email,
+      phone,
+      hiringPeriods,
+      employmentStatus = "en proceso de contratación",
+      role,
+      notes,
+      disability,
+      fostered,
+      gender
+    } = req.body;
+  
+    validateRequiredFields(req.body, requiredFields);
+  
+    // Procesar el objeto de hiring
+    const newHiring = convertIds(hiringPeriods)[0];
+  
+    // Construir objeto userData
+    const userData = {
+      dni,
+      role,
+      firstName: capitalize(firstName), // Capitalizar
+      lastName: capitalize(lastName),   // Capitalizar
+      email: email.toLowerCase(),       // Convertir a minúsculas
+      phone,
+      hiringPeriods: newHiring,
+      dispositiveNow: newHiring.device,
+      employmentStatus,
+      notes,
+      gender
+    };
+  
+    // Manejar disability
+    if (disability) {
+      userData.disability = disability;
     }
-
+  
+    // Manejar fostered
     if (fostered === "si") {
-        userData.fostered = true;
-    } else if (req.body.fostered === "no") {
-        userData.fostered = false;
+      userData.fostered = true;
+    } else if (fostered === "no") {
+      userData.fostered = false;
     }
-
-      const newUser=await User.create(userData)
-
-      if(newUser.code==11000){
-        const [[key, value]] = Object.entries(newUser.keyValue);
-        throw new ClientError(`${value} esta duplicado, no se pudo crear el usuario`)
-      } 
-        
-    // Responder con el usuario guardado
-    response(res, 200, newUser);
-};
-
+  
+    try {
+      // Intentar crear el usuario
+      const newUser = await User.create(userData);
+  
+      // Responder con el usuario guardado
+      response(res, 200, newUser);
+  
+    } catch (error) {
+      // Si se produce un error de índice duplicado (por campo único)
+      if (error.code === 11000) {
+        // error.keyValue tiene la forma: { email: 'valor', dni: 'valor', etc. }
+        const [[dupField, dupValue]] = Object.entries(error.keyValue);
+        throw new ClientError(
+          `'${dupValue}' está duplicado, no se pudo crear el usuario, ya que debe ser único`,
+          400
+        );
+      }
+      // Cualquier otro error
+      throw new ClientError('Error al crear el usuario', 500);
+    }
+  };
+  
 
 
 const getUsers = async (req, res) => {
@@ -135,7 +161,7 @@ const getUsers = async (req, res) => {
     if (req.body.gender) filters["gender"] = req.body.gender;
     if (req.body.fostered === "si") filters["fostered"] = true;
     if (req.body.fostered === "no") filters["fostered"] = false;
-    if (req.body.disabilityPercentage !== undefined) filters["disability.percentage"] = req.body.disabilityPercentage;
+    if (req.body.disPercentage !== undefined) filters["disability.percentage"] = req.body.disPercentage;
 
     if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
         const program = programs.find(pr => pr._id.toString() === req.body.programId);
@@ -242,18 +268,17 @@ const UserDeleteId = async (req, res) => {
 }
 
 const userPut = async (req, res) => {
+
     const files = req.files;
 
     if (!req.body._id) {
         throw new ClientError('El ID de usuario es requerido', 400);
     }
+    
 
     // Inicializar el objeto de actualización
     let updateFields = {};
 
-    if (req.body.pass) {
-        updateFields.pass = await generarHashpass(req.body.pass);
-    }
 
     const parseField = (field, fieldName) => {
         try {
@@ -267,6 +292,8 @@ const userPut = async (req, res) => {
             throw new ClientError(`Error al procesar ${fieldName}: ${error.message}`, 400);
         }
     };
+
+ 
 
     if (req.body.vacationDays) {
         updateFields.vacationDays = parseField(req.body.vacationDays, 'vacationDays').map((date) => {
@@ -287,25 +314,32 @@ const userPut = async (req, res) => {
     updateFields = {
         ...updateFields,
     };
-
-    if (req.body.firstName) updateFields.firstName = req.body.firstName;
-    if (req.body.lastName) updateFields.lastName = req.body.lastName;
-    if (req.body.email) updateFields.email = req.body.email;
+    
+    if (req.body.firstName) updateFields.firstName =  capitalize(req.body.firstName);  // Capitalizamos el firstName
+    
+    if (req.body.lastName) updateFields.lastName = capitalize(req.body.lastName);
+    if (req.body.email) updateFields.email = req.body.email.toLowerCase();
     if (req.body.role) updateFields.role = req.body.role;
     if (req.body.phone) updateFields.phone = req.body.phone;
     if (req.body.dni) updateFields.dni = req.body.dni;
     if (req.body.employmentStatus) updateFields.employmentStatus = req.body.employmentStatus;
     if (req.body.socialSecurityNumber) updateFields.socialSecurityNumber = req.body.socialSecurityNumber;
     if (req.body.bankAccountNumber) updateFields.bankAccountNumber = req.body.bankAccountNumber;
-    if (req.body.disability) updateFields.disability = req.body.disability;
-    if (req.body.gender) updateFields.gender = req.body.gender;
-    
-    if (req.body.formerWard === "si") {
-        updateFields.formerWard = true;
-    } else if (req.body.formerWard === "no") {
-        updateFields.formerWard = false;
-    }
 
+    if (req.body.disPercentage) updateFields.disability= {
+        percentage:req.body.disPercentage
+    };
+    
+    if (req.body.disNotes) updateFields.disability.notes= req.body.disNotes;
+    if (req.body.gender) updateFields.gender = req.body.gender;
+    if (req.body.fostered === "si") {
+        updateFields.fostered = true;
+    } else if (req.body.fostered === "no") {
+        updateFields.fostered = false;
+    }
+    
+    console.log(updateFields)
+    
     const folderId = process.env.GOOGLE_DRIVE_APPFILE;
 
     // Obtener los archivos existentes en la base de datos
@@ -350,7 +384,7 @@ const userPut = async (req, res) => {
 
         updateFields.files = combinedFiles;
     }
-
+    
     // Realizar la actualización en la base de datos
     try {
         const updatedUser = await User.findOneAndUpdate(
@@ -358,9 +392,19 @@ const userPut = async (req, res) => {
             { $set: updateFields },
             { new: true, runValidators: true }
         );
-
         response(res, 200, updatedUser);
     } catch (error) {
+        // Si el error es de índice duplicado (E11000)
+        if (error.code === 11000) {
+            // error.keyValue es un objeto con la forma: { email: 'valor duplicado' } u otro campo
+            const [[dupField, dupValue]] = Object.entries(error.keyValue);
+            throw new ClientError(
+                `'${dupValue}' ya existe. No se pudo actualizar el usuario ya que debe ser único.`,
+                400
+            );
+        }
+    
+        // Otro tipo de error
         throw new ClientError('Error al actualizar el usuario', 500);
     }
 };
