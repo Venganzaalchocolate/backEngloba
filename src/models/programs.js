@@ -27,6 +27,12 @@ const deviceSchema = new Schema({
     address: { 
         type: String
     },
+    email:{
+        type:String
+    },
+    phone:{
+        type:String
+    },
     responsible: { 
         type: [Schema.Types.ObjectId],
         ref: 'User',

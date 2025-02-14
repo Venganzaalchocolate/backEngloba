@@ -153,6 +153,10 @@ const UserSchema = new Schema({
             type: String,
         }
     },
+    apafa:{
+        type:Boolean,
+        default: false
+    },
     fostered:{
         type:Boolean,
         default: false
@@ -201,7 +205,7 @@ const UserSchema = new Schema({
         default:  'en proceso de contratación'
     },
     dispositiveNow:{
-            type: Schema.Types.ObjectId, // ID del dispositivo
+            type: [Schema.Types.ObjectId], // ID del dispositivo
     },
     // Periodos de contratación del empleado
     hiringPeriods: [PeriodSchema],

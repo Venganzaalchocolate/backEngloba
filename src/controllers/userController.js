@@ -3,26 +3,7 @@ const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { validateRequiredFields } = require('../utils/utils');
 const { uploadFileToDrive, getFileById, deleteFileById } = require('./googleController');
-    /*
-    disability:{
-        percentage:{
-            type:Number,
-            required: true,
-            default: 0
-        },
-        notes:{
-            type: String,
-        }
-    },
-    fostered:{
-        type:Boolean,
-        default: false
-    },
-    gender:{
-        enum: ['male', 'female'],
-        require:true,
-    }
-    */
+
     const capitalize = (str) => {
         if (!str || typeof str !== 'string') return str;
         return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
@@ -80,12 +61,13 @@ const postCreateUser = async (req, res) => {
       email,
       phone,
       hiringPeriods,
-      employmentStatus = "en proceso de contratación",
+      employmentStatus = "activo",
       role,
       notes,
       disability,
       fostered,
-      gender
+      gender,
+      apafa
     } = req.body;
   
     validateRequiredFields(req.body, requiredFields);
@@ -119,6 +101,12 @@ const postCreateUser = async (req, res) => {
     } else if (fostered === "no") {
       userData.fostered = false;
     }
+
+    if (apafa === "si") {
+        userData.apafa = true;
+      } else if (fostered === "no") {
+        userData.apafa = false;
+      }
   
     try {
       // Intentar crear el usuario
@@ -161,6 +149,8 @@ const getUsers = async (req, res) => {
     if (req.body.gender) filters["gender"] = req.body.gender;
     if (req.body.fostered === "si") filters["fostered"] = true;
     if (req.body.fostered === "no") filters["fostered"] = false;
+    if (req.body.apafa === "si") filters["apafa"] = true;
+    if (req.body.apafa === "no") filters["apafa"] = false;
     if (req.body.disPercentage !== undefined) filters["disability.percentage"] = req.body.disPercentage;
 
     if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
@@ -247,26 +237,59 @@ const getFileUser = async (req, res) => {
   };
 
 
+  const UserDeleteId = async (req, res) => {
 
-// if (!archivoStream) {
-    //     throw new ClientError('Archivo no encontrado', 404);
-    //   }
-    //   // Configurar la respuesta HTTP
-    //   res.writeHead(200, {
-    //     'Content-Type': 'application/pdf',
-    //     'Content-Disposition': 'attachment; filename=' + req.body.id,
-    //   });
+    try {
+         const id = req.body.id;
+  
+      // 1. Buscar el usuario en la base de datos
+      const userToDelete = await User.findById(id);
+      if (!userToDelete) {
+        return response(res, 404, { success: false, message: "Usuario no encontrado" });
+      }
+  
+      // 2. Recolectar los IDs de archivos de Drive que necesitas eliminar
+      const driveFileIds = [];
+  
+      // Archivos en la propiedad "files"
+      if (userToDelete.files && userToDelete.files.length > 0) {
+        userToDelete.files.forEach((fileObj) => {
+          driveFileIds.push(fileObj.fileName);
+        });
+      }
+  
+      // Archivos en la propiedad "payrolls"
+      if (userToDelete.payrolls && userToDelete.payrolls.length > 0) {
+        userToDelete.payrolls.forEach((payrollObj) => {
+          driveFileIds.push(payrollObj.pdf);
+        });
+      }
+  
+      // 3. Borrar en Drive secuencialmente
+      //    - Si algo falla en medio, lanzamos error y NO eliminamos al usuario en la BD
+      for (const fileId of driveFileIds) {
+        const deleteResult = await deleteFileById(fileId); // tu función que llama a drive.files.delete
+        if (!deleteResult.success) {
+          // Lanzamos un error para frenar todo el proceso
+          throw new Error(`Error al eliminar archivo ${fileId} en Drive: ${deleteResult.message}`);
+        }
+      }
+  
+      // 4. Si todos los archivos se borraron correctamente,
+      //    ahora sí procedemos a eliminar el usuario en la BD
+      const messageDelete = await User.deleteOne({ _id: id });
+  
+      // 5. Retornar respuesta
+      response(res, 200, messageDelete);
+  
+    } catch (error) {
 
-    //   // Enviar el stream como respuesta HTTP
-    //   archivoStream.pipe(res);
-
-// borrar un usuario
-const UserDeleteId = async (req, res) => {
-    const id = req.params.id;
-    const userDelete = await User.deleteOne({ _id: id });
-    response(res, 200, userDelete);
-}
-
+      response(res, 200, error.message);
+    }
+   
+ 
+  };
+  
 const userPut = async (req, res) => {
 
     const files = req.files;
@@ -337,8 +360,13 @@ const userPut = async (req, res) => {
     } else if (req.body.fostered === "no") {
         updateFields.fostered = false;
     }
-    
-    console.log(updateFields)
+
+    if (req.body.apafa === "si") {
+        updateFields.apafa = true;
+    } else if (req.body.apafa === "no") {
+        updateFields.apafa = false;
+    }
+
     
     const folderId = process.env.GOOGLE_DRIVE_APPFILE;
 
@@ -586,41 +614,41 @@ const payroll = async (req, res) => {
         }
     }
 };
+
 const changeDispositiveNow = async (user) => {
     // Verifica si existe el array hiringPeriods
     if (!user.hiringPeriods || user.hiringPeriods.length === 0) {
       return user; // se devuelve sin cambios
     }
   
-    // Filtra únicamente los hiringPeriods activos
-    const activeHirings = user.hiringPeriods.filter((hp) => hp.active);
+    // Filtra únicamente los hiringPeriods activos y sin fecha de fin
+    const activeHiringsWithoutEndDate = user.hiringPeriods.filter(
+      (hp) => hp.active && !hp.endDate
+    );
   
-    // Si no hay ningún hiringPeriod activo, retornamos el user tal cual
-    if (!activeHirings || activeHirings.length === 0) {
-        const updatedUser = await User.findOneAndUpdate(
-            { _id: user._id },
-            { $set: { dispositiveNow: null } },
-            { new: true }
-          );
-          return updatedUser;
+    // Si no hay ningún hiringPeriod que cumpla la condición, se actualiza dispositiveNow a null
+    if (activeHiringsWithoutEndDate.length === 0) {
+      const updatedUser = await User.findOneAndUpdate(
+        { _id: user._id },
+        { $set: { dispositiveNow: null } },
+        { new: true }
+      );
+      return updatedUser;
     }
   
-    // 1. Ordenar los hiringPeriods activos por startDate (desc)
-    activeHirings.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+    // Extrae el device de cada hiringPeriod que cumple la condición
+    const devices = activeHiringsWithoutEndDate.map((hp) => hp.device);
   
-    // 2. Asignar el device del hiringPeriod activo más reciente
-    const mostRecentDevice = activeHirings[0].device;
-
-  
-    // 3. Actualizar en la base de datos usando findOneAndUpdate
+    // Actualiza en la base de datos utilizando findOneAndUpdate
     const updatedUser = await User.findOneAndUpdate(
       { _id: user._id },
-      { $set: { dispositiveNow: mostRecentDevice } },
+      { $set: { dispositiveNow: devices } },
       { new: true }
     );
   
     return updatedUser;
   };
+  
   
 
 // Controlador principal

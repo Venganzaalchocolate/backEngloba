@@ -10,7 +10,7 @@ const upload = multer({ storage: storage });
 
 router.post("/users", urlencodedParser, tokenValid, getUsers)
 router.post("/userscv", urlencodedParser,tokenValid, getUsersCvsIDs)
-router.delete("/deleteuser/:id", urlencodedParser, tokenValid,UserDeleteId)
+router.post("/deleteuser", urlencodedParser, tokenValid,UserDeleteId)
 router.post('/filteruser', urlencodedParser, tokenValid, getUsersFilter)
 router.post("/payroll", upload.single('pdf'), payroll)
 router.post("/hirings", tokenValid, hirings)

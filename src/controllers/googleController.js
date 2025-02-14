@@ -46,8 +46,6 @@ const getFileById = async (fileId) => {
       fields: 'id, name, mimeType',
     });
 
-    console.log(`Archivo encontrado: ${file.name} (ID: ${file.id})`);
-
     // Descargar el archivo
     const response = await drive.files.get(
       { fileId, alt: 'media' },
@@ -90,7 +88,6 @@ const uploadFileToDrive = async (file, folderId, fileName, duplicate=false) => {
         },
       });
 
-      console.log(`Archivo existente actualizado: ${fileName}`);
     } else {
       // Si no existe, crear un archivo nuevo
       const res = await drive.files.create({
@@ -252,10 +249,7 @@ async function deleteFolderContents(folderId, deleteFolderItself = false) {
 
       for (const file of files) {
         // EXCLUSIÓN: Saltar el archivo si su nombre contiene "48938690E"
-        if (file.name.includes('48938640E')) {
-          console.log(`Archivo excluido de la eliminación: "${file.name}" (ID: ${file.id})`);
-          continue;
-        }
+
 
         if (file.mimeType === 'application/vnd.google-apps.folder') {
           // Subcarpeta => eliminar su contenido recursivamente y luego la carpeta
