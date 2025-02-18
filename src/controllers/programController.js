@@ -193,7 +193,11 @@ const deleteDispositive = async (req, res) => {
 };
 
 
+
+
 const getDispositiveResponsable = async (req, res) => {
+
+
     // Verificamos que el request tiene un _id en el body. Si no, lanzamos un error controlado.
     if (!req.body._id) {
       throw new ClientError("Los datos no son correctos", 400);
@@ -279,8 +283,9 @@ const getDispositiveResponsable = async (req, res) => {
       }))
     );
   
-    // Enviamos la respuesta al cliente con código 200 y los datos procesados
+    // // Enviamos la respuesta al cliente con código 200 y los datos procesados
     response(res, 200, result);
+ 
   };
 
 

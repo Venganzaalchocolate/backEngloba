@@ -7,6 +7,8 @@ const FileHistory = require('../models/fileHistory');
 const FileMapping = require('../models/fileMapping');
 const { create } = require('../models/user');
 
+
+
 // const sourceFolderId = '1WmnFU8jv6ZY3BW0iSB1xXTpQoMbesU09'; // ID de la carpeta de datos actuales
 const sourceFolderId = process.env.GOOGLE_DRIVE_PARENTFOLDER; // ID de la carpeta de datos actuales
 const backup12hFolderId='1cnQ_4ANsSr_R-HJ-uf15WNfc5w_4dTRG';
@@ -14,14 +16,23 @@ const backup3dFolderId ='1kxH3Su19Yz6WWCSCmfUSewmqymsDlL4l';
 const emails = ['web@engloba.org.es', 'comunicacion@engloba.org.es'];
 
 
-// Decodificar y cargar las credenciales desde la variable de entorno
-const credentials = JSON.parse(Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString('utf-8'));
-const auth = new google.auth.GoogleAuth({
-  credentials, // Usar las credenciales decodificadas
-  scopes: ['https://www.googleapis.com/auth/drive'], // Alcances requeridos
-});
+// 1. Decodificamos las credenciales
+const credentials = JSON.parse(
+  Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString('utf-8')
+);
 
+// 2. Extraemos client_email y private_key del JSON
+const { client_email, private_key } = credentials;
+
+// 3. Creamos la autenticación JWT con el 'subject'
+const auth = new google.auth.JWT({
+  email: client_email,
+  key: private_key,
+  scopes: ['https://www.googleapis.com/auth/drive'],
+  subject: 'archi@engloba.org.es',  // aquí se “impersona” a este usuario
+});
 const drive = google.drive({ version: 'v3', auth });
+//hjbg
 
 
 const deleteFileById = async (fileId) => {
@@ -176,16 +187,40 @@ async function createFolderAndShare(folderName, parentFolderId, userEmails) {
 
 // Función recursiva para eliminar todos los archivos/carpetas que un usuario (email)
 // haya creado dentro de una carpeta (folderId).
-async function deleteAllOwnedInFolder(folderId, email) {
+
+
+async function listOwnedItemsInFolder(folderId, emails) {
   try {
-    // 1) Listar todos los elementos propiedad de 'email' dentro de folderId
-    const items = await listOwnedItemsInFolder(folderId, email);
+    const emailFilters = emails.map(email => `'${email}' in owners`).join(' or ');
+    const query = `'${folderId}' in parents and (${emailFilters}) and trashed=false`;
+
+    const res = await drive.files.list({
+      q: query,
+      fields: 'files(id, name, mimeType)',
+    });
+
+    return res.data.files || [];
+  } catch (error) {
+    console.error('Error al listar archivos en la carpeta:', error);
+    return [];
+  }
+}
+
+/**
+ * Borra todos los archivos propiedad de los emails indicados dentro de una carpeta (incluyendo subcarpetas).
+ * @param {string} folderId - ID de la carpeta de Google Drive.
+ * @param {string[]} emails - Array de emails de propietarios cuyos archivos se desean eliminar.
+ */
+async function deleteAllOwnedInFolder(folderId, emails) {
+  try {
+    // 1) Listar todos los elementos propiedad de los emails dentro de folderId
+    const items = await listOwnedItemsInFolder(folderId, emails);
 
     // 2) Recorrer cada elemento y, si es carpeta, llamar recursivamente
     for (const item of items) {
       if (item.mimeType === 'application/vnd.google-apps.folder') {
         // Borrar primero su contenido
-        await deleteAllOwnedInFolder(item.id, email);
+        await deleteAllOwnedInFolder(item.id, emails);
       }
 
       // Luego, eliminar el archivo o la carpeta en sí
@@ -193,12 +228,11 @@ async function deleteAllOwnedInFolder(folderId, email) {
       console.log(`Eliminado: ${item.name} (ID: ${item.id})`);
     }
 
-    console.log(`Se han eliminado todos los elementos de la carpeta (ID: ${folderId}) propiedad de ${email}.`);
+    console.log(`Se han eliminado todos los elementos de la carpeta (ID: ${folderId}) propiedad de los emails proporcionados.`);
   } catch (error) {
     console.error('Error al eliminar archivos/carpetas:', error);
   }
 }
-
 
 //backup
 // Funciones de Base de Datos
@@ -892,6 +926,7 @@ async function deleteFolderContents(folderId, deleteFolderItself = false) {
 
 
 
+
 /**
  * Resetear todos los backups: eliminar contenido de carpetas de backup y limpiar la base de datos.
  */
@@ -994,12 +1029,12 @@ const deleteFileByName = async () => {
   }
 };
 
-//---------------backup local
-
-// EMAILS -------------------------------------
-//---------------------------------------------
 
 
+
+
+
+// Ejecutar la función
 
 module.exports = {
   uploadFileToDrive,
