@@ -2,23 +2,35 @@ const { Program } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 
-// Crear programa con dispositivos
 const postCreateProgram = async (req, res) => {
-    if (!req.body.funding || !req.body.name || !req.body.acronym) {
-        throw new ClientError("Los datos no son correctos", 400);
-    }
+  try {
+    const { name, acronym, area, active, responsible, finantial, about } = req.body;
 
-    const dataProgram = {
-        funding: req.body.funding,
-        name: req.body.name,
-        acronym: req.body.acronym,
-        devices: req.body.devices || []
-    };
+    if (!name || !acronym) return response(res, 400, { error: "Los datos no son correctos" });
 
-    const newProgram = new Program(dataProgram);
+    const newProgram = new Program({
+      name,
+      acronym,
+      area: area || "no identificado",
+      active: active !== undefined ? active : true,
+      responsible: Array.isArray(responsible) ? responsible.filter(id => mongoose.Types.ObjectId.isValid(id)) : [],
+      finantial: Array.isArray(finantial) ? finantial.filter(id => mongoose.Types.ObjectId.isValid(id)) : [],
+      about: {
+        description: about?.description || "",
+        objectives: about?.objectives || "",
+        profile: about?.profile || "",
+        table: {
+          title: about?.table?.title || "",
+          content: Array.isArray(about?.table?.content) ? about.table.content : []
+        }
+      }
+    });
+
     const savedProgram = await newProgram.save();
-
     response(res, 200, savedProgram);
+  } catch (error) {
+    response(res, 400, { error: error.message });
+  }
 };
 
 // Recoger todos los programas con paginación y filtros
@@ -43,18 +55,38 @@ const ProgramDeleteId = async (req, res) => {
     response(res, 200, ProgramDelete);
 };
 
-// Modificar programa
-const ProgramPut = async (req, res) => {
-    const filter = { _id: req.body._id };
-    const updateText = {};
-    if (!!req.body.name) updateText['name'] = req.body.name;
-    if (!!req.body.acronym) updateText['acronym'] = req.body.acronym;
-    if (!!req.body.funding) updateText['funding'] = req.body.funding;
 
-    let doc = await Program.findOneAndUpdate(filter, updateText, { new: true });
-    if (doc == null) throw new ClientError("No existe el programa", 400);
-    response(res, 200, doc);
+const ProgramPut = async (req, res) => {
+  try {
+    const { id, name, acronym, area, active, responsible, finantial, about } = req.body;
+    const updateFields = {};
+
+    if (name !== undefined) updateFields.name = name;
+    if (acronym !== undefined) updateFields.acronym = acronym;
+    if (area !== undefined) updateFields.area = area;
+    if (active !== undefined) updateFields.active = active;
+    if (Array.isArray(responsible)) updateFields.responsible = responsible.filter(id => mongoose.Types.ObjectId.isValid(id));
+    if (Array.isArray(finantial)) updateFields.finantial = finantial.filter(id => mongoose.Types.ObjectId.isValid(id));
+
+    if (about !== undefined) {
+      if (about.description !== undefined) updateFields["about.description"] = about.description;
+      if (about.objectives !== undefined) updateFields["about.objectives"] = about.objectives;
+      if (about.profile !== undefined) updateFields["about.profile"] = about.profile;
+      if (about.table !== undefined) {
+        if (about.table.title !== undefined) updateFields["about.table.title"] = about.table.title;
+        if (Array.isArray(about.table.content)) updateFields["about.table.content"] = about.table.content;
+      }
+    }
+
+    const program = await Program.findOneAndUpdate({ _id: id }, { $set: updateFields }, { new: true });
+    if (!program) return response(res, 400, { error: "No existe el programa" });
+
+    response(res, 200, program);
+  } catch (error) {
+    response(res, 400, { error: error.message });
+  }
 };
+   
 
 // Añadir dispositivo a un programa existente
 const addDispositive = async (req, res) => {
@@ -531,9 +563,6 @@ const handleResponsibles = async (req, res) => {
 
 
   
-
-  
-
 
 module.exports = {
     postCreateProgram: catchAsync(postCreateProgram),

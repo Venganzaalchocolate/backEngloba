@@ -77,7 +77,7 @@ const getEnums = async (req, res) => {
 const getEnumEmployers=async (req, res) => {
     let enumValues = {}
     enumValues['provinces'] = await Provinces.find();
-    enumValues['programs'] = await Program.find().select('name _id responsible devices.name devices._id devices.responsible devices.coordinators');
+    enumValues['programs'] = await Program.find();
     enumValues['status']= User.schema.path('employmentStatus').enumValues;
     enumValues['leavetype']=await Leavetype.find();
     enumValues['jobs']=await Jobs.find();
@@ -87,6 +87,7 @@ const getEnumEmployers=async (req, res) => {
     enumValues['jobsIndex']=createSubcategoriesIndex(enumValues['jobs'])
     enumValues['leavesIndex']=createCategoriesIndex(enumValues['leavetype'])
     enumValues['programsIndex']=createProgramDevicesIndex(enumValues['programs'])
+    enumValues['finantial']=await Finantial.find();
 
     if (enumValues.programs == undefined) throw new ClientError('Error al solicitar los enums de los trabajos', 500)
     if (enumValues.provinces == undefined) throw new ClientError('Error al solicitar los enums de las provincias ', 500)

@@ -20,6 +20,10 @@ const fileSchema = new Schema({
 }, { timestamps: true });
 
 const deviceSchema = new Schema({
+    active:{
+        type: Boolean,
+        default: true
+    },
     name: { 
         type: String, 
         required: true 
@@ -54,14 +58,23 @@ const deviceSchema = new Schema({
 
 
 const programSchema = new Schema({
+    area:{
+        type: String,
+        enum: ['igualdad', 'desarrollo comunitario', 'lgtbiq', 'infancia y juventud', 'personas con discapacidad', 'mayores', 'no identificado'],
+        default: 'no identificado'
+    },
+    active:{
+        type: Boolean,
+        default: true
+    },
     responsible: { 
         type: [Schema.Types.ObjectId],
         ref: 'User',
         required: false,
         default: []
     },
-    funding: { 
-        type: Schema.Types.ObjectId,
+    finantial: { 
+        type: [Schema.Types.ObjectId],
         ref: 'Finantial'
     },
     name: { 
@@ -74,6 +87,14 @@ const programSchema = new Schema({
     },
     files: [fileSchema],
     devices: [deviceSchema],
+    cronology:{
+        open:{
+            type: Date,
+        },
+        closed:{
+            type:Date
+        }
+    },
     about: {
         description: { 
             type: String
@@ -83,14 +104,6 @@ const programSchema = new Schema({
         },
         profile: { 
             type: String
-        },
-        table:{
-            title: {
-                type:String
-            },
-            content:{
-                type:[String]
-            }
         }
       }
 });
