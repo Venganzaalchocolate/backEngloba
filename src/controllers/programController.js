@@ -3,7 +3,7 @@ const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 
 const postCreateProgram = async (req, res) => {
-  try {
+
     const { name, acronym, area, active, responsible, finantial, about } = req.body;
 
     if (!name || !acronym) return response(res, 400, { error: "Los datos no son correctos" });
@@ -28,9 +28,7 @@ const postCreateProgram = async (req, res) => {
 
     const savedProgram = await newProgram.save();
     response(res, 200, savedProgram);
-  } catch (error) {
-    response(res, 400, { error: error.message });
-  }
+ 
 };
 
 // Recoger todos los programas con paginación y filtros
@@ -57,7 +55,7 @@ const ProgramDeleteId = async (req, res) => {
 
 
 const ProgramPut = async (req, res) => {
-  try {
+
     const { id, name, acronym, area, active, responsible, finantial, about } = req.body;
     const updateFields = {};
 
@@ -82,56 +80,42 @@ const ProgramPut = async (req, res) => {
     if (!program) return response(res, 400, { error: "No existe el programa" });
 
     response(res, 200, program);
-  } catch (error) {
-    response(res, 400, { error: error.message });
-  }
+  
 };
    
 
 // Añadir dispositivo a un programa existente
 const addDispositive = async (req, res) => {
-    const filter = { _id: req.body._id };
+  const {
+    name,
+    active,
+    address,
+    email,
+    phone,
+    province,
+    programId
+  } = req.body;
 
-    const newDevice = {
-        name: req.body.name,
-        address: req.body.address,
-        responsible: req.body.responsible || [], // Optional
-        contratoAdministracion: req.body.contratoAdministracion || [],
-        autorizacionFuncionamiento: req.body.autorizacionFuncionamiento || [],
-        seguros: req.body.seguros || [],
-        libroQuejasSugerencias: req.body.libroQuejasSugerencias || [],
-        libroFoliadoRegistroUsuarios: req.body.libroFoliadoRegistroUsuarios || [],
-        constanciaProyectoEducativo: req.body.constanciaProyectoEducativo || [],
-        constanciaCurriculumEducativo: req.body.constanciaCurriculumEducativo || [],
-        constanciaReglamentoOrganizacion: req.body.constanciaReglamentoOrganizacion || [],
-        constanciaMemoriaAnual: req.body.constanciaMemoriaAnual || [],
-        constanciaProgramacionAnual: req.body.constanciaProgramacionAnual || [],
-        planAutoproteccion: req.body.planAutoproteccion || [],
-        certificadoImplantacionPlanAutoproteccion: req.body.certificadoImplantacionPlanAutoproteccion || [],
-        revisionExtintores: req.body.revisionExtintores || [],
-        revisionesBIE: req.body.revisionesBIE || [],
-        certificadoRevisionCalderas: req.body.certificadoRevisionCalderas || [],
-        certificadoRevisionElectricidad: req.body.certificadoRevisionElectricidad || [],
-        simulacroEvacuacion: req.body.simulacroEvacuacion || [],
-        actaIdentificacionFunciones: req.body.actaIdentificacionFunciones || [],
-        puntosEmergenciaOperativos: req.body.puntosEmergenciaOperativos || [],
-        senalizacionEvacuacion: req.body.senalizacionEvacuacion || [],
-        senalizacionAscensoresEmergencia: req.body.senalizacionAscensoresEmergencia || [],
-        menuVisadoNutricionista: req.body.menuVisadoNutricionista || [],
-        contratoCatering: req.body.contratoCatering || [],
-        planHigiene: req.body.planHigiene || [],
-        planLegionela: req.body.planLegionela || [],
-        contratoDDD: req.body.contratoDDD || [],
-        firmaProtocoloAcoso: req.body.firmaProtocoloAcoso || []
-    };
+  if (!programId) throw new ClientError('Falta el id del programa', 404);
+  if (!name) throw new ClientError('Falta el nombre del dispositivo', 400);
+  const program = await Program.findById(programId);
+  if (!program) throw new ClientError('No existe el programa', 404);
 
-    const updateProgram = {
-        '$push': { devices: newDevice }
-    };
+  const newDevice = {
+    name,
+    active: active !== 'si' ? false : true,
+    address: address || '',
+    email: email || '',
+    phone: phone || '',
+    responsible: [],
+    coordinators:[],
+    province: mongoose.Types.ObjectId.isValid(province) ? province : null,
+    files: []
+  };
 
-    let doc = await Program.findOneAndUpdate(filter, updateProgram, { new: true });
-    if (doc == null) throw new ClientError("No existe el programa", 400);
-    response(res, 200, doc);
+  program.devices.push(newDevice);
+  const savedProgram = await program.save();
+  response(res, 200, savedProgram);
 };
 
 // Obtener un dispositivo específico dentro de un programa
@@ -228,7 +212,6 @@ const deleteDispositive = async (req, res) => {
 
 
 const getDispositiveResponsable = async (req, res) => {
-
 
     // Verificamos que el request tiene un _id en el body. Si no, lanzamos un error controlado.
     if (!req.body._id) {
