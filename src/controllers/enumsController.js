@@ -1,4 +1,5 @@
-const { Jobs, Studies, Provinces, Work_schedule, Finantial, Offer, Program, User, Leavetype } = require('../models/indexModels');
+
+const { Jobs, Studies, Provinces, Work_schedule, Finantial, Offer, Program, User, Leavetype, Documentation } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 
 // Función para crear índice de leaveTypes
@@ -27,35 +28,35 @@ const createSubcategoriesIndex = (x) => {
 // crea un índice que tiene entradas tanto para programs como para devices
 const createProgramDevicesIndex = (programs) => {
     const index = {};
-  
+
     programs.forEach(program => {
-      // Primero, creamos un registro donde la clave es el "programId"
-      index[program._id.toString()] = {
-        _id: program._id.toString(),
-        type: "program",
-        name: program.name,
-        responsible: program.responsible, // responsables del PROGRAMA
-        devicesIds: program.devices.map(d => d._id.toString()) // para saber qué devices pertenecen
-        // ... más campos si deseas
-      };
-  
-      // Luego, creamos registros para cada device
-      if (Array.isArray(program.devices)) {
-        program.devices.forEach(device => {
-          index[device._id.toString()] = {
-            _id: device._id.toString(),
-            type: "device",
-            name: device.name,
-            responsible: device.responsible,
-            coordinators: device.coordinators,
-            programId: program._id.toString()
-            // ... más campos si necesitas
-          };
-        });
-      }
+        // Primero, creamos un registro donde la clave es el "programId"
+        index[program._id.toString()] = {
+            _id: program._id.toString(),
+            type: "program",
+            name: program.name,
+            responsible: program.responsible, // responsables del PROGRAMA
+            devicesIds: program.devices.map(d => d._id.toString()) // para saber qué devices pertenecen
+            // ... más campos si deseas
+        };
+
+        // Luego, creamos registros para cada device
+        if (Array.isArray(program.devices)) {
+            program.devices.forEach(device => {
+                index[device._id.toString()] = {
+                    _id: device._id.toString(),
+                    type: "device",
+                    name: device.name,
+                    responsible: device.responsible,
+                    coordinators: device.coordinators,
+                    programId: program._id.toString()
+                    // ... más campos si necesitas
+                };
+            });
+        }
     });
     return index;
-  };
+};
 
 const getEnums = async (req, res) => {
     let enumValues = {}
@@ -63,8 +64,8 @@ const getEnums = async (req, res) => {
     enumValues['provinces'] = await Provinces.find();
     enumValues['work_schedule'] = await Work_schedule.find();
     enumValues['studies'] = await Studies.find();
-    enumValues['finantial']=await Finantial.find();
-    
+    enumValues['finantial'] = await Finantial.find();
+
     if (enumValues.jobs == undefined) throw new ClientError('Error al solicitar los enums de los trabajos', 500)
     if (enumValues.provinces == undefined) throw new ClientError('Error al solicitar los enums de las provincias ', 500)
     if (enumValues.work_schedule == undefined) throw new ClientError('Error al solicitar los enums de los horarios', 500)
@@ -74,186 +75,146 @@ const getEnums = async (req, res) => {
 }
 
 
-const getEnumEmployers=async (req, res) => {
+const getEnumEmployers = async (req, res) => {
     let enumValues = {}
     enumValues['provinces'] = await Provinces.find();
     enumValues['programs'] = await Program.find();
-    enumValues['status']= User.schema.path('employmentStatus').enumValues;
-    enumValues['leavetype']=await Leavetype.find();
-    enumValues['jobs']=await Jobs.find();
+    enumValues['status'] = User.schema.path('employmentStatus').enumValues;
+    enumValues['leavetype'] = await Leavetype.find();
+    enumValues['jobs'] = await Jobs.find();
     enumValues['studies'] = await Studies.find();
     enumValues['work_schedule'] = await Work_schedule.find();
-    enumValues['offers']=await Offer.find({active:true})
-    enumValues['jobsIndex']=createSubcategoriesIndex(enumValues['jobs'])
-    enumValues['leavesIndex']=createCategoriesIndex(enumValues['leavetype'])
-    enumValues['programsIndex']=createProgramDevicesIndex(enumValues['programs'])
-    enumValues['finantial']=await Finantial.find();
+    enumValues['offers'] = await Offer.find({ active: true })
+    enumValues['jobsIndex'] = createSubcategoriesIndex(enumValues['jobs'])
+    enumValues['leavesIndex'] = createCategoriesIndex(enumValues['leavetype'])
+    enumValues['programsIndex'] = createProgramDevicesIndex(enumValues['programs'])
+    enumValues['finantial'] = await Finantial.find();
+    enumValues['documentation'] = await Documentation.find();
 
     if (enumValues.programs == undefined) throw new ClientError('Error al solicitar los enums de los trabajos', 500)
     if (enumValues.provinces == undefined) throw new ClientError('Error al solicitar los enums de las provincias ', 500)
-   
+
     response(res, 200, enumValues);
 }
 
-
-const putEnums = async (req, res) => {
-    const auxData = ['Jobs', 'Studies', 'Provinces', 'Work_schedule', 'Finantial']
-    if (!req.body.name || !req.body.type) throw new ClientError("Los datos no son correctos", 400);
-    if (!auxData.includes(req.body.type)) throw new ClientError("El tipo no es correcto", 400);
-
-    let auxNewEnum = null;
-    switch (req.body.type) {
-        case 'jobs':
-            auxNewEnum = new Jobs({ name: req.body.name })
-            break;
-        case 'studies':
-            auxNewEnum = new Studies({ name: req.body.name })
-            break;
-        case 'provinces':
-            auxNewEnum = new Provinces({ name: req.body.name })
-            break;
-        case 'work_schedule':
-            auxNewEnum = new Work_schedule({ name: req.body.name })
-            break;
-        case 'finantial':
-            auxNewEnum = new Finantial({ name: req.body.name })
-            break;
-        default:
-            break;
+// Definición de tipos válidos con su correspondiente modelo
+const validTypes = {
+    jobs: Jobs,
+    studies: Studies,
+    provinces: Provinces,
+    work_schedule: Work_schedule,
+    finantial: Finantial,
+    documentation: Documentation,
+  };
+  
+  // Función auxiliar para obtener el modelo según el tipo
+  const getModelByType = (type) => {
+    const Model = validTypes[type];
+    if (!Model) throw new ClientError("Tipo no válido", 400);
+    return Model;
+  };
+  
+  // PUT: Actualizar un documento o una subcategoría existente
+  const putEnums = async (req, res) => {
+    const allowedTypes = ['jobs', 'studies', 'provinces', 'work_schedule', 'finantial', 'documentation'];
+    if (!req.body.id || !req.body.name || !req.body.type)
+      throw new ClientError("Los datos no son correctos", 400);
+    if (!allowedTypes.includes(req.body.type))
+      throw new ClientError("El tipo no es correcto", 400);
+  
+    const Model = getModelByType(req.body.type);
+  
+    // Si se recibe "subId", actualizamos una subcategoría
+    if (req.body.subId) {
+      const updateData = { "subcategories.$[elem].name": req.body.name };
+      if (req.body.type === "documentation") {
+        updateData["subcategories.$[elem].date"] = req.body.date === 'si';
+      }
+      if (req.body.type === "jobs") {
+        updateData["subcategories.$[elem].public"] = req.body.public === 'si';
+      }
+      const updatedEnum = await Model.findOneAndUpdate(
+        { _id: req.body.id },
+        { $set: updateData },
+        { new: true, arrayFilters: [{ "elem._id": req.body.subId }] }
+      );
+      if (!updatedEnum) throw new ClientError("Elemento no encontrado", 404);
+      response(res, 200, updatedEnum);
+      return;
     }
-
-
-    const savedUser = await auxNewEnum.save();
-    response(res, 200, savedUser)
-}
-
-
-const postEnums = async (req, res) => {
-    if (!req.body.name || !req.body.type) throw new ClientError("Los datos no son correctos", 400);
-    let Model;
-    switch (req.body.type) {
-        case 'jobs':
-            Model = Jobs;
-            break;
-        case 'studies':
-            Model = Studies;
-            break;
-        case 'provinces':
-            Model = Provinces;
-            break;
-        case 'work_schedule':
-            Model = Work_schedule;
-            break;
-        case 'finantial':
-            Model = Finantial;
-            break;
-        default:
-            throw new ClientError("Tipo no válido", 400);
+  
+    // Actualizar el documento principal
+    const updateData = { name: req.body.name };
+    if (req.body.type === 'documentation') {
+      updateData.date = req.body.date === 'si';
     }
-
-    const auxNewEnum = new Model({ name: req.body.name });
-    const savedEnum = await auxNewEnum.save();
-    response(res, 200, savedEnum);
-}
-
-const deleteEnums = async (req, res) => {
-    if (!req.body.id || !req.body.type) throw new ClientError("Los datos no son correctos", 400);
-    let Model;
-    switch (req.body.type) {
-        case 'jobs':
-            Model = Jobs;
-            break;
-        case 'studies':
-            Model = Studies;
-            break;
-        case 'provinces':
-            Model = Provinces;
-            break;
-        case 'work_schedule':
-            Model = Work_schedule;
-            break;
-        case 'finantial':
-            Model = Finantial;
-            break;
-        default:
-            throw new ClientError("Tipo no válido", 400);
+    if (req.body.type === 'jobs') {
+      updateData.public = req.body.public === 'si';
     }
-
-    const deleteEnum = await Model.deleteOne({ _id: req.body.id });
-
-    if (deleteEnum.deletedCount === 0) {
-        throw new ClientError("No se encontró el documento para eliminar", 404);
-    }
-    response(res, 200, deleteEnum)
-}
-
-const postSubcategory = async (req, res) => {
-    if (!req.body.name || !req.body.type || !req.body.id) throw new ClientError("Los datos no son correctos", 400);
+  
+    const updatedEnum = await Model.findByIdAndUpdate(req.body.id, updateData, { new: true });
+    if (!updatedEnum) throw new ClientError("Elemento no encontrado", 404);
+    response(res, 200, updatedEnum);
+  };
+  
+  // DELETE: Eliminar un documento existente
+  const deleteEnums = async (req, res) => {
+    if (!req.body.id || !req.body.type)
+      throw new ClientError("Los datos no son correctos", 400);
+    const Model = getModelByType(req.body.type);
+    const result = await Model.deleteOne({ _id: req.body.id });
+    if (result.deletedCount === 0)
+      throw new ClientError("No se encontró el documento para eliminar", 404);
+    response(res, 200, result);
+  };
+  
+  // POST Subcategoría: Agrega una subcategoría a un documento existente
+  const postSubcategory = async (req, res) => {
+    if (!req.body.id || !req.body.name || !req.body.type)
+      throw new ClientError("Los datos no son correctos", 400);
     const filter = { _id: req.body.id };
-    const updateText = {
-    };
-    if (req.body.name) {
-        updateText['$push'] = {
-            subcategories: {
-                name: req.body.name,
-            }
-        };
+    // Construimos el objeto de la subcategoría
+    const subData = { name: req.body.name };
+    if (req.body.type === "jobs") {
+      subData.public = req.body.public === 'si';
     }
-
-    let Model;
-    switch (req.body.type) {
-        case 'jobs':
-            Model = Jobs;
-            break;
-        case 'studies':
-            Model = Studies;
-            break;
-        case 'provinces':
-            Model = Provinces;
-            break;
-        case 'finantial':
-            Model = Finantial;
-            break;
-        default:
-            throw new ClientError("Tipo no válido", 400);
+    const update = { $push: { subcategories: subData } };
+    const Model = getModelByType(req.body.type);
+    const updatedEnum = await Model.findOneAndUpdate(filter, update, { new: true });
+    response(res, 200, updatedEnum);
+  };
+  
+  // POST: Crear un nuevo documento
+  const postEnums = async (req, res) => {
+    if (!req.body.name || !req.body.type)
+      throw new ClientError("Los datos no son correctos", 400);
+  
+    const { name, date, type, public: pub } = req.body;
+    const Model = getModelByType(type);
+  
+    const newData = { name };
+    if (type === 'documentation') {
+      newData.date = date === 'si';
     }
-    const savedEnum = await Model.findOneAndUpdate(filter, updateText,  { new: true });
+    if (type === 'jobs') {
+      newData.public = pub === 'si';
+    }
+  
+    const newEnum = new Model(newData);
+    const savedEnum = await newEnum.save();
     response(res, 200, savedEnum);
-}
-
-const deleteSubcategory = async (req, res) => {
-    if (!req.body.idCategory || !req.body.type || !req.body.id) throw new ClientError("Los datos no son correctos", 400);
+  };
+  
+  const deleteSubcategory = async (req, res) => {
+    if (!req.body.id || !req.body.idCategory || !req.body.type)
+      throw new ClientError("Los datos no son correctos", 400);
     const filter = { _id: req.body.id };
-    const updateText = {};
-    if (req.body.idCategory) {
-        updateText['$pull'] = {
-            subcategories: {
-                _id: req.body.idCategory,
-            }
-        };
-    }
-    
-
-    let Model;
-    switch (req.body.type) {
-        case 'jobs':
-            Model = Jobs;
-            break;
-        case 'studies':
-            Model = Studies;
-            break;
-        case 'provinces':
-            Model = Provinces;
-            break;
-        case 'finantial':
-            Model = Finantial;
-            break;
-        default:
-            throw new ClientError("Tipo no válido", 400);
-    }
-    const savedEnum = await Model.findOneAndUpdate(filter, updateText,  { new: true });
-    response(res, 200, savedEnum);
-}
+    const update = { $pull: { subcategories: { _id: req.body.idCategory } } };
+    const Model = getModelByType(req.body.type);
+    const updatedEnum = await Model.findOneAndUpdate(filter, update, { new: true });
+    response(res, 200, updatedEnum);
+  };
+  
 
 module.exports = {
     //gestiono los errores con catchAsync
@@ -261,7 +222,7 @@ module.exports = {
     putEnums: catchAsync(putEnums),
     postEnums: catchAsync(postEnums),
     deleteEnums: catchAsync(deleteEnums),
-    postSubcategory:catchAsync(postSubcategory),
-    deleteSubcategory:catchAsync(deleteSubcategory),
-    getEnumEmployers:catchAsync(getEnumEmployers)
+    postSubcategory: catchAsync(postSubcategory),
+    deleteSubcategory: catchAsync(deleteSubcategory),
+    getEnumEmployers: catchAsync(getEnumEmployers)
 }

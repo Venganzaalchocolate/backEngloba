@@ -11,6 +11,7 @@ const Finantial=require('./finantial')
 const User=require("./user");
 const Leavetype=require('./leavetype')
 const Offer=require('./offer')
+const Documentation=require('./documentation')
 
 module.exports = {
     User,
@@ -24,6 +25,7 @@ module.exports = {
     Work_schedule,
     Finantial,
     Leavetype,
-    Offer
+    Offer,
+    Documentation
 
 }

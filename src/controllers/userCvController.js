@@ -24,6 +24,7 @@ const postCreateUserCv = async (req, res) => {
     if (!!req.body.about) dataUser['about'] = req.body.about
     if (!!req.body.offer) dataUser['offer'] = req.body.offer
     if (!!req.body.job_exchange) dataUser['job_exchange'] = req.body.job_exchange
+    if(!!req.body.disability) dataUser['disability']= req.body.disability
 
     const newUserCv = new UserCv(dataUser)
     const savedUserCv = await newUserCv.save();
@@ -64,6 +65,11 @@ const getUserCvs = async (req, res) => {
     if (req.body.reject !== undefined) {
         filters["reject"] = req.body.reject == '0' ? null : { $ne: null };
     }
+
+    if (req.body.disability > 0) {
+        filters.disability = { $gt: 0 };
+      }
+      
 
     
     const totalDocs = await UserCv.countDocuments(filters);

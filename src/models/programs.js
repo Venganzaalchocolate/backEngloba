@@ -95,6 +95,10 @@ const programSchema = new Schema({
             type:Date
         }
     },
+    essentialDocumentation:{
+        type:[Schema.Types.ObjectId],
+        ref: 'Documentation'
+    },
     about: {
         description: { 
             type: String

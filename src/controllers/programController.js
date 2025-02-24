@@ -209,8 +209,6 @@ const deleteDispositive = async (req, res) => {
 };
 
 
-
-
 const getDispositiveResponsable = async (req, res) => {
 
     // Verificamos que el request tiene un _id en el body. Si no, lanzamos un error controlado.

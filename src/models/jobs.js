@@ -4,6 +4,10 @@ const { Schema } = mongoose;
 const SubcategorySchema = new Schema({
     name: {
         type: String,
+    },
+    public:{
+        type: Boolean,
+        default: true
     }
 });
 
@@ -19,7 +23,7 @@ const jobs = mongoose.Schema({
     },
     public:{
         type: Boolean,
-        default: false
+        default: true
     }
     
 });

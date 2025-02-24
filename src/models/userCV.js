@@ -128,6 +128,10 @@ const userCv = mongoose.Schema({
     studies: {
         type: [String],
         required: true
+    },
+    disability:{
+            type:Number,
+            default: 0
     }
 
 }, { timestamps: true });
