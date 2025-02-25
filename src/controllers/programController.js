@@ -1,12 +1,13 @@
 const { Program } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
+const { validateRequiredFields } = require('../utils/utils');
 
 const postCreateProgram = async (req, res) => {
 
     const { name, acronym, area, active, responsible, finantial, about } = req.body;
 
-    if (!name || !acronym) return response(res, 400, { error: "Los datos no son correctos" });
+    if (!name || !acronym)  throw new ClientError('Falta datos', 400);
 
     const newProgram = new Program({
       name,
@@ -19,10 +20,6 @@ const postCreateProgram = async (req, res) => {
         description: about?.description || "",
         objectives: about?.objectives || "",
         profile: about?.profile || "",
-        table: {
-          title: about?.table?.title || "",
-          content: Array.isArray(about?.table?.content) ? about.table.content : []
-        }
       }
     });
 
@@ -55,33 +52,138 @@ const ProgramDeleteId = async (req, res) => {
 
 
 const ProgramPut = async (req, res) => {
+  const { id, name, acronym, area, active, finantial, about, cronology, type, essentialDocumentationProgram, essentialDocumentationDevice } = req.body;
+  let query = { _id: id };
+  const updateObj = {};
 
-    const { id, name, acronym, area, active, responsible, finantial, about } = req.body;
-    const updateFields = {};
+  // Actualiza campos simples
+  const update = {};
+  if (name !== undefined) update.name = name;
+  if (acronym !== undefined) update.acronym = acronym;
+  if (area !== undefined) update.area = area;
+  if (active !== undefined) update.active = active;
+  if (Array.isArray(finantial)) update.finantial = finantial.filter(i => mongoose.Types.ObjectId.isValid(i));
+  if (about) {
+    if (about.description !== undefined) update['about.description'] = about.description;
+    if (about.objectives !== undefined) update['about.objectives'] = about.objectives;
+    if (about.profile !== undefined) update['about.profile'] = about.profile;
+  }
+  if (Object.keys(update).length) updateObj.$set = update;
 
-    if (name !== undefined) updateFields.name = name;
-    if (acronym !== undefined) updateFields.acronym = acronym;
-    if (area !== undefined) updateFields.area = area;
-    if (active !== undefined) updateFields.active = active;
-    if (Array.isArray(responsible)) updateFields.responsible = responsible.filter(id => mongoose.Types.ObjectId.isValid(id));
-    if (Array.isArray(finantial)) updateFields.finantial = finantial.filter(id => mongoose.Types.ObjectId.isValid(id));
+  // Procesa documentación (solo "add" o "delete")
+  const processDoc = (field, doc) => {
+    if (!type || !['add', 'delete'].includes(type))
+      throw new ClientError('Falta el tipo o es inválido para documentación', 400);
+    if (!mongoose.Types.ObjectId.isValid(doc))
+      throw new ClientError('Documento inválido', 400);
+    return type === 'add'
+      ? { $addToSet: { [field]: doc } }
+      : { $pull: { [field]: doc } };
+  };
 
-    if (about !== undefined) {
-      if (about.description !== undefined) updateFields["about.description"] = about.description;
-      if (about.objectives !== undefined) updateFields["about.objectives"] = about.objectives;
-      if (about.profile !== undefined) updateFields["about.profile"] = about.profile;
-      if (about.table !== undefined) {
-        if (about.table.title !== undefined) updateFields["about.table.title"] = about.table.title;
-        if (Array.isArray(about.table.content)) updateFields["about.table.content"] = about.table.content;
-      }
+  console.log(essentialDocumentationProgram)
+  if (essentialDocumentationProgram !== undefined)
+    Object.assign(updateObj, processDoc('essentialDocumentationProgram', essentialDocumentationProgram));
+  if (essentialDocumentationDevice !== undefined)
+    Object.assign(updateObj, processDoc('essentialDocumentationDevice', essentialDocumentationDevice));
+
+  // Procesa cronology (se permiten "add", "delete" y "edit")
+  if (cronology !== undefined) {
+    if (!type || !['add', 'delete', 'edit'].includes(type))
+      throw new ClientError('Falta el tipo o es inválido para cronology', 400);
+    if (type === 'add') {
+      Object.assign(updateObj, { $addToSet: { cronology } });
+    } else if (type === 'delete') {
+      if (!cronology._id)
+        throw new ClientError('Falta _id para eliminar cronology', 400);
+      Object.assign(updateObj, { $pull: { cronology: { _id: cronology._id } } });
+    } else if (type === 'edit') {
+      if (!cronology._id)
+        throw new ClientError('Falta _id para editar cronology', 400);
+      Object.assign(updateObj, { $set: { "cronology.$": cronology } });
+      query["cronology._id"] = cronology._id;
     }
+  }
 
-    const program = await Program.findOneAndUpdate({ _id: id }, { $set: updateFields }, { new: true });
-    if (!program) return response(res, 400, { error: "No existe el programa" });
-
-    response(res, 200, program);
-  
+  const program = await Program.findOneAndUpdate(query, updateObj, { new: true });
+  if (!program) return response(res, 400, { error: "No existe el programa" });
+  response(res, 200, program);
 };
+
+
+
+
+
+
+// const controllerDocumentationProgram=async (req, res) => {
+//       // Verificar campos generales requeridos
+//       if (!req.body.userId) {
+//         throw new ClientError('El campo userId es requerido', 400);
+//     }
+
+//     if (!req.body.type) {
+//         throw new ClientError('La acción es requerida', 400);
+//     }
+
+//     const id = req.body.userId;
+    
+//     const file = req.file;  // El archivo puede no estar presente en algunos casos
+
+//     if (req.body.type === 'create') {
+//         if (!file) {
+//             throw new ClientError('El archivo es requerido para subir un documento', 400);
+//         }
+//         const requiredFields = ['name', 'payrollMonth'];
+//         validateRequiredFields(req.body, requiredFields);
+//         const createResult = await createPayroll(id, file, req.body.payrollYear, req.body.payrollMonth);
+
+//         if (!createResult) {
+//             throw new ClientError('No se ha podido subir la nómina', 400);
+//         } else {
+//             return response(res, 200, createResult);
+//         }
+//     } else if (req.body.type === 'delete') {
+//         if (!req.body.idPayroll && !req.body.pdf) {
+//             throw new ClientError('El campo idPayroll es requerido', 400);
+//         }
+//         const newUser = await deletePayroll(id, req.body.idPayroll, req.body.pdf);
+
+//         if (!!newUser) {
+//             return response(res, 200, newUser);
+//         } else {
+//             throw new ClientError('No se ha podido borrar la nómina', 404);
+//         }
+//     } else if (req.body.type === 'get') {
+//         if (!req.body.pdf) {
+//             throw new ClientError('El campo pdf es requerido', 400);
+//         }
+
+//                     // Obtener el archivo de Google Drive
+//             const { file, stream } = await getFileById(req.body.pdf);
+        
+//             if (!stream) {
+//                 throw new ClientError('Archivo no encontrado en Google Drive', 404);
+//             }
+        
+//             // Configurar los headers para la descarga
+//             res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
+//             res.setHeader('Content-Type', file.mimeType);
+        
+//             // Enviar el archivo como un stream
+//             stream.pipe(res);
+
+//     } else if(req.body.type === 'sign'){
+//         const requiredFields = ['payrollYear', 'payrollMonth', 'idPayroll'];
+//         validateRequiredFields(req.body, requiredFields);
+//         const signResult = await signPayroll(id, file, req.body.payrollYear, req.body.payrollMonth, req.body.idPayroll);
+//         if (!signResult) {
+//             throw new ClientError('No se ha podido subir la nómina', 400);
+//         } else {
+//             return response(res, 200, signResult);
+//         }
+//     }
+
+// }
    
 
 // Añadir dispositivo a un programa existente
@@ -141,36 +243,7 @@ const updateDispositive = async (req, res) => {
 
     // Actualizar los campos del dispositivo
     const updateText = {
-        name: req.body.name || dispositive.name,
-        address: req.body.address || dispositive.address,
-        responsible: (req.body.responsible && req.body.responsible != 'delete') ? req.body.responsible : (req.body.responsible && req.body.responsible == 'delete') ? null : dispositive.responsible,
-        contratoAdministracion: req.body.contratoAdministracion || dispositive.contratoAdministracion,
-        autorizacionFuncionamiento: req.body.autorizacionFuncionamiento || dispositive.autorizacionFuncionamiento,
-        seguros: req.body.seguros || dispositive.seguros,
-        libroQuejasSugerencias: req.body.libroQuejasSugerencias || dispositive.libroQuejasSugerencias,
-        libroFoliadoRegistroUsuarios: req.body.libroFoliadoRegistroUsuarios || dispositive.libroFoliadoRegistroUsuarios,
-        constanciaProyectoEducativo: req.body.constanciaProyectoEducativo || dispositive.constanciaProyectoEducativo,
-        constanciaCurriculumEducativo: req.body.constanciaCurriculumEducativo || dispositive.constanciaCurriculumEducativo,
-        constanciaReglamentoOrganizacion: req.body.constanciaReglamentoOrganizacion || dispositive.constanciaReglamentoOrganizacion,
-        constanciaMemoriaAnual: req.body.constanciaMemoriaAnual || dispositive.constanciaMemoriaAnual,
-        constanciaProgramacionAnual: req.body.constanciaProgramacionAnual || dispositive.constanciaProgramacionAnual,
-        planAutoproteccion: req.body.planAutoproteccion || dispositive.planAutoproteccion,
-        certificadoImplantacionPlanAutoproteccion: req.body.certificadoImplantacionPlanAutoproteccion || dispositive.certificadoImplantacionPlanAutoproteccion,
-        revisionExtintores: req.body.revisionExtintores || dispositive.revisionExtintores,
-        revisionesBIE: req.body.revisionesBIE || dispositive.revisionesBIE,
-        certificadoRevisionCalderas: req.body.certificadoRevisionCalderas || dispositive.certificadoRevisionCalderas,
-        certificadoRevisionElectricidad: req.body.certificadoRevisionElectricidad || dispositive.certificadoRevisionElectricidad,
-        simulacroEvacuacion: req.body.simulacroEvacuacion || dispositive.simulacroEvacuacion,
-        actaIdentificacionFunciones: req.body.actaIdentificacionFunciones || dispositive.actaIdentificacionFunciones,
-        puntosEmergenciaOperativos: req.body.puntosEmergenciaOperativos || dispositive.puntosEmergenciaOperativos,
-        senalizacionEvacuacion: req.body.senalizacionEvacuacion || dispositive.senalizacionEvacuacion,
-        senalizacionAscensoresEmergencia: req.body.senalizacionAscensoresEmergencia || dispositive.senalizacionAscensoresEmergencia,
-        menuVisadoNutricionista: req.body.menuVisadoNutricionista || dispositive.menuVisadoNutricionista,
-        contratoCatering: req.body.contratoCatering || dispositive.contratoCatering,
-        planHigiene: req.body.planHigiene || dispositive.planHigiene,
-        planLegionela: req.body.planLegionela || dispositive.planLegionela,
-        contratoDDD: req.body.contratoDDD || dispositive.contratoDDD,
-        firmaProtocoloAcoso: req.body.firmaProtocoloAcoso || dispositive.firmaProtocoloAcoso
+        
     };
 
     let doc = await Program.findOneAndUpdate(

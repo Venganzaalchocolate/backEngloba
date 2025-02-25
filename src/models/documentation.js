@@ -3,6 +3,10 @@ const { Schema } = mongoose;
 
 
 const documentation = mongoose.Schema({
+    label:{
+        type:String,
+        required:true
+    },
     name: {
         type: String,
         required: true,

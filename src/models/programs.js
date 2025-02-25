@@ -56,6 +56,15 @@ const deviceSchema = new Schema({
     files: [fileSchema],
 });
 
+const cronologySchema=new Schema({
+    open:{
+        type: Date,
+    },
+    closed:{
+        type:Date
+    }
+})
+
 
 const programSchema = new Schema({
     area:{
@@ -87,15 +96,12 @@ const programSchema = new Schema({
     },
     files: [fileSchema],
     devices: [deviceSchema],
-    cronology:{
-        open:{
-            type: Date,
-        },
-        closed:{
-            type:Date
-        }
+    cronology:[cronologySchema],
+    essentialDocumentationProgram:{
+        type:[Schema.Types.ObjectId],
+        ref: 'Documentation'
     },
-    essentialDocumentation:{
+    essentialDocumentationDevice:{
         type:[Schema.Types.ObjectId],
         ref: 'Documentation'
     },

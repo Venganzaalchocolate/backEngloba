@@ -91,6 +91,11 @@ const offer= mongoose.Schema({
         type: [Schema.Types.ObjectId],
         ref: 'UserCv',
         default: []
+    },
+    type:{
+        type:String,
+        enum: ['internal', 'external'],
+        default: 'external'
     }
 }, { timestamps: true })
 
