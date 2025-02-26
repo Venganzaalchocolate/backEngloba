@@ -130,8 +130,6 @@ const postCreateUser = async (req, res) => {
     }
   };
   
-
-
 const getUsers = async (req, res) => {
     if (!req.body.page || !req.body.limit) throw new ClientError("Faltan datos no son correctos", 400);
 
@@ -173,9 +171,6 @@ const getUsers = async (req, res) => {
     response(res, 200, { users: users, totalPages });
 };
 
-
-
-
 const getUsersFilter = async (req, res) => {
     const filter = { name: { $regex: `.*${req.body.name}.*` } }
     // Utiliza el método find() de Mongoose para obtener todos los documentos en la colección
@@ -183,7 +178,6 @@ const getUsersFilter = async (req, res) => {
     // Responde con la lista de usuarios y código de estado 200 (OK)
     response(res, 200, usuarios);
 }
-
 
 //busca un usuario por ID
 const getUserID = async (req, res) => {
@@ -256,8 +250,7 @@ const getFileUser = async (req, res) => {
     }
   };
 
-
-  const UserDeleteId = async (req, res) => {
+const UserDeleteId = async (req, res) => {
 
     try {
          const id = req.body.id;
@@ -670,88 +663,123 @@ const changeDispositiveNow = async (user) => {
   };
   
   
-
-// Controlador principal
+// Ejemplo: hirings.js
+// Recuerda tener definidos o importados:
+//  - ClientError
+//  - User (modelo Mongoose)
+//  - changeDispositiveNow (tu función de lógica extra)
+//  - convertIds (si convierte strings a ObjectId, etc.)
+//  - mongoose (si necesitas new mongoose.Types.ObjectId)
 const hirings = async (req, res) => {
-
-    // Validar campos generales requeridos
-    if (!req.body.userId) {
-        throw new ClientError('El campo userId es requerido', 400);
-    }
-    if (!req.body.type) {
-        throw new ClientError('La acción es requerida', 400);
-    }
-
-
-    // Realizar la operación en MongoDB
+    if (!req.body.userId) throw new ClientError("Error, contacte con el administrador", 400);
+    if (!req.body.type) throw new ClientError("Error, contacte con el administrador", 400);
+  
     let data;
-    if (req.body.type === 'put') {
-        if (!Array.isArray(req.body.hirings)) {
-            throw new ClientError('El campo hirings debe ser un array', 400);
-        }
-        const cuerpo = convertIds(req.body.hirings);
-        data = await User.findOneAndUpdate(
-            { _id: req.body.userId },
-            { $set: { hiringPeriods: cuerpo } }, // Actualización completa del array
-            { new: true } // Devolver el documento actualizado
-        );
-    } else if (req.body.type === 'create') {
-        if (typeof req.body.hirings !== 'object' || Array.isArray(req.body.hirings)) {
-            throw new ClientError('El campo hirings debe ser un objeto', 400);
-        }
-
-        // Procesar el objeto de hiring
-        const newHiring = convertIds([req.body.hirings])[0];
-
-        // Agregar el nuevo elemento al array hiringPeriods
-        data = await User.findOneAndUpdate(
-            { _id: req.body.userId },
-            { $push: { hiringPeriods: newHiring } }, // Agregar al array existente
-            { new: true } // Devolver el documento actualizado
-        )
-    } else if (req.body.type === 'createLeave') {
-        if (typeof req.body.leave !== 'object' || Array.isArray(req.body.leave)) {
-            throw new ClientError('El campo leave debe ser un objeto', 400);
-        }
-
-        let dataAux=req.body.leave
-        dataAux.leaveType=new mongoose.Types.ObjectId(dataAux.leaveType);
-
-        data = await User.findOneAndUpdate(
-            { _id: new mongoose.Types.ObjectId(req.body.userId), "hiringPeriods._id": new mongoose.Types.ObjectId(req.body.hirindId) }, // Filtra por userId y el hiringId específico
-            {
-                $push: {
-                    "hiringPeriods.$.leavePeriods": dataAux // Agrega el nuevo período de excedencia al campo leavePeriods
-                }
-            },
-            { new: true } // Devuelve el documento actualizado
-        ).catch((x)=>{throw new ClientError('No se ha podido crear el periodo de contratación', 400)})
-
-    } else if(req.body.type === 'delete'){
-
-        data = await User.findOneAndUpdate(
-            {
-                _id: new mongoose.Types.ObjectId(req.body.userId),
-                'hiringPeriods._id': new mongoose.Types.ObjectId(req.body.hirindId), // Filtra el hiringPeriod específico
-            },
-            {
-                $set: { 'hiringPeriods.$.active': false } // Actualiza el campo active a false
-            },
-            {
-                new: true, // Devuelve el documento actualizado
-                runValidators: true // Asegura que se validen los datos durante la actualización
-            }
-        ).catch((x)=>{throw new ClientError('No se ha podido eliminar el periodo de contratación', 400)});
+    if (req.body.type === "put") {
+      if (!Array.isArray(req.body.hirings)) throw new ClientError("Error, contacte con el administrador", 400);
+      const cuerpo = convertIds(req.body.hirings);
+  
+      const userDoc = await User.findById(req.body.userId);
+      if (!userDoc) throw new ClientError("Usuario no encontrado", 404);
+  
+      const openPeriods = cuerpo.filter(p => !p.endDate && p.active !== false);
+      const ftCount = openPeriods.filter(p => p.workShift?.type === "completa").length;
+      const ptCount = openPeriods.filter(p => p.workShift?.type === "parcial").length;
+  
+      if (ftCount > 1) throw new ClientError("Máximo 1 periodo completo abierto", 400);
+      if (ftCount === 1 && ptCount > 0) throw new ClientError("No mezclar completo con parcial abierto", 400);
+      if (ptCount > 2) throw new ClientError("Máximo 2 periodos parciales abiertos", 400);
+  
+      data = await User.findOneAndUpdate(
+        { _id: req.body.userId },
+        { $set: { hiringPeriods: cuerpo } },
+        { new: true }
+      );
+      if (!data) throw new ClientError("No se pudo actualizar hirings", 400);
+  
+    } else if (req.body.type === "create") {
+      if (typeof req.body.hirings !== "object" || Array.isArray(req.body.hirings))
+        throw new ClientError("Error, contacte con el administrador", 400);
+  
+      const [newHiring] = convertIds([req.body.hirings]);
+      const userDoc = await User.findById(req.body.userId);
+      if (!userDoc) throw new ClientError("Usuario no encontrado", 404);
+  
+      const openPeriods = userDoc.hiringPeriods.filter(p => !p.endDate && p.active !== false);
+      const shiftType = newHiring?.workShift?.type;
+      if (!shiftType) throw new ClientError("Falta el tipo de horario", 400);
+  
+      if (shiftType === "completa") {
+        if (openPeriods.length > 0) 
+          throw new ClientError("Ya existe un periodo de contratación abierto a jornada completa, no se puede crear otro", 400);
+      } else if (shiftType === "parcial") {
+        if (openPeriods.some(p => p.workShift?.type === "completa"))
+          throw new ClientError("Hay un periodo de contratación a jornada completa abierto, no se puede crear parcial", 400);
+        if (openPeriods.filter(p => p.workShift?.type === "parcial").length >= 2)
+          throw new ClientError("No se permiten más de 2 periodos de contratación con media jornada abiertos", 400);
+      } else {
+        throw new ClientError("Tipo de horario incorrecto", 400);
+      }
+  
+      data = await User.findOneAndUpdate(
+        { _id: req.body.userId },
+        { $push: { hiringPeriods: newHiring } },
+        { new: true }
+      );
+      if (!data) throw new ClientError("No se pudo crear el periodo de contratación", 400);
+  
+    } else if (req.body.type === "createLeave") {
+      if (typeof req.body.leave !== "object" || Array.isArray(req.body.leave))
+        throw new ClientError("'leave' debe ser un objeto", 400);
+      if (!req.body.hirindId) throw new ClientError("Falta el id del periodo de contratación", 400);
+  
+      const userDoc = await User.findOne({
+        _id: req.body.userId,
+        "hiringPeriods._id": req.body.hirindId
+      });
+      if (!userDoc) throw new ClientError("No se encontró el periodo de contratación", 404);
+  
+      const hiringPeriod = userDoc.hiringPeriods.find(hp => hp._id.toString() === req.body.hirindId);
+      if (!hiringPeriod) throw new ClientError("No existe el periodo de contratación", 400);
+  
+      const dataAux = req.body.leave;
+      if (!dataAux.startLeaveDate) throw new ClientError("Falta la fecha de inicio de excedencia", 400);
+      dataAux.leaveType = new mongoose.Types.ObjectId(dataAux.leaveType);
+  
+      // No se puede crear otro leave si hay uno abierto
+      const openLeave = hiringPeriod.leavePeriods.find(lp => !lp.actualEndLeaveDate && lp.active !== false);
+      if (openLeave) throw new ClientError("Ya hay una excedencia o baja abierta, no de puede crear otra", 400);
+  
+      // El nuevo startLeaveDate debe ser posterior al actualEndLeaveDate del último
+      const sortedLeaves = [...hiringPeriod.leavePeriods].sort((a,b) => a.startLeaveDate - b.startLeaveDate);
+      const lastLeave = sortedLeaves[sortedLeaves.length - 1];
+      if (lastLeave?.actualEndLeaveDate) {
+        if (new Date(dataAux.startLeaveDate) <= new Date(lastLeave.actualEndLeaveDate))
+          throw new ClientError("La nueva excedencia o baja se debe iniciar después del último periodo de baja", 400);
+      }
+  
+      data = await User.findOneAndUpdate(
+        { _id: new mongoose.Types.ObjectId(req.body.userId), "hiringPeriods._id": new mongoose.Types.ObjectId(req.body.hirindId)},
+        { $push: { "hiringPeriods.$.leavePeriods": dataAux }},
+        { new: true }
+      ).catch(() => { throw new ClientError("Error creando la excedencia o baja", 400)});
+  
+    } else if (req.body.type === "delete") {
+      data = await User.findOneAndUpdate(
+        { _id: new mongoose.Types.ObjectId(req.body.userId), "hiringPeriods._id": new mongoose.Types.ObjectId(req.body.hirindId)},
+        { $set: { "hiringPeriods.$.active": false }},
+        { new: true, runValidators: true }
+      ).catch(() => { throw new ClientError("No se pudo eliminar el periodo de contratación", 400)});
+  
     } else {
-        throw new ClientError('El tipo no es valido', 400);
+      throw new ClientError("Tipo inválido contacte con comunicacion@engloba.org.es", 400);
     }
+  
+    const userChangeDispotive = await changeDispositiveNow(data);
+    response(res, 200, userChangeDispotive);
+  };
 
-    const userChangeDispotive =await changeDispositiveNow(data)
-    response(res, 200, userChangeDispotive)
-    // Responder con los datos actualizados
-};
-
-
+  
 
 
 module.exports = {

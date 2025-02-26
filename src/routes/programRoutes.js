@@ -17,7 +17,13 @@ const {
     getDispositiveResponsable,
     handleCoordinators,
     handleResponsibles,
+    filesProgram,
 } = require('../controllers/indexController');
+
+// Configura `multer` para almacenamiento en memoria
+const multer = require('multer');
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
 // Rutas para Programas
 router.get("/programs", urlencodedParser, getPrograms);
@@ -33,5 +39,6 @@ router.delete('/deletedispositive', urlencodedParser, tokenValid, deleteDisposit
 router.post('/dispositiveresponsable', urlencodedParser, getDispositiveResponsable);
 router.post('/coordinators', urlencodedParser, tokenValid, handleCoordinators);
 router.post('/responsibles', urlencodedParser, tokenValid, handleResponsibles);
+router.post("/fileProgram", tokenValid, upload.single('pdf'), filesProgram)
 
 module.exports = router;

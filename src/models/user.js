@@ -1,5 +1,4 @@
 const mongoose = require("mongoose");
-const Bag = require("./bag")
 const { Schema } = mongoose;
 
 // Esquema para Periodos de Excedencia o Baja Laboral
@@ -231,6 +230,10 @@ const UserSchema = new Schema({
     notes:{
         type: String,
     },
+    consetmentDataProtection:{
+        type:Boolean,
+        default:true,
+    }
 }, { timestamps: true });
 
 module.exports=mongoose.model('User', UserSchema)

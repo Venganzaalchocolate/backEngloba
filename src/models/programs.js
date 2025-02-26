@@ -94,7 +94,10 @@ const programSchema = new Schema({
         type: String,
         required: true 
     },
-    files: [fileSchema],
+    files: {
+        type:[Schema.Types.ObjectId],
+        ref: 'File'
+    },
     devices: [deviceSchema],
     cronology:[cronologySchema],
     essentialDocumentationProgram:{
