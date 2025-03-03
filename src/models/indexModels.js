@@ -12,6 +12,7 @@ const User=require("./user");
 const Leavetype=require('./leavetype')
 const Offer=require('./offer')
 const Documentation=require('./documentation')
+const Filedrive=require('./file')
 
 module.exports = {
     User,
@@ -26,6 +27,6 @@ module.exports = {
     Finantial,
     Leavetype,
     Offer,
-    Documentation
-
+    Documentation,
+    Filedrive
 }

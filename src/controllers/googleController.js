@@ -48,7 +48,16 @@ const deleteFileById = async (fileId) => {
   }
 };
 
-// Obtener archivo por ID de Google Drive
+// O// Función auxiliar para convertir un stream a Buffer
+const streamToBuffer = (stream) => {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on('data', (chunk) => chunks.push(chunk));
+    stream.on('error', reject);
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+  });
+};
+
 const getFileById = async (fileId) => {
   try {
     // Obtener metadatos del archivo
@@ -57,20 +66,81 @@ const getFileById = async (fileId) => {
       fields: 'id, name, mimeType',
     });
 
-    // Descargar el archivo
+    // Descargar el archivo como stream
     const response = await drive.files.get(
       { fileId, alt: 'media' },
       { responseType: 'stream' }
     );
 
-    return { file, stream: response.data }; // Devolver metadatos del archivo y el stream
+    // Convertir el stream a un Buffer para enviarlo correctamente al front-end
+    const fileBuffer = await streamToBuffer(response.data);
+
+    return { file, data: fileBuffer };
   } catch (error) {
     console.error('Error al buscar o descargar el archivo por ID:', error.message || error);
     return null;
   }
 };
 
+function getExtensionFromMime(mimetype) {
+  switch (mimetype) {
+    case 'application/pdf':
+      return '.pdf';
+    case 'application/msword':
+      return '.doc';
+    case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+      return '.docx';
+    case 'image/jpeg':
+      return '.jpg';
+    case 'image/png':
+      return '.png';
+    // Agrega otros casos según tus necesidades
+    default:
+      return '.bin';
+  }
+}
+
+const updateFileInDrive = async (file, fileId, fileName) => {
+  try {
+    // 1. Creamos un stream a partir del buffer del archivo
+    const bufferStream = new stream.PassThrough();
+    bufferStream.end(file.buffer);
+
+    // Si deseas mantener el mismo nombre anterior y no renombrar, puedes omitir "fileName" o ponerlo condicional
+    // Aquí asumimos que quieres renombrarlo con su extensión:
+    let finalName = fileName 
+      ? fileName + getExtensionFromMime(file.mimetype) 
+      : undefined; // Si no pasas fileName, no renombre
+
+    // 2. Actualiza el archivo en Drive
+    const updateResponse = await drive.files.update({
+      fileId: fileId,
+      media: {
+        mimeType: file.mimetype,
+        body: bufferStream,
+      },
+      requestBody: {
+        // Actualiza el nombre solo si 'finalName' existe; 
+        // si quieres *siempre* actualizar, ponlo directamente
+        ...(finalName && { name: finalName }),
+        mimeType: file.mimetype,
+      },
+      fields: 'id, name', // Qué campos quieres que te devuelva la respuesta
+    });
+
+    // 4. Retornamos el nuevo nombre y el id
+    const updatedFile = updateResponse.data;
+
+    return { id: updatedFile.id, name: updatedFile.name };
+
+  } catch (error) {
+    console.error('Error al actualizar el archivo en Google Drive:', error);
+    return null;
+  }
+};
+
 const uploadFileToDrive = async (file, folderId, fileName, duplicate=false) => {
+
   try {
     const bufferStream = new stream.PassThrough();
     bufferStream.end(file.buffer); // El buffer contiene los datos del archivo
@@ -82,6 +152,7 @@ const uploadFileToDrive = async (file, folderId, fileName, duplicate=false) => {
     });
 
     let fileId;
+
 
     if (!duplicate && existingFile.data.files.length > 0) {
       // Si el archivo ya existe, actualizar su contenido
@@ -100,10 +171,11 @@ const uploadFileToDrive = async (file, folderId, fileName, duplicate=false) => {
       });
 
     } else {
+      let nameFile=fileName+getExtensionFromMime(file.mimetype)
       // Si no existe, crear un archivo nuevo
       const res = await drive.files.create({
         requestBody: {
-          name: fileName, // Nombre del archivo que se subirá
+          name: nameFile, // Nombre del archivo que se subirá
           mimeType: file.mimetype, // Tipo MIME del archivo (ej: 'application/pdf')
           parents: [folderId], // ID de la carpeta donde se subirá el archivo
         },
@@ -115,7 +187,6 @@ const uploadFileToDrive = async (file, folderId, fileName, duplicate=false) => {
       });
 
       fileId = res.data.id;
-      console.log(`Archivo nuevo creado: ${fileName}`);
     }
 
     // Asignar permisos de editor a cada correo electrónico
@@ -138,55 +209,6 @@ const uploadFileToDrive = async (file, folderId, fileName, duplicate=false) => {
   }
 };
 
-
-async function createFolderAndShare(folderName, parentFolderId, userEmails) {
-  try {
-    // 1) Crear la carpeta
-    const response = await drive.files.create({
-      requestBody: {
-        name: folderName,
-        mimeType: 'application/vnd.google-apps.folder',
-        parents: parentFolderId ? [parentFolderId] : []
-      },
-      fields: 'id'
-    });
-    
-    const folderId = response.data.id;
-    console.log(`Carpeta creada con nombre: "${folderName}", ID: ${folderId}`);
-
-    // 2) Otorgar permisos de edición a cada usuario
-    for (const email of userEmails) {
-      await drive.permissions.create({
-        fileId: folderId,
-        requestBody: {
-          type: 'user',
-          role: 'writer',         // 'writer' = puede editar y borrar contenidos
-          emailAddress: email
-        }
-      });
-      console.log(`Permisos de edición otorgados a: ${email}`);
-    }
-
-    return folderId; // Devuelve el ID de la carpeta, por si lo necesitas
-  } catch (error) {
-    console.error('Error al crear la carpeta o asignar permisos:', error);
-    return null;
-  }
-}
-
-//Ejemplo de uso
-// (async () => {
-//   const colaboradores = ['comunicacion@engloba.org.es', 'web@engloba.org.es'];
-//   const newFolderId = await createFolderAndShare('backup12', backupFolderId, colaboradores);
-//   const newFolderId2 = await createFolderAndShare('backup72', backupFolderId, colaboradores);
-//   if (newFolderId && newFolderId2) {
-//     console.log('Carpeta creada y compartida exitosamente. ID:', newFolderId);
-//       console.log('Carpeta creada y compartida exitosamente. ID:', newFolderId2);
-//   }
-// })();
-
-// Función recursiva para eliminar todos los archivos/carpetas que un usuario (email)
-// haya creado dentro de una carpeta (folderId).
 
 
 async function listOwnedItemsInFolder(folderId, emails) {
@@ -1039,5 +1061,6 @@ const deleteFileByName = async () => {
 module.exports = {
   uploadFileToDrive,
   getFileById,
-  deleteFileById
+  deleteFileById,
+  updateFileInDrive
 };

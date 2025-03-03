@@ -612,56 +612,8 @@ const handleResponsibles = async (req, res) => {
   return response(res, 200, dataToReturn);
 };
 
-const filesProgram = async (req, res) => {
-  if (!req.body.programId) {
-    throw new ClientError('El campo programId es requerido', 400);
-  }
-
-  if (!req.body.type) {
-    throw new ClientError('La acción es requerida', 400);
-  }
-
-  if (type == 'create') {
-    const file = req.file;
-    const folderId = process.env.GOOGLE_DRIVE_APPFILE;
-    const originalModel = 'Program';
-    const idModel = req.body.programId;
-    let originDocumentation = null;
-    let fileName = null;
-    let fileLabel = null;
-    // si existe documentationId se cogerá el nombre de ese modelo por tanto no pondremos nombre y label porque la lo tiene Documentation
-    if (!!req.body.documentationId) {
-      originDocumentation = req.body.documentationId;
-    } else {
-      fileName = req.body.fileName
-      fileLabel = req.body.fileLabel
-    }
-
-    const description = req.body.description || '';
-    // si existe req.body.date me creas const date=req.body.date sino no se pone
-    const notes = req.body.notes || '';
-    // si existe conology me creas el objeto
-    // const cronology = {
-    //   open: req.body.cronology.open,
-    //   closed:  req.body.cronology.closed
-    // }
-
-    // Cuando se haya cerado el nuevo File se sube a drive, 
-    // se actualizará el file nuevo con idDrive que te proporcione la subida
-    // y por ultimo se añadira el id al array de files del programa que corresponda, 
-    
-
-  } else if (type == 'delete') {
-    const idFile = req.body.idFile
-
-  } else if (type == 'update') {
-    const idFile = req.body.idFile
-
-  }
 
 
-
-}
 
 
 
@@ -682,5 +634,5 @@ module.exports = {
   getDispositiveResponsable: catchAsync(getDispositiveResponsable),
   handleCoordinators: catchAsync(handleCoordinators),
   handleResponsibles: catchAsync(handleResponsibles),
-  filesProgram: catchAsync(filesProgram)
+
 };

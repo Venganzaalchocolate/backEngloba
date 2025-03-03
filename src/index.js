@@ -11,6 +11,7 @@ const programRoutes = require('./routes/programRoutes');
 const offerRoutes = require('./routes/offerRoutes');
 const enumsRoutes = require('./routes/enumsRoutes');
 const googleRoutes=require('./routes/googleRoutes')
+const documentationRoutes=require('./routes/documentationRoutes')
 const { connectToDatabase } = require('./database/connect');
 const { listFiles, watchFolder } = require('./controllers/googleController');
 
@@ -54,6 +55,7 @@ app.use('/api', bagRoutes);
 app.use('/api', programRoutes);
 app.use('/api', offerRoutes);
 app.use('/api', enumsRoutes);
+app.use('/api', documentationRoutes)
 
 // Middleware para manejar rutas no encontradas (404)
 app.use((req, res, next) => {

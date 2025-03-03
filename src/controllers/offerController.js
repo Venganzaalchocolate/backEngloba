@@ -24,7 +24,8 @@ const postCreateOfferJob = async (req, res) => {
         sepe,
         job_title,
         entity,
-        programId
+        programId,
+        type
       } = req.body;
 
     validateRequiredFields(req.body, requiredFields);
@@ -47,6 +48,7 @@ const postCreateOfferJob = async (req, res) => {
         },
         studies: Array.isArray(studies) ? studies : [], // Asegurar array
         sepe: sepe === "si", // Convertir a booleano
+        type: type || "external"
     };
 
     const savedOfferJob = await Offer.create(dataOfferJob);
@@ -102,7 +104,8 @@ const OfferJobPut = async (req, res) => {
         programId,
         id,
         active,
-        userCv
+        userCv, 
+        type
     } = req.body;
 
     // Verificar si la oferta existe
@@ -128,6 +131,7 @@ const OfferJobPut = async (req, res) => {
     if (expected_incorporation_date) updatedFields.expected_incorporation_date = expected_incorporation_date;
     if (studies) updatedFields.studies = Array.isArray(studies) ? studies : [];
     if (typeof sepe !== "undefined") updatedFields.sepe = sepe === "si";
+    if(type) updatedFields.type=type
 
     if (active){
         if(active === "si"){
