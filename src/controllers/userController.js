@@ -74,6 +74,18 @@ const postCreateUser = async (req, res) => {
   
     // Procesar el objeto de hiring
     const newHiring = convertIds(hiringPeriods)[0];
+
+    
+      // Si newHiring.reason existe y tiene la propiedad dni, se busca el usuario por ese dni
+  if (newHiring.reason && newHiring.reason.dni) {
+    const replacementUser = await User.findOne({ dni: newHiring.reason.dni });
+    if(replacementUser){
+      newHiring.reason = { user: replacementUser._id, replacement: true }
+    } else{
+      throw new ClientError("El trabajador al que sustituye no existe", 404);
+    }
+   
+  }
   
     // Construir objeto userData
     const userData = {
@@ -89,6 +101,8 @@ const postCreateUser = async (req, res) => {
       notes,
       gender
     };
+
+    console.log(userData)
   
     // Manejar disability
     if (disability) {
@@ -182,7 +196,7 @@ const getUsersFilter = async (req, res) => {
 //busca un usuario por ID
 const getUserID = async (req, res) => {
     // Obtén el ID del parámetro de la solicitud
-    const id = req.params.id;
+    const id = req.body.id;
     // Utiliza el método findById() de Mongoose para buscar un usuario por su ID
     // Si no se encuentra el usuario, responde con un código de estado 404 (Not Found)
     const usuario = await User.findById(id).catch(error => { throw new ClientError('Usuario no encontrado', 404) });
@@ -671,115 +685,178 @@ const changeDispositiveNow = async (user) => {
 //  - convertIds (si convierte strings a ObjectId, etc.)
 //  - mongoose (si necesitas new mongoose.Types.ObjectId)
 const hirings = async (req, res) => {
-    if (!req.body.userId) throw new ClientError("Error, contacte con el administrador", 400);
-    if (!req.body.type) throw new ClientError("Error, contacte con el administrador", 400);
-  
-    let data;
-    if (req.body.type === "put") {
-      if (!Array.isArray(req.body.hirings)) throw new ClientError("Error, contacte con el administrador", 400);
-      const cuerpo = convertIds(req.body.hirings);
-  
-      const userDoc = await User.findById(req.body.userId);
-      if (!userDoc) throw new ClientError("Usuario no encontrado", 404);
-  
-      const openPeriods = cuerpo.filter(p => !p.endDate && p.active !== false);
-      const ftCount = openPeriods.filter(p => p.workShift?.type === "completa").length;
-      const ptCount = openPeriods.filter(p => p.workShift?.type === "parcial").length;
-  
-      if (ftCount > 1) throw new ClientError("Máximo 1 periodo completo abierto", 400);
-      if (ftCount === 1 && ptCount > 0) throw new ClientError("No mezclar completo con parcial abierto", 400);
-      if (ptCount > 2) throw new ClientError("Máximo 2 periodos parciales abiertos", 400);
-  
-      data = await User.findOneAndUpdate(
-        { _id: req.body.userId },
-        { $set: { hiringPeriods: cuerpo } },
-        { new: true }
-      );
-      if (!data) throw new ClientError("No se pudo actualizar hirings", 400);
-  
-    } else if (req.body.type === "create") {
-      if (typeof req.body.hirings !== "object" || Array.isArray(req.body.hirings))
-        throw new ClientError("Error, contacte con el administrador", 400);
-  
-      const [newHiring] = convertIds([req.body.hirings]);
-      const userDoc = await User.findById(req.body.userId);
-      if (!userDoc) throw new ClientError("Usuario no encontrado", 404);
-  
-      const openPeriods = userDoc.hiringPeriods.filter(p => !p.endDate && p.active !== false);
-      const shiftType = newHiring?.workShift?.type;
-      if (!shiftType) throw new ClientError("Falta el tipo de horario", 400);
-  
-      if (shiftType === "completa") {
-        if (openPeriods.length > 0) 
-          throw new ClientError("Ya existe un periodo de contratación abierto a jornada completa, no se puede crear otro", 400);
-      } else if (shiftType === "parcial") {
-        if (openPeriods.some(p => p.workShift?.type === "completa"))
-          throw new ClientError("Hay un periodo de contratación a jornada completa abierto, no se puede crear parcial", 400);
-        if (openPeriods.filter(p => p.workShift?.type === "parcial").length >= 2)
-          throw new ClientError("No se permiten más de 2 periodos de contratación con media jornada abiertos", 400);
-      } else {
-        throw new ClientError("Tipo de horario incorrecto", 400);
-      }
-  
-      data = await User.findOneAndUpdate(
-        { _id: req.body.userId },
-        { $push: { hiringPeriods: newHiring } },
-        { new: true }
-      );
-      if (!data) throw new ClientError("No se pudo crear el periodo de contratación", 400);
-  
-    } else if (req.body.type === "createLeave") {
-      if (typeof req.body.leave !== "object" || Array.isArray(req.body.leave))
-        throw new ClientError("'leave' debe ser un objeto", 400);
-      if (!req.body.hirindId) throw new ClientError("Falta el id del periodo de contratación", 400);
-  
-      const userDoc = await User.findOne({
-        _id: req.body.userId,
-        "hiringPeriods._id": req.body.hirindId
-      });
-      if (!userDoc) throw new ClientError("No se encontró el periodo de contratación", 404);
-  
-      const hiringPeriod = userDoc.hiringPeriods.find(hp => hp._id.toString() === req.body.hirindId);
-      if (!hiringPeriod) throw new ClientError("No existe el periodo de contratación", 400);
-  
-      const dataAux = req.body.leave;
-      if (!dataAux.startLeaveDate) throw new ClientError("Falta la fecha de inicio de excedencia", 400);
-      dataAux.leaveType = new mongoose.Types.ObjectId(dataAux.leaveType);
-  
-      // No se puede crear otro leave si hay uno abierto
-      const openLeave = hiringPeriod.leavePeriods.find(lp => !lp.actualEndLeaveDate && lp.active !== false);
-      if (openLeave) throw new ClientError("Ya hay una excedencia o baja abierta, no de puede crear otra", 400);
-  
-      // El nuevo startLeaveDate debe ser posterior al actualEndLeaveDate del último
-      const sortedLeaves = [...hiringPeriod.leavePeriods].sort((a,b) => a.startLeaveDate - b.startLeaveDate);
-      const lastLeave = sortedLeaves[sortedLeaves.length - 1];
-      if (lastLeave?.actualEndLeaveDate) {
-        if (new Date(dataAux.startLeaveDate) <= new Date(lastLeave.actualEndLeaveDate))
-          throw new ClientError("La nueva excedencia o baja se debe iniciar después del último periodo de baja", 400);
-      }
-  
-      data = await User.findOneAndUpdate(
-        { _id: new mongoose.Types.ObjectId(req.body.userId), "hiringPeriods._id": new mongoose.Types.ObjectId(req.body.hirindId)},
-        { $push: { "hiringPeriods.$.leavePeriods": dataAux }},
-        { new: true }
-      ).catch(() => { throw new ClientError("Error creando la excedencia o baja", 400)});
-  
-    } else if (req.body.type === "delete") {
-      data = await User.findOneAndUpdate(
-        { _id: new mongoose.Types.ObjectId(req.body.userId), "hiringPeriods._id": new mongoose.Types.ObjectId(req.body.hirindId)},
-        { $set: { "hiringPeriods.$.active": false }},
-        { new: true, runValidators: true }
-      ).catch(() => { throw new ClientError("No se pudo eliminar el periodo de contratación", 400)});
-  
-    } else {
-      throw new ClientError("Tipo inválido contacte con comunicacion@engloba.org.es", 400);
-    }
-  
-    const userChangeDispotive = await changeDispositiveNow(data);
-    response(res, 200, userChangeDispotive);
-  };
+  if (!req.body.userId)
+    throw new ClientError("Error, contacte con el administrador", 400);
+  if (!req.body.type)
+    throw new ClientError("Error, contacte con el administrador", 400);
 
-  
+  let data;
+  if (req.body.type === "put") {
+    if (!Array.isArray(req.body.hirings))
+      throw new ClientError("Error, contacte con el administrador", 400);
+    let cuerpo = convertIds(req.body.hirings);
+
+    // Para cada período, si existe el campo reason con una propiedad dni,
+    // se busca el usuario sustituto y se actualiza el campo reason.
+    cuerpo = await Promise.all(
+      cuerpo.map(async period => {
+        if (period.reason && period.reason.dni) {
+          const replacementUser = await User.findOne({ dni: period.reason.dni });
+          if (replacementUser) {
+            return { ...period, reason: { user: replacementUser._id, replacement: true } };
+          } else {
+            throw new ClientError("El trabajador al que sustituye no existe", 404);
+          }
+        }
+        return period;
+      })
+    );
+
+    const userDoc = await User.findById(req.body.userId);
+    if (!userDoc) throw new ClientError("Usuario no encontrado", 404);
+
+    const openPeriods = cuerpo.filter(
+      p => !p.endDate && p.active !== false
+    );
+    const ftCount = openPeriods.filter(
+      p => p.workShift?.type === "completa"
+    ).length;
+    const ptCount = openPeriods.filter(
+      p => p.workShift?.type === "parcial"
+    ).length;
+
+    if (ftCount > 1)
+      throw new ClientError("Máximo 1 periodo completo abierto", 400);
+    if (ftCount === 1 && ptCount > 0)
+      throw new ClientError("No mezclar completo con parcial abierto", 400);
+    if (ptCount > 2)
+      throw new ClientError("Máximo 2 periodos parciales abiertos", 400);
+
+    data = await User.findOneAndUpdate(
+      { _id: req.body.userId },
+      { $set: { hiringPeriods: cuerpo } },
+      { new: true }
+    );
+    if (!data) throw new ClientError("No se pudo actualizar hirings", 400);
+
+  } else if (req.body.type === "create") {
+    if (typeof req.body.hirings !== "object" || Array.isArray(req.body.hirings))
+      throw new ClientError("Error, contacte con el administrador", 400);
+
+    const [newHiring] = convertIds([req.body.hirings]);
+
+    // Si newHiring.reason existe y tiene la propiedad dni, se busca el usuario por ese dni
+    if (newHiring.reason && newHiring.reason.dni) {
+      const replacementUser = await User.findOne({ dni: newHiring.reason.dni });
+      if (replacementUser) {
+        newHiring.reason = { user: replacementUser._id, replacement: true };
+      } else {
+        throw new ClientError("El trabajador al que sustituye no existe", 404);
+      }
+    }
+
+    const userDoc = await User.findById(req.body.userId);
+    if (!userDoc) throw new ClientError("Usuario no encontrado", 404);
+
+    const openPeriods = userDoc.hiringPeriods.filter(
+      p => !p.endDate && p.active !== false
+    );
+    const shiftType = newHiring?.workShift?.type;
+    if (!shiftType)
+      throw new ClientError("Falta el tipo de horario", 400);
+
+    if (shiftType === "completa") {
+      if (openPeriods.length > 0)
+        throw new ClientError("Ya existe un periodo de contratación abierto a jornada completa, no se puede crear otro", 400);
+    } else if (shiftType === "parcial") {
+      if (openPeriods.some(p => p.workShift?.type === "completa"))
+        throw new ClientError("Hay un periodo de contratación a jornada completa abierto, no se puede crear parcial", 400);
+      if (openPeriods.filter(p => p.workShift?.type === "parcial").length >= 2)
+        throw new ClientError("No se permiten más de 2 periodos de contratación con media jornada abiertos", 400);
+    } else {
+      throw new ClientError("Tipo de horario incorrecto", 400);
+    }
+
+    data = await User.findOneAndUpdate(
+      { _id: req.body.userId },
+      { $push: { hiringPeriods: newHiring } },
+      { new: true }
+    );
+    if (!data)
+      throw new ClientError("No se pudo crear el periodo de contratación", 400);
+
+  } else if (req.body.type === "createLeave") {
+    if (typeof req.body.leave !== "object" || Array.isArray(req.body.leave))
+      throw new ClientError("'leave' debe ser un objeto", 400);
+    if (!req.body.hirindId)
+      throw new ClientError("Falta el id del periodo de contratación", 400);
+
+    const userDoc = await User.findOne({
+      _id: req.body.userId,
+      "hiringPeriods._id": req.body.hirindId
+    });
+    if (!userDoc)
+      throw new ClientError("No se encontró el periodo de contratación", 404);
+
+    const hiringPeriod = userDoc.hiringPeriods.find(
+      hp => hp._id.toString() === req.body.hirindId
+    );
+    if (!hiringPeriod)
+      throw new ClientError("No existe el periodo de contratación", 400);
+
+    const dataAux = req.body.leave;
+    if (!dataAux.startLeaveDate)
+      throw new ClientError("Falta la fecha de inicio de excedencia", 400);
+    dataAux.leaveType = new mongoose.Types.ObjectId(dataAux.leaveType);
+
+    // No se puede crear otro leave si hay uno abierto
+    const openLeave = hiringPeriod.leavePeriods.find(
+      lp => !lp.actualEndLeaveDate && lp.active !== false
+    );
+    if (openLeave)
+      throw new ClientError("Ya hay una excedencia o baja abierta, no de puede crear otra", 400);
+
+    // El nuevo startLeaveDate debe ser posterior al actualEndLeaveDate del último
+    const sortedLeaves = [...hiringPeriod.leavePeriods].sort(
+      (a, b) => a.startLeaveDate - b.startLeaveDate
+    );
+    const lastLeave = sortedLeaves[sortedLeaves.length - 1];
+    if (lastLeave?.actualEndLeaveDate) {
+      if (new Date(dataAux.startLeaveDate) <= new Date(lastLeave.actualEndLeaveDate))
+        throw new ClientError("La nueva excedencia o baja se debe iniciar después del último periodo de baja", 400);
+    }
+
+    data = await User.findOneAndUpdate(
+      {
+        _id: new mongoose.Types.ObjectId(req.body.userId),
+        "hiringPeriods._id": new mongoose.Types.ObjectId(req.body.hirindId)
+      },
+      { $push: { "hiringPeriods.$.leavePeriods": dataAux } },
+      { new: true }
+    ).catch(() => {
+      throw new ClientError("Error creando la excedencia o baja", 400);
+    });
+
+  } else if (req.body.type === "delete") {
+    data = await User.findOneAndUpdate(
+      {
+        _id: new mongoose.Types.ObjectId(req.body.userId),
+        "hiringPeriods._id": new mongoose.Types.ObjectId(req.body.hirindId)
+      },
+      { $set: { "hiringPeriods.$.active": false } },
+      { new: true, runValidators: true }
+    ).catch(() => {
+      throw new ClientError("No se pudo eliminar el periodo de contratación", 400);
+    });
+
+  } else {
+    throw new ClientError("Tipo inválido contacte con comunicacion@engloba.org.es", 400);
+  }
+
+  const userChangeDispotive = await changeDispositiveNow(data);
+  response(res, 200, userChangeDispotive);
+};
+
 
 
 module.exports = {

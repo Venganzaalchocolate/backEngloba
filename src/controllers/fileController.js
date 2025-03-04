@@ -93,38 +93,46 @@ const createFileDrive = async (req, res, next) => {
     idModel: new mongoose.Types.ObjectId(idModel),
     cronology: cronology || {},
   };
-  if (originDocumentation) fileData.originDocumentation = new mongoose.Types.ObjectId(originDocumentation);
-  else {
+  
+  if (originDocumentation) {
+    fileData.originDocumentation = new mongoose.Types.ObjectId(originDocumentation);
+  } else {
     fileData.fileName = fileName;
     fileData.fileLabel = fileLabel;
   }
   
-  let newFile, uploadResult, responseNewModel;
+  let newFile, uploadResult, responseNewModel, fileNewData;
   const session = await mongoose.startSession();
-  await session.withTransaction(async () => {
-    newFile = await new Filedrive(fileData).save({ session });
-    const folderId = process.env.GOOGLE_DRIVE_FILES,
-          driveName = newFile._id.toString();
-    uploadResult = await uploadFileToDrive(file, folderId, driveName, false);
-    if (!uploadResult) throw new ClientError('Error al subir archivo a Drive', 500);
-    newFile.idDrive = uploadResult.id;
-    await newFile.save({ session });
-    if (originModel === 'Program') {
-      responseNewModel = await Program.findOneAndUpdate(
-        { _id: idModel },
-        { $push: { files: newFile._id } },
-        { new: true, session }
-      );
-    }
-  }).catch(async (err) => {
-    session.endSession();
+  
+  try {
+    await session.withTransaction(async () => {
+      newFile = await new Filedrive(fileData).save({ session });
+      const folderId = process.env.GOOGLE_DRIVE_FILES,
+            driveName = newFile._id.toString();
+      uploadResult = await uploadFileToDrive(file, folderId, driveName, false);
+      if (!uploadResult) throw new ClientError('Error al subir archivo a Drive', 500);
+      
+      newFile.idDrive = uploadResult.id;
+      fileNewData = await newFile.save({ session });
+      
+      if (originModel === 'Program') {
+        responseNewModel = await Program.findOneAndUpdate(
+          { _id: idModel },
+          { $addToSet: { files: newFile._id } },
+          { new: true, session }
+        );
+      }
+    });
+  } catch (err) {
+    // Si hubo error y se subió el archivo a Drive, se intenta eliminarlo
     if (uploadResult?.id) await deleteFileFromDrive(uploadResult.id);
     throw err;
-  });
-  session.endSession();
-  response(res, 200, responseNewModel);
-}
-
+  } finally {
+    session.endSession();
+  }
+  
+  response(res, 200, { file:responseNewModel, program:fileNewData });
+};
 
 const updateFileDrive = async (req, res, next) => {
   const {
@@ -140,7 +148,6 @@ const updateFileDrive = async (req, res, next) => {
     idModel                   // Opcional si se cambia la referencia
   } = req.body;
 
-  // Se asume que si el usuario no provee 'fileId', no podemos proceder.
   if (!fileId) throw new ClientError('Falta fileId para actualizar el archivo', 400);
 
   // Obtenemos el nuevo archivo (si se envió uno en la request)
@@ -149,7 +156,7 @@ const updateFileDrive = async (req, res, next) => {
   // Iniciamos sesión para la transacción
   const session = await mongoose.startSession();
 
-  let updatedFile, oldFileDrive, updateResult;
+  let updatedFile, oldFileDrive, updateResult, updatedProgram = null;
 
   try {
     await session.withTransaction(async () => {
@@ -173,28 +180,23 @@ const updateFileDrive = async (req, res, next) => {
         if (fileLabel !== undefined) oldFileDrive.fileLabel = fileLabel;
       }
 
-      // 3. Verificamos si hay un archivo nuevo para actualizar en Drive
+      // 3. Si se envía un nuevo archivo, actualizamos el contenido en Drive
       if (newFile) {
-        // Utilizamos la función que actualiza el contenido en Drive
-        // Asumimos que se mantiene el mismo ID de Drive (oldFileDrive.idDrive)
+        // Se asume que se mantiene el mismo idDrive en Drive.
         updateResult = await updateFileInDrive(newFile, oldFileDrive.idDrive);
         if (!updateResult) {
           throw new ClientError('Error al actualizar el archivo en Drive', 500);
         }
       }
 
-      // 4. Opcional: Si se requiere cambiar la asociación con un modelo distinto (originModel/idModel)
-      //    O si solo quieres asegurarte de mantener la referencia
+      // 4. Si se requiere cambiar la asociación con otro modelo o actualizar la referencia
       if (originModel && idModel) {
         oldFileDrive.originModel = originModel;
         oldFileDrive.idModel = new mongoose.Types.ObjectId(idModel);
 
-        // Ejemplo de si quieres actualizar la referencia en "Program"
-        // Primero sacamos el viejo idModel y, si cambió, quitamos y agregamos en Program (opcional).
-        // Para simplicidad, supongamos que solo actualizamos si originModel === 'Program'.
+        // Si el modelo es 'Program', actualizamos la referencia en el documento Program.
         if (originModel === 'Program') {
-          // Asegurarse de que el archivo esté referenciado en el nuevo Program.
-          await Program.findOneAndUpdate(
+          updatedProgram = await Program.findOneAndUpdate(
             { _id: idModel },
             { $addToSet: { files: oldFileDrive._id } }, // $addToSet evita duplicados
             { new: true, session }
@@ -202,23 +204,16 @@ const updateFileDrive = async (req, res, next) => {
         }
       }
 
-      // 5. Guardamos cambios en la BD
+      // 5. Guardamos los cambios en la base de datos
       updatedFile = await oldFileDrive.save({ session });
     });
 
-    // Cerramos la sesión de la transacción
     session.endSession();
 
-    // 6. Enviamos la respuesta
-    response(res, 200, updatedFile);
-
+    // 6. Enviamos la respuesta devolviendo tanto el archivo actualizado como el programa actualizado (si aplica)
+    response(res, 200, { file: updatedFile, program: updatedProgram });
   } catch (err) {
-    // En caso de error, cerramos la sesión.
     session.endSession();
-    // Si el error ocurrió DESPUÉS de haber subido algo a Drive, 
-    // podrías revertir cambios en Drive si fuese necesario.
-    // Por ejemplo, si 'updateFileInDrive' subió un nuevo archivo por error
-    // (aunque en una actualización normalmente se sobreescribe el mismo).
     next(err);
   }
 };

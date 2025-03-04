@@ -99,6 +99,20 @@ const PeriodSchema = new Schema({
     leavePeriods:[LeavePeriodSchema],
     active: {
         type: Boolean
+    },
+    reason:{
+        replacement:{
+            type: Boolean,
+            default:false
+        },
+        user:{
+           type:Schema.Types.ObjectId,
+            ref:'User' 
+        },
+        notes:{
+            type:String
+        }
+        
     }
 
 });

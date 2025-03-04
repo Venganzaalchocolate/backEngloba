@@ -15,6 +15,7 @@ router.post('/filteruser', urlencodedParser, tokenValid, getUsersFilter)
 router.post("/payroll", upload.single('pdf'), payroll)
 router.post("/hirings", tokenValid, hirings)
 router.post("/usersname", tokenValid, getUserName)
+router.post('/user', urlencodedParser, tokenValid, getUserID)
 
 router.put("/modifyuser", upload.any(), tokenValid, userPut);
 
