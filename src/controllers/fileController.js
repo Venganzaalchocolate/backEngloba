@@ -311,7 +311,7 @@ const createFileDrive = async (req, res, next) => {
     });
   } catch (err) {
     if (uploadResult?.id) await deleteFileFromDrive(uploadResult.id);
-    throw err;
+    throw ClientError(err, 400)
   } finally {
     session.endSession();
   }
