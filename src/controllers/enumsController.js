@@ -1,5 +1,5 @@
 
-const { Jobs, Studies, Provinces, Work_schedule, Finantial, Offer, Program, User, Leavetype, Documentation } = require('../models/indexModels');
+const { Jobs, Studies, Provinces, Work_schedule, Finantial, Offer, Program, User, Leavetype, Documentation, File } = require('../models/indexModels');
 const leavetype = require('../models/leavetype');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 
@@ -75,28 +75,64 @@ const getEnums = async (req, res) => {
     response(res, 200, enumValues);
 }
 
-
 const getEnumEmployers = async (req, res) => {
-    let enumValues = {}
-    enumValues['provinces'] = await Provinces.find();
-    enumValues['programs'] = await Program.find();
-    enumValues['status'] = User.schema.path('employmentStatus').enumValues;
-    enumValues['leavetype'] = await Leavetype.find();
-    enumValues['jobs'] = await Jobs.find();
-    enumValues['studies'] = await Studies.find();
-    enumValues['work_schedule'] = await Work_schedule.find();
-    enumValues['offers'] = await Offer.find({ active: true })
-    enumValues['jobsIndex'] = createSubcategoriesIndex(enumValues['jobs'])
-    enumValues['leavesIndex'] = createCategoriesIndex(enumValues['leavetype'])
-    enumValues['programsIndex'] = createProgramDevicesIndex(enumValues['programs'])
-    enumValues['finantial'] = await Finantial.find();
-    enumValues['documentation'] = await Documentation.find();
+  try {
+      // Ejecutar todas las consultas en paralelo con Promise.all para mejorar el rendimiento
+      const [
+          provinces,
+          programs,
+          leavetype,
+          jobs,
+          studies,
+          workSchedule,
+          offers,
+          finantial,
+          documentation
+      ] = await Promise.all([
+          Provinces.find().lean(),
+          Program.find().populate('files').lean(),
+          Leavetype.find().lean(),
+          Jobs.find().lean(),
+          Studies.find().lean(),
+          Work_schedule.find().lean(),
+          Offer.find({ active: true }).lean(),
+          Finantial.find().lean(),
+          Documentation.find().lean()
+      ]);
 
-    if (enumValues.programs == undefined) throw new ClientError('Error al solicitar los enums de los trabajos', 500)
-    if (enumValues.provinces == undefined) throw new ClientError('Error al solicitar los enums de las provincias ', 500)
+      // Construimos el objeto de respuesta
+      let enumValues = {
+          provinces,
+          programs,
+          status: User.schema.path('employmentStatus').enumValues,  // Esto no necesita await
+          leavetype,
+          jobs,
+          studies,
+          work_schedule: workSchedule,
+          offers,
+          jobsIndex: createSubcategoriesIndex(jobs),
+          leavesIndex: createCategoriesIndex(leavetype),
+          programsIndex: createProgramDevicesIndex(programs),
+          finantial,
+          documentation
+      };
 
-    response(res, 200, enumValues);
-}
+      // Verificar que los valores críticos no sean undefined o vacíos
+      if (!programs || !provinces) {
+          throw new ClientError('Error al solicitar los enums', 500);
+      }
+
+      // Responder con los datos obtenidos
+      response(res, 200, enumValues);
+
+  } catch (error) {
+      console.error("Error en getEnumEmployers:", error);
+      response(res, error.statusCode || 500, {
+          message: error.message || 'Error interno del servidor',
+      });
+  }
+};
+
 // Definición de tipos válidos con su correspondiente modelo
 const validTypes = {
   jobs: Jobs,

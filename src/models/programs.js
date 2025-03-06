@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
+// IMPORTAR `File` ANTES de definir el esquema
+
 
 const fileSchema = new Schema({
     fileName: { 
@@ -96,7 +98,7 @@ const programSchema = new Schema({
     },
     files: {
         type:[Schema.Types.ObjectId],
-        ref: 'File'
+        ref: 'Filedrive'
     },
     devices: [deviceSchema],
     cronology:[cronologySchema],
