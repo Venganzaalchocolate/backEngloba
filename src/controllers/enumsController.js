@@ -1,5 +1,5 @@
 
-const { Jobs, Studies, Provinces, Work_schedule, Finantial, Offer, Program, User, Leavetype, Documentation, File } = require('../models/indexModels');
+const { Jobs, Studies, Provinces, Work_schedule, Finantial, Offer, Program, User, Leavetype, Documentation } = require('../models/indexModels');
 const leavetype = require('../models/leavetype');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 
@@ -126,7 +126,6 @@ const getEnumEmployers = async (req, res) => {
       response(res, 200, enumValues);
 
   } catch (error) {
-      console.error("Error en getEnumEmployers:", error);
       response(res, error.statusCode || 500, {
           message: error.message || 'Error interno del servidor',
       });
@@ -150,7 +149,6 @@ const getModelByType = (type) => {
   if (!Model) throw new ClientError("Tipo no válido", 400);
   return Model;
 };
-
 const putEnums = async (req, res) => {
   const allowedTypes = ['jobs', 'studies', 'provinces', 'work_schedule', 'finantial', 'documentation', 'leavetype'];
   if (!req.body.id || !req.body.name || !req.body.type)
@@ -160,7 +158,7 @@ const putEnums = async (req, res) => {
 
   const Model = getModelByType(req.body.type);
 
-  // Para todos los tipos salvo documentation, se permite actualizar subcategorías
+  // Actualización de subcategorías (no aplicable para documentation)
   if (req.body.subId) {
     if (req.body.type === "documentation") {
       throw new ClientError("Documentation no tiene subcategorías", 400);
@@ -179,14 +177,15 @@ const putEnums = async (req, res) => {
     return;
   }
 
-  // Actualizar el documento principal
+  // Actualización del documento principal
   const updateData = { name: req.body.name };
   if (req.body.type === 'documentation') {
-    // Se requiere el campo label en documentation
-    if (!req.body.label)
-      throw new ClientError("El campo label es obligatorio para documentation", 400);
+    // Se requieren los campos label y model
+    if (!req.body.label || !req.body.model)
+      throw new ClientError("El campo label y el modelo son obligatorios para documentation", 400);
     updateData.label = req.body.label;
-    updateData.date = req.body.date === 'si';
+    updateData.model = req.body.model;
+    updateData.date = req.body.date === 'si'; // Se guarda como boolean
   }
   if (req.body.type === 'jobs') {
     updateData.public = req.body.public === 'si';
@@ -196,6 +195,7 @@ const putEnums = async (req, res) => {
   if (!updatedEnum) throw new ClientError("Elemento no encontrado", 404);
   response(res, 200, updatedEnum);
 };
+
 
 // DELETE: Eliminar un documento existente
 const deleteEnums = async (req, res) => {
@@ -223,8 +223,6 @@ const postSubcategory = async (req, res) => {
   const updatedEnum = await Model.findOneAndUpdate(filter, update, { new: true });
   response(res, 200, updatedEnum);
 };
-
-// POST: Crear un nuevo documento
 const postEnums = async (req, res) => {
   if (!req.body.name || !req.body.type)
     throw new ClientError("Los datos no son correctos", 400);
@@ -234,11 +232,14 @@ const postEnums = async (req, res) => {
 
   const newData = { name };
   if (type === 'documentation') {
-    // Se requiere el campo label al crear documentation
+    // Se requiere el campo label y el campo model al crear documentation
     if (!label)
       throw new ClientError("El campo label es obligatorio para documentation", 400);
+    if (!req.body.model)
+      throw new ClientError("El campo model es obligatorio para documentation", 400);
     newData.label = label;
-    newData.date = date === 'si';
+    newData.model = req.body.model;
+    newData.date = date === 'si'; // Convertir 'si' a true, 'no' a false
   }
   if (type === 'jobs') {
     newData.public = pub === 'si';
@@ -248,6 +249,7 @@ const postEnums = async (req, res) => {
   const savedEnum = await newEnum.save();
   response(res, 200, savedEnum);
 };
+
 
 // DELETE Subcategoría: Eliminar una subcategoría de un documento existente
 const deleteSubcategory = async (req, res) => {

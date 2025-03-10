@@ -102,7 +102,6 @@ const postCreateUser = async (req, res) => {
       gender
     };
 
-    console.log(userData)
   
     // Manejar disability
     if (disability) {
@@ -163,7 +162,14 @@ const getUsers = async (req, res) => {
     if (req.body.fostered === "no") filters["fostered"] = false;
     if (req.body.apafa === "si") filters["apafa"] = true;
     if (req.body.apafa === "no") filters["apafa"] = false;
-    if (req.body.disPercentage !== undefined) filters["disability.percentage"] = req.body.disPercentage;
+    if (req.body.disability !== undefined) {
+      if (req.body.disability === "si") {
+        filters["disability.percentage"] = { $gt: 0 };
+      } else if (req.body.disability === "no") {
+        filters["disability.percentage"] = 0;
+      }
+    }
+    
 
     if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
         const program = programs.find(pr => pr._id.toString() === req.body.programId);
@@ -226,43 +232,37 @@ const getUserName = async (req, res) => {
 
 // Descargar archivos de usuario
 const getFileUser = async (req, res) => {
-    try {
-      const userId = req.body.id; // ID del usuario
-      const fileId = req.body.idFile; // ID del archivo en Google Drive
+  const userId = req.body.id; // ID del usuario
+  const fileId = req.body.idFile; // ID del archivo en Google Drive
   
-      // Buscar al usuario y verificar que el archivo existe en el array `files`
+      // Buscar al usuario y verificar que el archivo existe en el array files
       const user = await User.findOne({
         _id: userId,
-        'files.fileName': fileId, // Cambia `fileName` si el campo es diferente
+        'files.fileName': fileId, // Cambia fileName si el campo es diferente
       });
+
   
       if (!user) {
-        throw new ClientError('Usuario o archivo no encontrado', 404);
+        throw new ClientError('Usuario no encontrado', 404);
       }
-  
-      // Obtener el archivo de Google Drive
-      const { file, stream } = await getFileById(fileId);
-  
-      if (!stream) {
-        throw new ClientError('Archivo no encontrado en Google Drive', 404);
-      }
-  
-      // Configurar los headers para la descarga
-      res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
-      res.setHeader('Content-Type', file.mimeType);
-  
-      // Enviar el archivo como un stream
-      stream.pipe(res);
+    
 
-    } catch (error) {
-      // Manejo de errores personalizados o genéricos
-      if (error instanceof ClientError) {
-        response(res, error.statusCode, { error: true, message: error.message });
-      } else {
-        response(res, 500, { error: true, message: 'Error interno del servidor' });
-      }
+    const { file, stream } = await getFileById(fileId);
+
+    if (!stream) {
+      throw new ClientError('Archivo no encontrado en Google Drive', 404);
     }
-  };
+
+    // Cabeceras
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${file.name}"`
+    );
+    res.setHeader('Content-Type', file.mimeType);
+
+    // Envías el contenido "en streaming"
+    stream.pipe(res);
+};
 
 const UserDeleteId = async (req, res) => {
 
@@ -394,6 +394,13 @@ const userPut = async (req, res) => {
         updateFields.apafa = false;
     }
 
+    if (req.body.consetmentDataProtection === "si") {
+      updateFields.consetmentDataProtection = true;
+  } else if (req.body.consetmentDataProtection === "no") {
+      updateFields.consetmentDataProtection = false;
+  }
+
+    
     
     const folderId = process.env.GOOGLE_DRIVE_APPFILE;
 
@@ -856,6 +863,7 @@ const hirings = async (req, res) => {
   const userChangeDispotive = await changeDispositiveNow(data);
   response(res, 200, userChangeDispotive);
 };
+
 
 
 

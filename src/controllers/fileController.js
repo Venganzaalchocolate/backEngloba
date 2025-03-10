@@ -50,27 +50,23 @@ const deleteIdFile= async (req, res) => {
 // FileDriveService.js
 
 const getFileDrive = async (req, res, next) => {
+  
+  const fileId = req.body.idFile;
+  const { file, stream } = await getFileById(fileId);
 
-  try {
-    if (!req.body.idFile) {
-      throw new ClientError('Se necesita un id válido', 400);
-    }
-
-    const { file, data } = await getFileById(req.body.idFile);
-
-    if (!data) {
-      throw new ClientError('Archivo no encontrado en Google Drive', 404);
-    }
-
-    res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
-    res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
-
-    // Enviamos el Buffer completo
-    res.end(data);
-  } catch (error) {
-    console.error(error);
-    next(error);
+  if (!stream) {
+    throw new ClientError('Archivo no encontrado en Google Drive', 404);
   }
+
+  // Cabeceras
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="${file.name}"`
+  );
+  res.setHeader('Content-Type', file.mimeType);
+
+  // Envías el contenido "en streaming"
+  stream.pipe(res);
 };
 
 
@@ -311,7 +307,7 @@ const createFileDrive = async (req, res, next) => {
     });
   } catch (err) {
     if (uploadResult?.id) await deleteFileFromDrive(uploadResult.id);
-    throw ClientError(err, 400)
+    throw err
   } finally {
     session.endSession();
   }

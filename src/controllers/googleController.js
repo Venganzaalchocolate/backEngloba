@@ -48,7 +48,6 @@ const deleteFileById = async (fileId) => {
   }
 };
 
-// O// Función auxiliar para convertir un stream a Buffer
 const streamToBuffer = (stream) => {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -58,26 +57,26 @@ const streamToBuffer = (stream) => {
   });
 };
 
+// --- getFileById.js ---
 const getFileById = async (fileId) => {
   try {
-    // Obtener metadatos del archivo
+    // Metadatos
     const { data: file } = await drive.files.get({
       fileId,
       fields: 'id, name, mimeType',
     });
 
-    // Descargar el archivo como stream
+    
+    // Descarga como stream
     const response = await drive.files.get(
       { fileId, alt: 'media' },
       { responseType: 'stream' }
     );
-
-    // Convertir el stream a un Buffer para enviarlo correctamente al front-end
-    const fileBuffer = await streamToBuffer(response.data);
-
-    return { file, data: fileBuffer };
+    // Aquí no lo convertimos a Buffer:
+    // Retornamos directamente el stream
+    return { file, stream: response.data };
   } catch (error) {
-    console.error('Error al buscar o descargar el archivo por ID:', error.message || error);
+    console.error('Error al buscar o descargar el archivo:', error);
     return null;
   }
 };
