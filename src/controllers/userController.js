@@ -191,6 +191,201 @@ const getUsers = async (req, res) => {
     response(res, 200, { users: users, totalPages });
 };
 
+// xsl
+
+const buildFilters = (req, programs) => {
+  const filters = {};
+
+  // Filtros de texto
+  if (req.body.firstName) {
+    filters.firstName = { $regex: new RegExp(req.body.firstName, 'i') };
+  }
+  if (req.body.lastName) {
+    filters.lastName = { $regex: new RegExp(req.body.lastName, 'i') };
+  }
+  if (req.body.email) {
+    filters.email = { $regex: req.body.email, $options: 'i' };
+  }
+  if (req.body.phone) {
+    filters.phone = { $regex: req.body.phone, $options: 'i' };
+  }
+  if (req.body.dni) {
+    filters.dni = { $regex: req.body.dni, $options: 'i' };
+  }
+  if (req.body.status) {
+    filters.employmentStatus = req.body.status;
+  }
+  if (req.body.gender) {
+    filters.gender = req.body.gender;
+  }
+
+  // Filtros booleanos
+  if (req.body.fostered === 'si') filters.fostered = true;
+  if (req.body.fostered === 'no') filters.fostered = false;
+  if (req.body.apafa === 'si') filters.apafa = true;
+  if (req.body.apafa === 'no') filters.apafa = false;
+
+  // Filtro de discapacidad
+  if (req.body.disability !== undefined) {
+    if (req.body.disability === 'si') {
+      filters['disability.percentage'] = { $gt: 0 };
+    } else if (req.body.disability === 'no') {
+      filters['disability.percentage'] = 0;
+    }
+  }
+
+  // Filtro por programId => se buscan las devices de ese programa
+  if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
+    const program = programs.find(
+      (pr) => pr._id.toString() === req.body.programId
+    );
+    if (!program) {
+      throw new ClientError('Programa no encontrado', 404);
+    }
+    filters.dispositiveNow = {
+      $in: program.devices.map((device) => device._id),
+    };
+  }
+
+  // Filtro directo por dispositive (deviceId)
+  if (
+    req.body.dispositive &&
+    mongoose.Types.ObjectId.isValid(req.body.dispositive)
+  ) {
+    filters.dispositiveNow = req.body.dispositive;
+  }
+
+  return filters;
+};
+
+
+const getAllUsersWithOpenPeriods = async (req, res) => {
+    // 1) Cargamos los programas si se necesitan para filtros
+    const programs = await Program.find().select('name _id devices.name devices._id');
+    // 2) Construimos los filtros
+    const filters = buildFilters(req, programs);
+
+    // 3) Buscamos usuarios sin paginación
+    //    Traemos los campos: firstName, lastName, dni, hiringPeriods
+    //    OJO: NO usamos .populate({ path: 'hiringPeriods.position', model: 'Jobs' })
+    //    porque "position" es un subdocumento de 'Jobs' (una "subcategoría").
+    const users = await User.find(filters, 'firstName lastName dni hiringPeriods')
+      .sort({ createdAt: -1 });
+
+    // 4) Filtramos periodos abiertos y recolectamos IDs de devices & position
+    let deviceIds = [];
+    let positionIds = [];
+
+    const preparedUsers = users.map((user) => {
+      // Toma sólo periodos donde no haya `endDate`
+      const openPeriods = user.hiringPeriods.filter((p) => (!p.endDate && p.active));
+      // Recolecta device._id
+      deviceIds.push(
+        ...openPeriods.filter((p) => p.device).map((p) => p.device.toString())
+      );
+
+      // Recolecta position._id
+      // (Si "position" es en realidad la subcategoría _id)
+      positionIds.push(
+        ...openPeriods.filter((p) => p.position).map((p) => p.position.toString())
+      );
+
+      return {
+        _id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        dni: user.dni,
+        hiringPeriods: openPeriods,
+      };
+    });
+
+    deviceIds = [...new Set(deviceIds)];
+    positionIds = [...new Set(positionIds)];
+
+    // =====================
+    // 5) Manejo manual de DEVICES dentro de Program
+    // =====================
+    const programsWithDevices = await Program.find(
+      { 'devices._id': { $in: deviceIds } },
+      { name: 1, devices: 1 }
+    );
+
+    const deviceMap = {};
+    for (const prog of programsWithDevices) {
+      for (const dev of prog.devices) {
+        const devId = dev._id.toString();
+        if (deviceIds.includes(devId)) {
+          deviceMap[devId] = {
+            programName: prog.name,
+            deviceName: dev.name,
+          };
+        }
+      }
+    }
+
+    // =====================
+    // 6) Manejo manual de POSITION subcategorías dentro de Jobs
+    // =====================
+    // Buscamos todos los jobs que tengan subcategorías cuyo _id esté en positionIds
+    // Nota: "subcategories._id": { $in: positionIds }
+    const jobsWithSubcategories = await Jobs.find(
+      { 'subcategories._id': { $in: positionIds } },
+      { name: 1, subcategories: 1 } // Traemos `name` del job y el array de subcategorías
+    );
+
+    // Creamos un map subcategoryId => { jobName, subcategoryName, ... }
+    const positionMap = {};
+    for (const jobDoc of jobsWithSubcategories) {
+      for (const subcat of jobDoc.subcategories) {
+        const subcatId = subcat._id.toString();
+        if (positionIds.includes(subcatId)) {
+          positionMap[subcatId] = {
+            jobName: jobDoc.name,
+            subcategoryName: subcat.name,
+          };
+        }
+      }
+    }
+
+    // =====================
+    // 7) Reemplazar en cada periodo device y position con los objetos deseados
+    // =====================
+    const finalUsers = preparedUsers.map((u) => {
+      const updatedPeriods = u.hiringPeriods.map((period) => {
+        const newPeriod = { ...period._doc };
+
+        // a) Reemplazar device
+        const devId = period.device?.toString();
+        if (devId && deviceMap[devId]) {
+          newPeriod.device = {
+            _id: devId,
+            ...deviceMap[devId],
+          };
+        }
+
+        // b) Reemplazar position
+        const posId = period.position?.toString();
+        if (posId && positionMap[posId]) {
+          newPeriod.position = {
+            _id: posId,
+            ...positionMap[posId],
+          };
+        }
+
+        return newPeriod;
+      });
+
+      return { ...u, hiringPeriods: updatedPeriods };
+    });
+
+    // 8) Enviamos respuesta
+    response(res, 200, { users: finalUsers });
+    
+};
+
+
+//
+
 const getUsersFilter = async (req, res) => {
     const filter = { name: { $regex: `.*${req.body.name}.*` } }
     // Utiliza el método find() de Mongoose para obtener todos los documentos en la colección
@@ -375,10 +570,13 @@ const userPut = async (req, res) => {
     if (req.body.employmentStatus) updateFields.employmentStatus = req.body.employmentStatus;
     if (req.body.socialSecurityNumber) updateFields.socialSecurityNumber = req.body.socialSecurityNumber;
     if (req.body.bankAccountNumber) updateFields.bankAccountNumber = req.body.bankAccountNumber;
+    if (req.body.role) updateFields.role = req.body.role;
 
     if (req.body.disPercentage) updateFields.disability= {
         percentage:req.body.disPercentage
     };
+
+
     
     if (req.body.disNotes) updateFields.disability.notes= req.body.disNotes;
     if (req.body.gender) updateFields.gender = req.body.gender;
@@ -878,5 +1076,6 @@ module.exports = {
     payroll: catchAsync(payroll),
     hirings: catchAsync(hirings),
     getFileUser:catchAsync(getFileUser),
-    getUserName:catchAsync(getUserName)
+    getUserName:catchAsync(getUserName),
+    getAllUsersWithOpenPeriods:catchAsync(getAllUsersWithOpenPeriods)
 }

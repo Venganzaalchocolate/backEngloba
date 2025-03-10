@@ -58,7 +58,7 @@ const PeriodSchema = new Schema({
     // Cargo que desempeña el empleado durante el periodo de contratación
     position: {
         type: Schema.Types.ObjectId,
-        required: true
+        required: true,
     },
     // Categoría del puesto del empleado
     category: {
@@ -77,7 +77,6 @@ const PeriodSchema = new Schema({
     // Dispositivo asignado al empleado (referencia a otra colección)
     device: {
         type: Schema.Types.ObjectId,
-        ref: 'Device'
     },
     // Jornada laboral del empleado (total o parcial)
     workShift: {
@@ -98,7 +97,8 @@ const PeriodSchema = new Schema({
 
     leavePeriods:[LeavePeriodSchema],
     active: {
-        type: Boolean
+        type: Boolean,
+        default:true
     },
     reason:{
         replacement:{
