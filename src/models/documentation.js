@@ -19,6 +19,10 @@ const documentation = mongoose.Schema({
         type:String,
         enum:['User', 'UserCv', 'Program', 'Finantial', 'Estadistics'],
         required: true
+    },
+    visible:{
+        type:Boolean,
+        default:true
     }
 }, { timestamps: true });
 

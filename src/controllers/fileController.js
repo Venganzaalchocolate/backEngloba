@@ -21,23 +21,23 @@ const getFile = async (req, res) => {
   if (!req.body.id) {
     throw new ClientError('No se proporcionó id', 400);
   } else {
-      const archivoStream = await getFileCv(req.body.id);
-      
-      if (!archivoStream) {
-        throw new ClientError('Archivo no encontrado', 404);
-      }
-      // Configurar la respuesta HTTP
-      res.writeHead(200, {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': 'attachment; filename=' + req.body.id,
-      });
+    const archivoStream = await getFileCv(req.body.id);
 
-      // Enviar el stream como respuesta HTTP
-      archivoStream.pipe(res);
+    if (!archivoStream) {
+      throw new ClientError('Archivo no encontrado', 404);
+    }
+    // Configurar la respuesta HTTP
+    res.writeHead(200, {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'attachment; filename=' + req.body.id,
+    });
+
+    // Enviar el stream como respuesta HTTP
+    archivoStream.pipe(res);
   }
 };
 
-const deleteIdFile= async (req, res) => {
+const deleteIdFile = async (req, res) => {
   if (!req.id) {
     throw new ClientError('No se proporcionó nombre para el archivo', 400);
   } else {
@@ -50,7 +50,7 @@ const deleteIdFile= async (req, res) => {
 // FileDriveService.js
 
 const getFileDrive = async (req, res, next) => {
-  
+
   const fileId = req.body.idFile;
   const { file, stream } = await getFileById(fileId);
 
@@ -80,7 +80,7 @@ const getFileDrive = async (req, res, next) => {
 //   if (!file) throw new ClientError('No se recibió ningún archivo a subir', 400);
 //   if (!originModel) throw new ClientError('Falta originModel', 400);
 //   if (!idModel) throw new ClientError('Falta idModel', 400);
-  
+
 //   const fileData = {
 //     description,
 //     date: date ? new Date(date) : undefined,
@@ -89,17 +89,17 @@ const getFileDrive = async (req, res, next) => {
 //     idModel: new mongoose.Types.ObjectId(idModel),
 //     cronology: cronology || {},
 //   };
-  
+
 //   if (originDocumentation) {
 //     fileData.originDocumentation = new mongoose.Types.ObjectId(originDocumentation);
 //   } else {
 //     fileData.fileName = fileName;
 //     fileData.fileLabel = fileLabel;
 //   }
-  
+
 //   let newFile, uploadResult, responseNewModel, fileNewData;
 //   const session = await mongoose.startSession();
-  
+
 //   try {
 //     await session.withTransaction(async () => {
 //       newFile = await new Filedrive(fileData).save({ session });
@@ -107,10 +107,10 @@ const getFileDrive = async (req, res, next) => {
 //             driveName = newFile._id.toString();
 //       uploadResult = await uploadFileToDrive(file, folderId, driveName, false);
 //       if (!uploadResult) throw new ClientError('Error al subir archivo a Drive', 500);
-      
+
 //       newFile.idDrive = uploadResult.id;
 //       fileNewData = await newFile.save({ session });
-      
+
 //       if (originModel === 'Program') {
 //         responseNewModel = await Program.findOneAndUpdate(
 //           { _id: idModel },
@@ -126,7 +126,7 @@ const getFileDrive = async (req, res, next) => {
 //   } finally {
 //     session.endSession();
 //   }
-  
+
 //   response(res, 200, { file:responseNewModel, program:fileNewData });
 // };
 
@@ -167,7 +167,7 @@ const getFileDrive = async (req, res, next) => {
 //       if (notes !== undefined)       oldFileDrive.notes = notes;
 //       if (date)                      oldFileDrive.date = new Date(date);
 //       if (cronology)                 oldFileDrive.cronology = cronology;
-      
+
 //       if (originDocumentation) {
 //         oldFileDrive.originDocumentation = new mongoose.Types.ObjectId(originDocumentation);
 //       } else {
@@ -253,6 +253,7 @@ const getFileDrive = async (req, res, next) => {
 // }
 
 const createFileDrive = async (req, res, next) => {
+
   const {
     originModel, idModel, originDocumentation,
     fileName, fileLabel, date, notes, description, cronology
@@ -262,7 +263,7 @@ const createFileDrive = async (req, res, next) => {
   if (!file) throw new ClientError('No se recibió ningún archivo a subir', 400);
   if (!originModel) throw new ClientError('Falta originModel', 400);
   if (!idModel) throw new ClientError('Falta idModel', 400);
-  
+
   const fileData = {
     description,
     date: date ? new Date(date) : undefined,
@@ -271,7 +272,7 @@ const createFileDrive = async (req, res, next) => {
     idModel: new mongoose.Types.ObjectId(idModel),
     cronology: cronology || {},
   };
-  
+
   if (originDocumentation) {
     fileData.originDocumentation = new mongoose.Types.ObjectId(originDocumentation);
   } else {
@@ -279,7 +280,7 @@ const createFileDrive = async (req, res, next) => {
     fileData.fileLabel = fileLabel;
   }
 
-  let newFile, uploadResult, updatedProgram;
+  let newFile, uploadResult, updated;
   const session = await mongoose.startSession();
 
   try {
@@ -289,7 +290,7 @@ const createFileDrive = async (req, res, next) => {
 
       // Subir archivo a Drive
       const folderId = process.env.GOOGLE_DRIVE_FILES,
-            driveName = newFile._id.toString();
+      driveName = newFile._id.toString();
       uploadResult = await uploadFileToDrive(file, folderId, driveName, false);
 
       if (!uploadResult) throw new ClientError('Error al subir archivo a Drive', 500);
@@ -298,12 +299,21 @@ const createFileDrive = async (req, res, next) => {
       newFile.idDrive = uploadResult.id;
       await newFile.save({ session });
 
-      // Asociar el archivo al programa
-      updatedProgram = await Program.findByIdAndUpdate(
-        idModel,
-        { $addToSet: { files: newFile._id } },
-        { new: true, session }
-      ).populate('files'); // POPULATE PARA DEVOLVERLO ACTUALIZADO
+      if (originModel == 'Program') {
+        // Asociar el archivo al programa
+        updated = await Program.findByIdAndUpdate(
+          idModel,
+          { $addToSet: { files: newFile._id } },
+          { new: true, session }
+        ).populate('files'); // POPULATE PARA DEVOLVERLO ACTUALIZADO 
+      } else if (originModel == 'User') {
+        updated = await User.findByIdAndUpdate(
+          idModel,
+          { $addToSet: { files: { filesId: newFile._id } } },
+          { new: true, session }
+        ).populate('files.filesId');
+      }
+
     });
   } catch (err) {
     if (uploadResult?.id) await deleteFileFromDrive(uploadResult.id);
@@ -311,114 +321,148 @@ const createFileDrive = async (req, res, next) => {
   } finally {
     session.endSession();
   }
-
-  response(res, 200, updatedProgram);
+  response(res, 200, updated);
 };
+
 
 const updateFileDrive = async (req, res, next) => {
   const {
-    fileId, originDocumentation, fileName, fileLabel,
-    date, notes, description, cronology, originModel, idModel
+    fileId,
+    originDocumentation,
+    fileName,
+    fileLabel,
+    date,
+    notes,
+    description,
+    cronology,
+    originModel,
+    idModel
   } = req.body;
-
+  const newFile = req.file; // Archivo opcional para actualización
   if (!fileId) throw new ClientError('Falta fileId para actualizar el archivo', 400);
 
-  const newFile = req.file;
   const session = await mongoose.startSession();
-
-  let updatedFile, updatedProgram;
+  let updatedParent = null; // Se usará si se actualiza la referencia en el documento padre
+  let fileDoc; // Se declara fuera para poder usarla luego en la respuesta
 
   try {
     await session.withTransaction(async () => {
-      // Buscar archivo en Mongo
-      const oldFileDrive = await Filedrive.findById(fileId).session(session);
-      if (!oldFileDrive) throw new ClientError('No se encontró el archivo a actualizar', 404);
+      // Buscar el documento de Filedrive a actualizar
+      fileDoc = await Filedrive.findById(fileId).session(session);
+      if (!fileDoc) throw new ClientError('No se encontró el archivo a actualizar', 404);
 
-      // Actualizar campos en memoria
-      if (description !== undefined) oldFileDrive.description = description;
-      if (notes !== undefined)       oldFileDrive.notes = notes;
-      if (date)                      oldFileDrive.date = new Date(date);
-      if (cronology)                 oldFileDrive.cronology = cronology;
+      // Actualizar campos comunes
+      if (description !== undefined) fileDoc.description = description;
+      if (notes !== undefined) fileDoc.notes = notes;
+      if (date) fileDoc.date = new Date(date);
+      if (cronology) fileDoc.cronology = cronology;
 
       if (originDocumentation) {
-        oldFileDrive.originDocumentation = new mongoose.Types.ObjectId(originDocumentation);
+        fileDoc.originDocumentation = new mongoose.Types.ObjectId(originDocumentation);
       } else {
-        if (fileName !== undefined) oldFileDrive.fileName = fileName;
-        if (fileLabel !== undefined) oldFileDrive.fileLabel = fileLabel;
+        if (fileName !== undefined) fileDoc.fileName = fileName;
+        if (fileLabel !== undefined) fileDoc.fileLabel = fileLabel;
       }
 
-      // Si se envía un nuevo archivo, actualizar en Drive
+      // Si se envía un nuevo archivo, actualizarlo en Drive
       if (newFile) {
-        const updateResult = await updateFileInDrive(newFile, oldFileDrive.idDrive);
-        if (!updateResult) throw new ClientError('Error al actualizar el archivo en Drive', 500);
+        const updateResult = await updateFileInDrive(newFile, fileDoc.idDrive);
+        if (!updateResult)
+          throw new ClientError('Error al actualizar el archivo en Drive', 500);
       }
 
-      // Si se cambia la referencia del archivo a otro modelo
-      if (originModel && idModel) {
-        oldFileDrive.originModel = originModel;
-        oldFileDrive.idModel = new mongoose.Types.ObjectId(idModel);
+      // Si se envían originModel e idModel y estos difieren de los actuales,
+      // se actualiza la referencia en el archivo y en el documento padre.
+      if (originModel && idModel && (originModel !== fileDoc.originModel || idModel !== fileDoc.idModel.toString())) {
+        fileDoc.originModel = originModel;
+        fileDoc.idModel = new mongoose.Types.ObjectId(idModel);
 
-        if (originModel === 'Program') {
-          updatedProgram = await Program.findByIdAndUpdate(
+        if (originModel.toLowerCase() === 'program') {
+          updatedParent = await Program.findByIdAndUpdate(
             idModel,
-            { $addToSet: { files: oldFileDrive._id } },
+            { $addToSet: { files: fileDoc._id } },
             { new: true, session }
-          ).populate('files'); // POPULATE PARA DEVOLVERLO ACTUALIZADO
+          ).populate('files');
+        } else if (originModel.toLowerCase() === 'user') {
+          updatedParent = await User.findByIdAndUpdate(
+            idModel,
+            { $addToSet: { files: { filesId: fileDoc._id } } },
+            { new: true, session }
+          ).populate('files.filesId');
         }
       }
 
-      // Guardar cambios
-      updatedFile = await oldFileDrive.save({ session });
+      // Guardar los cambios en Filedrive
+      await fileDoc.save({ session });
     });
 
     session.endSession();
 
-    response(res, 200, updatedProgram);
+    // Si updatedParent no se estableció dentro de la transacción,
+    // se obtiene el documento padre actual usando fileDoc.idModel y fileDoc.originModel.
+    if (!updatedParent) {
+      if (fileDoc.originModel.toLowerCase() === 'program') {
+        updatedParent = await Program.findById(fileDoc.idModel).populate('files');
+      } else if (fileDoc.originModel.toLowerCase() === 'user') {
+        updatedParent = await User.findById(fileDoc.idModel).populate('files.filesId');
+      }
+    }
+
+    response(res, 200, updatedParent);
   } catch (err) {
     session.endSession();
     next(err);
   }
 };
+
+
+
 const deleteFileDrive = async (req, res, next) => {
   const idFile = req.body.fileId;
   if (!idFile) throw new ClientError('Falta idFile', 400);
 
-  let updatedProgram = null;
+  let updatedParent = null;
 
-  // 1) Buscar el documento en Mongo
+  // Buscar el documento en Filedrive
   const fileDoc = await Filedrive.findById(idFile);
   if (!fileDoc) throw new ClientError('No se encontró el File a eliminar', 404);
 
-  // 2) Borrar en Drive si tiene `idDrive`
+  // Borrar el archivo en Google Drive si existe idDrive
   if (fileDoc.idDrive) {
     const success = await deleteFileById(fileDoc.idDrive);
-    if (!success) {
-      throw new ClientError('Error al eliminar archivo en Drive', 500);
-    }
+    if (!success) throw new ClientError('Error al eliminar archivo en Drive', 500);
   }
 
-  // 3) Si el archivo pertenece a un programa, quitar la referencia
+  // Quitar la referencia del archivo en el documento padre según el modelo
   if (fileDoc.originModel === 'Program') {
-    updatedProgram = await Program.findByIdAndUpdate(
+    updatedParent = await Program.findByIdAndUpdate(
       fileDoc.idModel,
-      { $pull: { files: fileDoc._id } }, // Quita el ID de la lista de archivos
+      { $pull: { files: fileDoc._id } },
       { new: true }
-    ).populate('files'); // POPULATE PARA DEVOLVERLO ACTUALIZADO
+    ).populate('files');
+  } else if (fileDoc.originModel === 'User') {
+    updatedParent = await User.findByIdAndUpdate(
+      fileDoc.idModel,
+      { $pull: { files: { filesId: fileDoc._id } } },
+      { new: true }
+    ).populate('files.filesId');
   }
 
-  // 4) Eliminar de Mongo
+  // Eliminar el documento de Filedrive de Mongo
   await Filedrive.findByIdAndDelete(idFile);
 
-  response(res, 200, updatedProgram);
+  response(res, 200, updatedParent);
 };
+
+
 
 
 module.exports = {
   postUploadFile: catchAsync(postUploadFile),
   getFile: catchAsync(getFile),
-  deleteIdFile:catchAsync(deleteIdFile),
-  createFileDrive:catchAsync(createFileDrive),
-  updateFileDrive:catchAsync(updateFileDrive),
-  deleteFileDrive:catchAsync(deleteFileDrive),
-  getFileDrive:catchAsync(getFileDrive)
+  deleteIdFile: catchAsync(deleteIdFile),
+  createFileDrive: catchAsync(createFileDrive),
+  updateFileDrive: catchAsync(updateFileDrive),
+  deleteFileDrive: catchAsync(deleteFileDrive),
+  getFileDrive: catchAsync(getFileDrive)
 };

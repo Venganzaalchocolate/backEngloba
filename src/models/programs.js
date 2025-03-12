@@ -3,24 +3,6 @@ const Schema = mongoose.Schema;
 // IMPORTAR `File` ANTES de definir el esquema
 
 
-const fileSchema = new Schema({
-    fileName: { 
-        type: String, 
-        required: true 
-    },
-    fileTag: { 
-        type: String, 
-        required: true,
-        index: true  // Agrega un índice en fileName
-    },
-    description: { 
-        type: String 
-    },
-    date: { 
-        type: Date 
-    }
-}, { timestamps: true });
-
 const deviceSchema = new Schema({
     active:{
         type: Boolean,
@@ -55,7 +37,11 @@ const deviceSchema = new Schema({
         required: false,
         default: []
     },
-    files: [fileSchema],
+    
+    files: {
+        type:[Schema.Types.ObjectId],
+        ref: 'Filedrive'
+    },
 });
 
 const cronologySchema=new Schema({

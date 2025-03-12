@@ -1,8 +1,9 @@
-const { User, Program, Jobs, Leavetype } = require('../models/indexModels');
+const { User, Program, Jobs, Leavetype, Filedrive } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { validateRequiredFields } = require('../utils/utils');
 const { uploadFileToDrive, getFileById, deleteFileById } = require('./googleController');
+const { getFileCv } = require('./ovhController');
 
     const capitalize = (str) => {
         if (!str || typeof str !== 'string') return str;
@@ -184,6 +185,10 @@ const getUsers = async (req, res) => {
     const totalDocs = await User.countDocuments(filters);
     const totalPages = Math.ceil(totalDocs / limit);
     const users = await User.find(filters)
+        .populate({
+          path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
+          model: 'Filedrive',       // Nombre del modelo de Filedrive
+        })
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit);
@@ -400,7 +405,11 @@ const getUserID = async (req, res) => {
     const id = req.body.id;
     // Utiliza el método findById() de Mongoose para buscar un usuario por su ID
     // Si no se encuentra el usuario, responde con un código de estado 404 (Not Found)
-    const usuario = await User.findById(id).catch(error => { throw new ClientError('Usuario no encontrado', 404) });
+    const usuario = await User.findById(id).populate({
+      path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
+      model: 'Filedrive',       // Nombre del modelo de Filedrive
+      select: 'fileName fileLabel description date idDrive', // Campos a traer, ajusta según necesites
+    }).catch(error => { throw new ClientError('Usuario no encontrado', 404) });
     // Responde con el usuario encontrado y código de estado 200 (OK)
     response(res, 200, usuario);
 }
@@ -511,6 +520,9 @@ const UserDeleteId = async (req, res) => {
    
  
   };
+
+
+
   
 const userPut = async (req, res) => {
 
@@ -1065,6 +1077,9 @@ const hirings = async (req, res) => {
 
 
 
+
+
+
 module.exports = {
     //gestiono los errores con catchAsync
     postCreateUser: catchAsync(postCreateUser),
@@ -1077,5 +1092,5 @@ module.exports = {
     hirings: catchAsync(hirings),
     getFileUser:catchAsync(getFileUser),
     getUserName:catchAsync(getUserName),
-    getAllUsersWithOpenPeriods:catchAsync(getAllUsersWithOpenPeriods)
+    getAllUsersWithOpenPeriods:catchAsync(getAllUsersWithOpenPeriods),
 }

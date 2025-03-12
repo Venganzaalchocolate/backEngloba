@@ -3,9 +3,11 @@ const { Schema } = mongoose;
 
 const fileSchema = new Schema({
     // nombre del archivo
+    // si coincide el fileTag con oldToNewDocMap no se pondrá fileName, ya que el fileName y el FileLabel estará en Documentation con ese id
     fileName: { 
         type: String, 
     },
+    // si coincide el fileTag con oldToNewDocMap no se pondrá fileLabel
     fileLabel: { 
         type: String, 
     },
@@ -38,6 +40,7 @@ const fileSchema = new Schema({
             type:Date
         }
     },
+    // solo se pondrá si coincide el fileTag con oldToNewDocMap
     originDocumentation:{
         type:Schema.Types.ObjectId,
         ref:'Documentation'

@@ -6,6 +6,10 @@ const stream = require('stream');
 const FileHistory = require('../models/fileHistory');
 const FileMapping = require('../models/fileMapping');
 const { create } = require('../models/user');
+const { User, Program, Jobs, Leavetype, Filedrive } = require('../models/indexModels');
+const mongoose = require('mongoose');
+const { PassThrough } = require('stream');
+
 
 
 
@@ -100,113 +104,76 @@ function getExtensionFromMime(mimetype) {
 }
 
 const updateFileInDrive = async (file, fileId, fileName) => {
+  let fileStream;
+  // Verifica si el archivo se encuentra en memoria o en disco
+  if (file.buffer) {
+    const pass = new PassThrough();
+    pass.end(file.buffer);
+    fileStream = pass;
+  } else if (file.path) {
+    fileStream = fs.createReadStream(file.path);
+  } else {
+    throw new Error("No se encontró buffer ni path en el archivo.");
+  }
+
+  // Si se pasa fileName, se le agrega la extensión según el mimeType
+  const finalName = fileName ? fileName + getExtensionFromMime(file.mimetype) : undefined;
+
   try {
-    // 1. Creamos un stream a partir del buffer del archivo
-    const bufferStream = new stream.PassThrough();
-    bufferStream.end(file.buffer);
-
-    // Si deseas mantener el mismo nombre anterior y no renombrar, puedes omitir "fileName" o ponerlo condicional
-    // Aquí asumimos que quieres renombrarlo con su extensión:
-    let finalName = fileName 
-      ? fileName + getExtensionFromMime(file.mimetype) 
-      : undefined; // Si no pasas fileName, no renombre
-
-    // 2. Actualiza el archivo en Drive
     const updateResponse = await drive.files.update({
-      fileId: fileId,
+      fileId,
       media: {
         mimeType: file.mimetype,
-        body: bufferStream,
+        body: fileStream,
       },
       requestBody: {
-        // Actualiza el nombre solo si 'finalName' existe; 
-        // si quieres *siempre* actualizar, ponlo directamente
+        // Actualizamos el nombre solo si se pasó fileName
         ...(finalName && { name: finalName }),
         mimeType: file.mimetype,
       },
-      fields: 'id, name', // Qué campos quieres que te devuelva la respuesta
+      fields: 'id, name',
     });
 
-    // 4. Retornamos el nuevo nombre y el id
     const updatedFile = updateResponse.data;
-
     return { id: updatedFile.id, name: updatedFile.name };
-
   } catch (error) {
     console.error('Error al actualizar el archivo en Google Drive:', error);
     return null;
   }
 };
 
-const uploadFileToDrive = async (file, folderId, fileName, duplicate=false) => {
-
-  try {
-    const bufferStream = new stream.PassThrough();
-    bufferStream.end(file.buffer); // El buffer contiene los datos del archivo
-
-    // Verificar si existe un archivo con el mismo nombre en la carpeta
-    const existingFile = await drive.files.list({
-      q: `'${folderId}' in parents and name='${fileName}' and trashed=false`,
-      fields: 'files(id, name)',
-    });
-
-    let fileId;
-
-
-    if (!duplicate && existingFile.data.files.length > 0) {
-      // Si el archivo ya existe, actualizar su contenido
-      fileId = existingFile.data.files[0].id;
-
-      await drive.files.update({
-        fileId: fileId,
-        media: {
-          mimeType: file.mimetype,
-          body: bufferStream, // Contenido del archivo nuevo
-        },
-        requestBody: {
-          name: fileName,
-          mimeType: file.mimetype,
-        },
-      });
-
-    } else {
-      let nameFile=fileName+getExtensionFromMime(file.mimetype)
-      // Si no existe, crear un archivo nuevo
-      const res = await drive.files.create({
-        requestBody: {
-          name: nameFile, // Nombre del archivo que se subirá
-          mimeType: file.mimetype, // Tipo MIME del archivo (ej: 'application/pdf')
-          parents: [folderId], // ID de la carpeta donde se subirá el archivo
-        },
-        media: {
-          mimeType: file.mimetype,
-          body: bufferStream, // El buffer que se va a subir
-        },
-        fields: 'id, name', // Campos a devolver
-      });
-
-      fileId = res.data.id;
-    }
-
-    // Asignar permisos de editor a cada correo electrónico
-    for (const email of emails) {
-      await drive.permissions.create({
-        fileId: fileId,
-        requestBody: {
-          role: 'writer', // Rol de editor
-          type: 'user', // Tipo de permiso: usuario
-          emailAddress: email, // Correo electrónico al que se otorgan los permisos
-        },
-        sendNotificationEmail: false, // Evitar notificaciones por correo electrónico
-      });
-    }
-
-    return { id: fileId, name: fileName };
-  } catch (error) {
-    console.error('Error al subir el archivo a Google Drive o asignar permisos:', error);
-    return null;
+const uploadFileToDrive = async (file, folderId, driveName, resumable = false) => {
+  let fileStream;
+  
+  // Si el archivo se ha subido en memoria, tendremos file.buffer
+  if (file.buffer) {
+    const pass = new PassThrough();
+    pass.end(file.buffer);
+    fileStream = pass;
+  } else if (file.path) {
+    // Si se usara diskStorage, se puede crear un stream desde file.path
+    fileStream = fs.createReadStream(file.path);
+  } else {
+    throw new Error("No se encontró buffer ni path en el archivo.");
   }
+
+  // Llama a la API de Google Drive para subir el archivo
+  const response = await drive.files.create({
+    requestBody: {
+      name: driveName,
+      parents: [folderId],
+    },
+    media: {
+      mimeType: file.mimetype,
+      body: fileStream,
+    },
+    fields: 'id',
+  });
+
+  return response.data;
 };
+
+
 
 
 
@@ -1055,7 +1022,6 @@ const deleteFileByName = async () => {
 
 
 
-// Ejecutar la función
 
 module.exports = {
   uploadFileToDrive,

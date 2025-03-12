@@ -29,28 +29,14 @@ const LeavePeriodSchema = new Schema({
 
 
 const fileSchema = new Schema({
-    fileName: { 
-        type: String, 
-        required: true 
-    },
-    fileTag: { 
-        type: String, 
-        required: true,
-        index: true  // Agrega un índice en fileName
-        
-    },
-    description: { 
-        type: String,
-        maxlength: 200
-    },
-    date: { 
-        type: Date ,
-        index: true  // Agrega un índice en fileName
-    },
-    notes:{
-        type:String,
-        maxlength: 200
-    }
+    filesId:{
+        type:Schema.Types.ObjectId,
+          ref: 'Filedrive'  
+      },
+fileName:  {type: String},
+  fileTag: {type: String},
+  description: {type: String},
+  date: {type: String}
 });
 
 // Esquema para Periodos de Contratación
@@ -240,7 +226,11 @@ const UserSchema = new Schema({
     // uploadFileSigned: pdf
     vacationDays:[Date],
     personalDays:[Date],
-    files:[fileSchema],
+    files: [fileSchema],
+    essentialDocumentationUser:{
+        type:[Schema.Types.ObjectId],
+        ref: 'Documentation'
+    },
     notes:{
         type: String,
     },
