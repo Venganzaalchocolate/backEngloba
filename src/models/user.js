@@ -227,16 +227,16 @@ const UserSchema = new Schema({
     vacationDays:[Date],
     personalDays:[Date],
     files: [fileSchema],
-    essentialDocumentationUser:{
-        type:[Schema.Types.ObjectId],
-        ref: 'Documentation'
-    },
     notes:{
         type: String,
     },
     consetmentDataProtection:{
         type:Boolean,
         default:true,
+    },
+    studies:{
+        type:[Schema.Types.ObjectId],
+        ref: 'Studies'
     }
 }, { timestamps: true });
 

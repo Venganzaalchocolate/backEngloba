@@ -43,6 +43,22 @@ const convertIds = (hirings) => {
     });
 };
 
+const parseField = (field, fieldName) => {
+  // Si ya es un array, retornarlo directamente
+  if (Array.isArray(field)) return field;
+  
+  try {
+    const parsedField = JSON.parse(field);
+    if (Array.isArray(parsedField)) {
+      return parsedField;
+    } else {
+      throw new Error(`${fieldName} debe ser un array.`);
+    }
+  } catch (error) {
+    throw new ClientError(`Error al procesar ${fieldName}`, 400);
+  }
+};
+
 const postCreateUser = async (req, res) => {
     const requiredFields = [
       'dni',
@@ -68,7 +84,8 @@ const postCreateUser = async (req, res) => {
       disability,
       fostered,
       gender,
-      apafa
+      apafa,
+      studies
     } = req.body;
   
     validateRequiredFields(req.body, requiredFields);
@@ -121,6 +138,10 @@ const postCreateUser = async (req, res) => {
       } else if (fostered === "no") {
         userData.apafa = false;
       }
+
+      if (req.body.studies) {
+        userData.studies = parseField(req.body.studies, 'studies').map((s) => new mongoose.Types.ObjectId(s));
+    }
   
     try {
       // Intentar crear el usuario
@@ -537,18 +558,7 @@ const userPut = async (req, res) => {
     let updateFields = {};
 
 
-    const parseField = (field, fieldName) => {
-        try {
-            const parsedField = JSON.parse(field);
-            if (Array.isArray(parsedField)) {
-                return parsedField;
-            } else {
-                throw new Error(`${fieldName} debe ser un array.`);
-            }
-        } catch (error) {
-            throw new ClientError(`Error al procesar ${fieldName}: ${error.message}`, 400);
-        }
-    };
+    
 
  
 
@@ -610,7 +620,10 @@ const userPut = async (req, res) => {
       updateFields.consetmentDataProtection = false;
   }
 
-    
+
+  if (req.body.studies) {
+    updateFields.studies = parseField(req.body.studies, 'studies').map((s) => new mongoose.Types.ObjectId(s));
+}
     
     const folderId = process.env.GOOGLE_DRIVE_APPFILE;
 

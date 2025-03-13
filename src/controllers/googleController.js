@@ -76,6 +76,7 @@ const getFileById = async (fileId) => {
       { fileId, alt: 'media' },
       { responseType: 'stream' }
     );
+
     // Aquí no lo convertimos a Buffer:
     // Retornamos directamente el stream
     return { file, stream: response.data };

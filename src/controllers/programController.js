@@ -161,27 +161,36 @@ const getDispositive = async (req, res) => {
 
 // Actualizar un dispositivo dentro de un programa
 const updateDispositive = async (req, res) => {
-  const { programId, dispositiveId } = req.body;
+  const { programId, dispositiveId, active, name, address, email, phone, province } = req.body;
+
+  // Buscar el programa
   const program = await Program.findById(programId);
   if (!program) throw new ClientError('Programa no encontrado', 404);
 
+  // Buscar el dispositivo dentro del programa
   const dispositive = program.devices.id(dispositiveId);
   if (!dispositive) throw new ClientError('Dispositivo no encontrado', 404);
 
-  // Actualizar los campos del dispositivo
-  const updateText = {
+  // Construir el objeto de actualización solo con los campos enviados
+  const updateFields = {};
+  if (active !== undefined) updateFields["devices.$.active"] = active;
+  if (name !== undefined) updateFields["devices.$.name"] = name;
+  if (address !== undefined) updateFields["devices.$.address"] = address;
+  if (email !== undefined) updateFields["devices.$.email"] = email;
+  if (phone !== undefined) updateFields["devices.$.phone"] = phone;
+  if (province !== undefined) updateFields["devices.$.province"] = province;
 
-  };
-
-  let doc = await Program.findOneAndUpdate(
+  // Actualizar el dispositivo usando el operador $set en el array devices
+  const updatedProgram = await Program.findOneAndUpdate(
     { _id: programId, "devices._id": dispositiveId },
-    { $set: { "devices.$": updateText } },
+    { $set: updateFields },
     { new: true }
   );
 
-  if (doc == null) throw new ClientError("No existe el dispositivo", 400);
-  response(res, 200, doc);
+  if (!updatedProgram) throw new ClientError("No se pudo actualizar el dispositivo", 400);
+  response(res, 200, updatedProgram);
 };
+
 
 // Eliminar un dispositivo de un programa
 const deleteDispositive = async (req, res) => {
