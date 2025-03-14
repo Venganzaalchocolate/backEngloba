@@ -101,7 +101,10 @@ const verifyCode = async (req, res) => {
     await OneTimeCode.deleteOne({ _id: codeDoc._id });
 
     // 5. Generar el token y responder
-    const user = await User.findById(userId);
+    const user = await User.findById(userId).populate({
+        path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
+        model: 'Filedrive',       // Nombre del modelo de Filedrive
+      });
     const token = await generarToken(user); // Ajusta según tu lógica de JWT
 
     response(res, 200, {
