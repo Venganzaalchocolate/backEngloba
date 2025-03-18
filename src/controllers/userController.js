@@ -306,128 +306,71 @@ const buildFilters = (req, programs) => {
 
 
 const getAllUsersWithOpenPeriods = async (req, res) => {
-  // 1) Cargamos los programas si se necesitan para filtros
+  const filters = {};
   const programs = await Program.find().select('name _id devices.name devices._id');
-  // 2) Construimos los filtros
-  const filters = buildFilters(req, programs);
 
-  // 3) Buscamos usuarios sin paginación
-  //    Traemos los campos: firstName, lastName, dni, hiringPeriods
-  //    OJO: NO usamos .populate({ path: 'hiringPeriods.position', model: 'Jobs' })
-  //    porque "position" es un subdocumento de 'Jobs' (una "subcategoría").
-  const users = await User.find(filters, 'firstName lastName dni hiringPeriods')
-    .sort({ createdAt: -1 });
+  if (req.body.firstName) {
+    const nameRegex = createAccentInsensitiveRegex(req.body.firstName);
+    filters["firstName"] = { $regex: nameRegex };
+  }
+  if (req.body.lastName) {
+    const nameRegex = createAccentInsensitiveRegex(req.body.lastName);
+    filters["lastName"] = { $regex: nameRegex };
+  }
 
-  // 4) Filtramos periodos abiertos y recolectamos IDs de devices & position
-  let deviceIds = [];
-  let positionIds = [];
 
-  const preparedUsers = users.map((user) => {
-    // Toma sólo periodos donde no haya `endDate`
-    const openPeriods = user.hiringPeriods.filter((p) => (!p.endDate && p.active));
-    // Recolecta device._id
-    deviceIds.push(
-      ...openPeriods.filter((p) => p.device).map((p) => p.device.toString())
-    );
-
-    // Recolecta position._id
-    // (Si "position" es en realidad la subcategoría _id)
-    positionIds.push(
-      ...openPeriods.filter((p) => p.position).map((p) => p.position.toString())
-    );
-
-    return {
-      _id: user._id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      dni: user.dni,
-      hiringPeriods: openPeriods,
-    };
-  });
-
-  deviceIds = [...new Set(deviceIds)];
-  positionIds = [...new Set(positionIds)];
-
-  // =====================
-  // 5) Manejo manual de DEVICES dentro de Program
-  // =====================
-  const programsWithDevices = await Program.find(
-    { 'devices._id': { $in: deviceIds } },
-    { name: 1, devices: 1 }
-  );
-
-  const deviceMap = {};
-  for (const prog of programsWithDevices) {
-    for (const dev of prog.devices) {
-      const devId = dev._id.toString();
-      if (deviceIds.includes(devId)) {
-        deviceMap[devId] = {
-          programName: prog.name,
-          deviceName: dev.name,
-        };
-      }
+  if (req.body.email) filters["email"] = { $regex: req.body.email, $options: 'i' };
+  if (req.body.phone) filters["phone"] = { $regex: req.body.phone, $options: 'i' };
+  if (req.body.dni) filters["dni"] = { $regex: req.body.dni, $options: 'i' };
+  if (req.body.status) filters["employmentStatus"] = req.body.status;
+  if (req.body.gender) filters["gender"] = req.body.gender;
+  if (req.body.fostered === "si") filters["fostered"] = true;
+  if (req.body.fostered === "no") filters["fostered"] = false;
+  if (req.body.apafa === "si") filters["apafa"] = true;
+  if (req.body.apafa === "no") filters["apafa"] = false;
+  if (req.body.disability !== undefined) {
+    if (req.body.disability === "si") {
+      filters["disability.percentage"] = { $gt: 0 };
+    } else if (req.body.disability === "no") {
+      filters["disability.percentage"] = 0;
     }
   }
 
-  // =====================
-  // 6) Manejo manual de POSITION subcategorías dentro de Jobs
-  // =====================
-  // Buscamos todos los jobs que tengan subcategorías cuyo _id esté en positionIds
-  // Nota: "subcategories._id": { $in: positionIds }
-  const jobsWithSubcategories = await Jobs.find(
-    { 'subcategories._id': { $in: positionIds } },
-    { name: 1, subcategories: 1 } // Traemos `name` del job y el array de subcategorías
-  );
 
-  // Creamos un map subcategoryId => { jobName, subcategoryName, ... }
-  const positionMap = {};
-  for (const jobDoc of jobsWithSubcategories) {
-    for (const subcat of jobDoc.subcategories) {
-      const subcatId = subcat._id.toString();
-      if (positionIds.includes(subcatId)) {
-        positionMap[subcatId] = {
-          jobName: jobDoc.name,
-          subcategoryName: subcat.name,
-        };
-      }
-    }
+  if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
+    const program = programs.find(pr => pr._id.toString() === req.body.programId);
+    if (!program) throw new ClientError("Programa no encontrado", 404);
+    filters.dispositiveNow = { $in: program.devices.map(device => device._id) };
   }
 
-  // =====================
-  // 7) Reemplazar en cada periodo device y position con los objetos deseados
-  // =====================
-  const finalUsers = preparedUsers.map((u) => {
-    const updatedPeriods = u.hiringPeriods.map((period) => {
-      const newPeriod = { ...period._doc };
+  if (req.body.dispositive && mongoose.Types.ObjectId.isValid(req.body.dispositive)) {
+    filters["dispositiveNow"] = req.body.dispositive;
+  }
 
-      // a) Reemplazar device
-      const devId = period.device?.toString();
-      if (devId && deviceMap[devId]) {
-        newPeriod.device = {
-          _id: devId,
-          ...deviceMap[devId],
-        };
-      }
+ 
+  const users = await User.find(filters)
+  .sort({ createdAt: -1 })
+  const processedUsers = users.map(user => {
+    // Si user es un documento de Mongoose, conviene convertirlo a objeto JS plano:
+    // const plainUser = user.toObject();
 
-      // b) Reemplazar position
-      const posId = period.position?.toString();
-      if (posId && positionMap[posId]) {
-        newPeriod.position = {
-          _id: posId,
-          ...positionMap[posId],
-        };
-      }
+    // O si prefieres clonar con spread, debes considerar user._doc en Mongoose:
+    const plainUser = { ...user._doc };
 
-      return newPeriod;
-    });
-
-    return { ...u, hiringPeriods: updatedPeriods };
+    // Sobrescribimos el array "hiringPeriods", filtrando
+    if (plainUser.hiringPeriods) {
+      plainUser.hiringPeriods = plainUser.hiringPeriods.filter(hp => 
+        (hp.endDate === null || hp.endDate === undefined) && hp.active
+      );
+    }
+    
+    // Devolvemos el objeto modificado
+    return plainUser;
   });
-
-  // 8) Enviamos respuesta
-  response(res, 200, { users: finalUsers });
-
+  
+  response(res, 200, { users: processedUsers});
 };
+
 
 
 //
