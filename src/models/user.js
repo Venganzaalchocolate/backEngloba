@@ -78,7 +78,7 @@ const PeriodSchema = new Schema({
     // Proceso de selección asociado al periodo de contratación (referencia a otra colección)
     selectionProcess: { 
         type: Schema.Types.ObjectId,
-        ref: 'Bag'
+        ref: 'Offer'
     },
 
     leavePeriods:[LeavePeriodSchema],
@@ -142,6 +142,9 @@ const PayrollSchema = new Schema({
 
 // Esquema principal del Empleado
 const UserSchema = new Schema({
+    birthday:{
+        type:Date,
+    },
     disability:{
         percentage:{
             type:Number,

@@ -68,7 +68,8 @@ const postCreateUser = async (req, res) => {
     'phone',
     'hiringPeriods',
     'role',
-    'gender'
+    'gender',
+    'birthday'
   ];
 
   const {
@@ -85,7 +86,8 @@ const postCreateUser = async (req, res) => {
     fostered,
     gender,
     apafa,
-    studies
+    studies,
+    birthday,
   } = req.body;
 
   validateRequiredFields(req.body, requiredFields);
@@ -117,8 +119,18 @@ const postCreateUser = async (req, res) => {
     dispositiveNow: newHiring.device,
     employmentStatus,
     notes,
-    gender
+    gender,
   };
+
+  if(!!birthday){
+    const parsedDate = new Date(birthday);
+    if (isNaN(parsedDate)) {
+     throw new ClientError(`Fecha de nacimiento no válida`, 400); 
+    } else {
+      userData.birthday=parsedDate;
+    }
+  }
+  
 
 
   // Manejar disability
@@ -606,6 +618,15 @@ const userPut = async (req, res) => {
     percentage: req.body.disPercentage
   };
 
+  
+  if(req.body.birthday){
+    const parsedDate = new Date(req.body.birthday);
+    if (isNaN(parsedDate)) {
+     throw new ClientError(`Fecha de nacimiento no válida`, 400); 
+    } else {
+      updateFields.birthday=parsedDate;
+    }
+  }
 
 
   if (req.body.disNotes) updateFields.disability.notes = req.body.disNotes;
