@@ -1,4 +1,4 @@
-const { User } = require('../models/indexModels');
+const { User, Filedrive } = require('../models/indexModels');
 const OneTimeCode = require('../models/OneTimeCode');
 const { catchAsync, response, ClientError, comprobarPass, generarToken, verifyToken, generarHashpass } = require('../utils/indexUtils')
 const jwt = require('jsonwebtoken');
@@ -105,6 +105,7 @@ const verifyCode = async (req, res) => {
         path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
         model: 'Filedrive',       // Nombre del modelo de Filedrive
       });
+      
     const token = await generarToken(user); // Ajusta según tu lógica de JWT
 
     response(res, 200, {
@@ -120,7 +121,10 @@ const validToken = async (req, res) => {
     const token = req.body.token
     if (verifyToken(token)) {
         const id = jwt.decode(token)._id
-        const usuario = await User.findOne({ _id: id });
+        const usuario = await User.findOne({ _id: id }).populate({
+            path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
+            model: 'Filedrive',       // Nombre del modelo de Filedrive
+          });
         response(res, 200, usuario)
     } else {
         throw new ClientError("El token no es correcto", 401);
