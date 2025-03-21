@@ -177,7 +177,9 @@ const UserSchema = new Schema({
     // DNI del empleado
     dni: {
         type: String,
-        unique: true
+        index: true, // ← esto creará un índice en MongoDB
+        unique: true, // recomendado si es único
+        required: true, // recomendado si siempre estará presente
     },
     // Nombre del empleado
     firstName: {
@@ -242,5 +244,7 @@ const UserSchema = new Schema({
         ref: 'Studies'
     }
 }, { timestamps: true });
+
+
 
 module.exports=mongoose.model('User', UserSchema)

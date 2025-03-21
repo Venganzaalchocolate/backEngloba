@@ -15,8 +15,8 @@ const { PassThrough } = require('stream');
 
 // const sourceFolderId = '1WmnFU8jv6ZY3BW0iSB1xXTpQoMbesU09'; // ID de la carpeta de datos actuales
 const sourceFolderId = process.env.GOOGLE_DRIVE_PARENTFOLDER; // ID de la carpeta de datos actuales
-const backup12hFolderId='1cnQ_4ANsSr_R-HJ-uf15WNfc5w_4dTRG';
-const backup3dFolderId ='1kxH3Su19Yz6WWCSCmfUSewmqymsDlL4l';
+const backup12hFolderId = '1cnQ_4ANsSr_R-HJ-uf15WNfc5w_4dTRG';
+const backup3dFolderId = '1kxH3Su19Yz6WWCSCmfUSewmqymsDlL4l';
 const emails = ['web@engloba.org.es', 'comunicacion@engloba.org.es'];
 
 
@@ -52,15 +52,6 @@ const deleteFileById = async (fileId) => {
   }
 };
 
-const streamToBuffer = (stream) => {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    stream.on('data', (chunk) => chunks.push(chunk));
-    stream.on('error', reject);
-    stream.on('end', () => resolve(Buffer.concat(chunks)));
-  });
-};
-
 // --- getFileById.js ---
 const getFileById = async (fileId) => {
   try {
@@ -70,7 +61,7 @@ const getFileById = async (fileId) => {
       fields: 'id, name, mimeType',
     });
 
-    
+
     // Descarga como stream
     const response = await drive.files.get(
       { fileId, alt: 'media' },
@@ -145,7 +136,7 @@ const updateFileInDrive = async (file, fileId, fileName) => {
 
 const uploadFileToDrive = async (file, folderId, driveName, resumable = false) => {
   let fileStream;
-  
+
   // Si el archivo se ha subido en memoria, tendremos file.buffer
   if (file.buffer) {
     const pass = new PassThrough();
@@ -173,6 +164,324 @@ const uploadFileToDrive = async (file, folderId, driveName, resumable = false) =
 
   return response.data;
 };
+
+
+async function listarArchivosEnCarpeta(folderId) {
+  try {
+    const res = await drive.files.list({
+      q: `'${folderId}' in parents and trashed = false`,
+      fields: 'files(id, name)',
+    });
+
+    return res.data.files; // directamente retorna la lista de archivos
+  } catch (error) {
+    return false
+  }
+}
+
+
+// Mover un archivo a otra carpeta y renombrarlo
+async function renombrarMoverArchivos(idArchivo, nuevoNombre, folderDestinoId, folderOrigenId) {
+  try {
+    const res = await drive.files.update({
+      fileId: idArchivo,
+      addParents: folderDestinoId,
+      removeParents: folderOrigenId,
+      requestBody: {
+        name: nuevoNombre,
+      },
+      fields: 'id, parents, name',
+    });
+
+    return res.data; 
+  } catch (error) {
+    console.error('Error moviendo o renombrando archivo:', error);
+    return false
+  }
+}
+
+async function buscarCarpetasPorNombre(folderName, parentId) {
+  const res = await drive.files.list({
+    q: `'${parentId}' in parents 
+        and mimeType='application/vnd.google-apps.folder'
+        and name='${folderName}'
+        and trashed=false`,
+    fields: 'files(id, name)'
+  });
+  
+  return res.data.files || []; // array de folders
+}
+
+async function crearCarpeta(folderName, parentId) {
+  const fileMetadata = {
+    name: folderName,
+    mimeType: 'application/vnd.google-apps.folder',
+    parents: [parentId]
+  };
+  
+  const res = await drive.files.create({
+    resource: fileMetadata,
+    fields: 'id, name'
+  });
+
+  return res.data; // { id, name }
+}
+
+
+async function getOrCreateFolder(folderName, parentId) {
+  const existingFolders = await buscarCarpetasPorNombre(folderName, parentId);
+  if (existingFolders.length > 0) {
+    return existingFolders[0].id;
+  }
+  const newFolder = await crearCarpeta(folderName, parentId);
+  return newFolder.id;
+}
+
+/**
+ * Función que gestiona automáticamente las nóminas encontradas 
+ * en la carpeta de Drive indicada en GOOGLE_DRIVE_NUEVAS_NOMINAS.
+ */
+
+
+const addPayroll = async (dniUser, payrollMonth, payrollYear, idFile) => {
+  try {
+    const userAux = await User.findOne({ dni: { $regex: `^${dniUser}$`, $options: 'i' } });
+ // ← Corregido aquí, asumiendo modelo 'User'
+
+    if (!userAux) {
+      return false
+    }
+
+    const newPayroll = {
+      payrollMonth: parseInt(payrollMonth),
+      payrollYear: parseInt(payrollYear),
+      pdf: idFile
+    };
+
+    userAux.payrolls.push(newPayroll);
+
+    await userAux.save();
+
+    return userAux;
+
+  } catch (error) {
+    return false
+  }
+};
+
+const validateDNIorNIE = (value) => {
+  // Eliminar espacios y convertir a mayúsculas
+  value = value.trim().toUpperCase();
+
+  // Expresiones regulares
+  const dniPattern = /^[0-9]{8}[A-Z]$/;
+  const niePattern = /^[XYZ][0-9]{7}[A-Z]$/;
+
+  // Array de letras para el cálculo
+  const letras = [
+    "T",
+    "R",
+    "W",
+    "A",
+    "G",
+    "M",
+    "Y",
+    "F",
+    "P",
+    "D",
+    "X",
+    "B",
+    "N",
+    "J",
+    "Z",
+    "S",
+    "Q",
+    "V",
+    "H",
+    "L",
+    "C",
+    "K",
+    "E",
+  ];
+
+  // DNI
+  if (dniPattern.test(value)) {
+    const dniNumber = parseInt(value.substring(0, 8), 10);
+    const dniLetter = value.charAt(8);
+    return dniLetter === letras[dniNumber % 23];
+  }
+
+  // NIE
+  if (niePattern.test(value)) {
+    let nieNumber = value.substring(1, 8);
+    const nieLetter = value.charAt(8);
+    const niePrefix = value.charAt(0);
+
+    switch (niePrefix) {
+      case "X":
+        nieNumber = "0" + nieNumber;
+        break;
+      case "Y":
+        nieNumber = "1" + nieNumber;
+        break;
+      case "Z":
+        nieNumber = "2" + nieNumber;
+        break;
+    }
+    const nieNumberInt = parseInt(nieNumber, 10);
+    return nieLetter === letras[nieNumberInt % 23];
+  }
+
+  return false; // no cumple ni DNI ni NIE
+};
+
+async function gestionAutomaticaNominas() {
+  const listaArchivosNuevos = await listarArchivosEnCarpeta(process.env.GOOGLE_DRIVE_NUEVAS_NOMINAS);
+
+  if (!listaArchivosNuevos || listaArchivosNuevos.length === 0) {
+      return;
+  }
+console.log(listaArchivosNuevos.length)
+  for (const archivo of listaArchivosNuevos) {
+      let archivoMovido = null;
+      
+      try {
+          // 1. Extraer datos (DNI, mes, año)
+          const nombreSinExtension = archivo.name.replace('.pdf', '');
+          const partes = nombreSinExtension.split('_');
+
+          // if (partes.length < 3) {
+          //     throw new Error(`El nombre del archivo no sigue el formato esperado: ${archivo.name}`);
+          // }
+
+          const dniExtraido  = partes[0]; 
+          const mesExtraido  = partes[1];
+          const anioExtraido = partes[2];
+
+          if(!validateDNIorNIE(dniExtraido)){
+            await renombrarMoverArchivos(
+              archivoMovido.id,
+              archivo.name, 
+              process.env.GOOGLE_DRIVE_FALLO_NOMINAS,
+              archivoMovido.parentId
+              
+            );
+            throw new Error(`El nombre del archivo no sigue el formato esperado: ${dniExtraido}`);
+          }
+
+          // 2. Obtener o crear la carpeta del año y del mes
+          const carpetaAnioId = await getOrCreateFolder(anioExtraido, process.env.GOOGLE_DRIVE_NOMINAS);
+          const carpetaMesId  = await getOrCreateFolder(mesExtraido, carpetaAnioId);
+
+          // 3. Crear un nuevo nombre para el archivo
+          const nuevoNombre = `${dniExtraido}_${mesExtraido}_${anioExtraido}_PROCESADA.pdf`;
+
+          // Guardar el estado original
+          const archivoOriginal = { id: archivo.id, name: archivo.name, parentId: process.env.GOOGLE_DRIVE_NUEVAS_NOMINAS };
+
+          // 4. Mover y renombrar archivo
+          archivoMovido = await renombrarMoverArchivos(
+              archivo.id,
+              nuevoNombre,
+              carpetaMesId,
+              archivoOriginal.parentId
+          );
+
+          if (!archivoMovido) {
+              throw new Error(`No se pudo mover/renombrar el archivo: ${archivo.name}`);
+          }
+
+          // 5. Insertar la nómina en la BD
+          const resultadoAddPayroll = await addPayroll(
+              dniExtraido,
+              mesExtraido,
+              anioExtraido,
+              archivoMovido.id
+          );
+
+
+          if (resultadoAddPayroll === false) {
+            await renombrarMoverArchivos(
+              archivoMovido.id,
+              archivo.name, 
+              process.env.GOOGLE_DRIVE_FALLO_NOMINAS,
+              archivoMovido.parentId
+              
+          );
+            console.log(`No se pudo insertar la nómina en la BD para DNI: ${dniExtraido}`)
+            throw new Error(`No se pudo insertar la nómina en la BD para DNI: ${dniExtraido}`);
+          }
+
+      } catch (errorProcesandoArchivo) {
+          console.error(`Error al procesar el archivo ${archivo.name}:`, errorProcesandoArchivo.message);
+          try {
+            await renombrarMoverArchivos(
+                archivo.id,
+                archivo.name, 
+                process.env.GOOGLE_DRIVE_FALLO_NOMINAS,
+                process.env.GOOGLE_DRIVE_NUEVAS_NOMINAS,
+                
+            );
+            console.log(`Se ha restaurado el archivo ${archivo.name} a su estado original.`);
+        } catch (errorRollback) {
+            console.error(`Error al restaurar el archivo ${archivo.name}:`, errorRollback.message);
+        }
+      }
+  }
+}
+
+//
+
+
+// // Ejecutar cada 5 minutos:
+// let isRunning = false;
+
+// cron.schedule('*/5 * * * *', async () => {
+//     if (isRunning) {
+//         console.log('La tarea anterior aún está en ejecución. Esperando la siguiente ejecución.');
+//         return;
+//     }
+    
+//     isRunning = true;
+//     console.log('Iniciando verificación de archivos...');
+    
+//     try {
+//         await gestionAutomaticaNominas();
+//         console.log('Procesamiento finalizado.');
+//     } catch (error) {
+//         console.error('Error en procesamiento:', error);
+//     } finally {
+//         isRunning = false;
+//     }
+// });
+
+
+
+// listarArchivosEnCarpeta(process.env.GOOGLE_DRIVE_NUEVAS_NOMINAS)
+//backup
+// Funciones de Base de Datos
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -222,11 +531,6 @@ async function deleteAllOwnedInFolder(folderId, emails) {
     console.error('Error al eliminar archivos/carpetas:', error);
   }
 }
-
-//backup
-// Funciones de Base de Datos
-
-
 /**
  * Eliminar todo el contenido de las carpetas de backup y limpiar la base de datos.
  */
@@ -335,7 +639,7 @@ function scheduleBackups() {
   console.log('Backups programados con node-cron.');
 }
 
-const initBackup=async ()=>{
+const initBackup = async () => {
   await checkForChangesAndBackup('12h', backup12hFolderId);
   await checkForChangesAndBackup('3d', backup3dFolderId);
 }
@@ -984,39 +1288,7 @@ function scheduleBackups() {
 //   console.log('Servicio de backup iniciado y listo.');
 // })();
 
-const deleteFileByName = async () => {
-  // const folderId='122pqA2vhaT8ULu195ihD2WHcBQg-ieK1'
-  // const fileName='66ebff2cb0d67369b6d525a8-sexualOffenseCertificate.pdf'
-  try {
-    // Buscar el archivo por nombre en la carpeta especificada
-    const searchResult = await drive.files.list({
-      q: `'${folderId}' in parents and name='${fileName}' and trashed=false`,
-      fields: 'files(id, name)',
-    });
 
-    // Verificar si se encontró el archivo
-    const files = searchResult.data.files;
-
-    if (files.length === 0) {
-      console.log(`No se encontró ningún archivo con el nombre "${fileName}" en la carpeta especificada.`);
-      return { success: false, message: 'Archivo no encontrado' };
-    }
-
-    // Obtener el ID del archivo encontrado
-    const fileId = files[0].id;
-
-    // Eliminar el archivo
-    await drive.files.delete({
-      fileId: fileId,
-    });
-
-    console.log(`Archivo "${fileName}" eliminado exitosamente.`);
-    return { success: true, message: 'Archivo eliminado' };
-  } catch (error) {
-    console.error('Error al eliminar el archivo:', error);
-    return { success: false, message: 'Error al eliminar el archivo', error };
-  }
-};
 
 
 

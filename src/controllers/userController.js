@@ -122,15 +122,15 @@ const postCreateUser = async (req, res) => {
     gender,
   };
 
-  if(!!birthday){
+  if (!!birthday) {
     const parsedDate = new Date(birthday);
     if (isNaN(parsedDate)) {
-     throw new ClientError(`Fecha de nacimiento no válida`, 400); 
+      throw new ClientError(`Fecha de nacimiento no válida`, 400);
     } else {
-      userData.birthday=parsedDate;
+      userData.birthday = parsedDate;
     }
   }
-  
+
 
 
   // Manejar disability
@@ -183,7 +183,7 @@ const getUsers = async (req, res) => {
   const page = parseInt(req.body.page) || 1;
   const limit = parseInt(req.body.limit) || 10;
   const filters = {};
-  const programs = await Program.find().select('name _id devices.name devices._id');
+  const programs = await Program.find().select('name _id devices.name devices._id devices.province');
 
   if (req.body.firstName) {
     const nameRegex = createAccentInsensitiveRegex(req.body.firstName);
@@ -212,6 +212,16 @@ const getUsers = async (req, res) => {
     }
   }
 
+  
+  if(req.body.provinces && mongoose.Types.ObjectId.isValid(req.body.provinces)){
+    let idDispositive=[]
+    programs.map((x)=>x.devices.map((y)=>{
+      if(y.province==req.body.provinces){
+        idDispositive.push(y._id)
+      }
+    }))
+    filters["dispositiveNow"] = {$in:idDispositive}
+  }
 
   if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
     const program = programs.find(pr => pr._id.toString() === req.body.programId);
@@ -347,9 +357,9 @@ const getAllUsersWithOpenPeriods = async (req, res) => {
     filters["dispositiveNow"] = req.body.dispositive;
   }
 
- 
+
   const users = await User.find(filters)
-  .sort({ createdAt: -1 })
+    .sort({ createdAt: -1 })
   const processedUsers = users.map(user => {
     // Si user es un documento de Mongoose, conviene convertirlo a objeto JS plano:
     // const plainUser = user.toObject();
@@ -359,16 +369,16 @@ const getAllUsersWithOpenPeriods = async (req, res) => {
 
     // Sobrescribimos el array "hiringPeriods", filtrando
     if (plainUser.hiringPeriods) {
-      plainUser.hiringPeriods = plainUser.hiringPeriods.filter(hp => 
+      plainUser.hiringPeriods = plainUser.hiringPeriods.filter(hp =>
         (hp.endDate === null || hp.endDate === undefined) && hp.active
       );
     }
-    
+
     // Devolvemos el objeto modificado
     return plainUser;
   });
-  
-  response(res, 200, { users: processedUsers});
+
+  response(res, 200, { users: processedUsers });
 };
 
 
@@ -561,13 +571,13 @@ const userPut = async (req, res) => {
     percentage: req.body.disPercentage
   };
 
-  
-  if(req.body.birthday){
+
+  if (req.body.birthday) {
     const parsedDate = new Date(req.body.birthday);
     if (isNaN(parsedDate)) {
-     throw new ClientError(`Fecha de nacimiento no válida`, 400); 
+      throw new ClientError(`Fecha de nacimiento no válida`, 400);
     } else {
-      updateFields.birthday=parsedDate;
+      updateFields.birthday = parsedDate;
     }
   }
 
@@ -887,7 +897,8 @@ const changeDispositiveNow = async (user) => {
 //  - convertIds (si convierte strings a ObjectId, etc.)
 //  - mongoose (si necesitas new mongoose.Types.ObjectId)
 const hirings = async (req, res) => {
-  const endDateExist = !!req.body.hirings.endDate
+
+
 
   if (!req.body.userId)
     throw new ClientError("Error, contacte con el administrador", 400);
@@ -918,7 +929,7 @@ const hirings = async (req, res) => {
 
     const userDoc = await User.findById(req.body.userId);
     if (!userDoc) throw new ClientError("Usuario no encontrado", 404);
-
+    const endDateExist = req.body.hirings.endDate
     if (!endDateExist) {
       const openPeriods = cuerpo.filter(
         p => !p.endDate && p.active !== false
@@ -971,20 +982,20 @@ const hirings = async (req, res) => {
     const shiftType = newHiring?.workShift?.type;
     if (!shiftType)
       throw new ClientError("Falta el tipo de horario", 400);
-
+    const endDateExist = req.body.hirings.endDate
     if (!endDateExist) {
-    if (shiftType === "completa") {
-      if (openPeriods.length > 0)
-        throw new ClientError("Ya existe un periodo de contratación abierto a jornada completa, no se puede crear otro", 400);
-    } else if (shiftType === "parcial") {
-      if (openPeriods.some(p => p.workShift?.type === "completa"))
-        throw new ClientError("Hay un periodo de contratación a jornada completa abierto, no se puede crear parcial", 400);
-      if (openPeriods.filter(p => p.workShift?.type === "parcial").length >= 2)
-        throw new ClientError("No se permiten más de 2 periodos de contratación con media jornada abiertos", 400);
-    } else {
-      throw new ClientError("Tipo de horario incorrecto", 400);
+      if (shiftType === "completa") {
+        if (openPeriods.length > 0)
+          throw new ClientError("Ya existe un periodo de contratación abierto a jornada completa, no se puede crear otro", 400);
+      } else if (shiftType === "parcial") {
+        if (openPeriods.some(p => p.workShift?.type === "completa"))
+          throw new ClientError("Hay un periodo de contratación a jornada completa abierto, no se puede crear parcial", 400);
+        if (openPeriods.filter(p => p.workShift?.type === "parcial").length >= 2)
+          throw new ClientError("No se permiten más de 2 periodos de contratación con media jornada abiertos", 400);
+      } else {
+        throw new ClientError("Tipo de horario incorrecto", 400);
+      }
     }
-  }
 
     data = await User.findOneAndUpdate(
       { _id: req.body.userId },
@@ -995,6 +1006,7 @@ const hirings = async (req, res) => {
       throw new ClientError("No se pudo crear el periodo de contratación", 400);
 
   } else if (req.body.type === "createLeave") {
+    console.log(req.body.leave)
     if (typeof req.body.leave !== "object" || Array.isArray(req.body.leave))
       throw new ClientError("'leave' debe ser un objeto", 400);
     if (!req.body.hirindId)
@@ -1064,8 +1076,29 @@ const hirings = async (req, res) => {
 
   const userChangeDispotive = await changeDispositiveNow(data);
   response(res, 200, userChangeDispotive);
+
+
 };
 
+
+
+const delPayroll = async (idUser, idPayroll) => {
+  try {
+
+    const result = await User.findByIdAndUpdate(
+      idUser,
+      { $pull: { payrolls: { _id: idPayroll } } },
+      { new: true }
+    )
+    return result;
+
+
+
+
+  } catch (error) {
+    return false;
+  }
+}
 
 
 
@@ -1082,4 +1115,5 @@ module.exports = {
   getFileUser: catchAsync(getFileUser),
   getUserName: catchAsync(getUserName),
   getAllUsersWithOpenPeriods: catchAsync(getAllUsersWithOpenPeriods),
+
 }
