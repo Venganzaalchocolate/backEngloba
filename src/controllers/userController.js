@@ -2,7 +2,7 @@ const { User, Program, Jobs, Leavetype, Filedrive } = require('../models/indexMo
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { validateRequiredFields, createAccentInsensitiveRegex } = require('../utils/utils');
-const { uploadFileToDrive, getFileById, deleteFileById } = require('./googleController');
+const { uploadFileToDrive, getFileById, deleteFileById, gestionAutomaticaNominas, obtenerCarpetaContenedora } = require('./googleController');
 const { getFileCv } = require('./ovhController');
 
 const capitalize = (str) => {
@@ -402,7 +402,6 @@ const getUserID = async (req, res) => {
   const usuario = await User.findById(id).populate({
     path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
     model: 'Filedrive',       // Nombre del modelo de Filedrive
-    select: 'fileName fileLabel description date idDrive', // Campos a traer, ajusta según necesites
   }).catch(error => { throw new ClientError('Usuario no encontrado', 404) });
   // Responde con el usuario encontrado y código de estado 200 (OK)
   response(res, 200, usuario);
@@ -658,7 +657,10 @@ const userPut = async (req, res) => {
       { _id: req.body._id },
       { $set: updateFields },
       { new: true, runValidators: true }
-    );
+    ).populate({
+      path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
+      model: 'Filedrive',       // Nombre del modelo de Filedrive
+    });
     response(res, 200, updatedUser);
   } catch (error) {
     // Si el error es de índice duplicado (E11000)
@@ -684,20 +686,28 @@ const userPut = async (req, res) => {
 const deletePayroll = async (userId, payrollId, pdf) => {
   try {
     // Verificar si la nómina existe antes de intentar eliminarla
-    const user = await User.findOne({ _id: userId, 'payrolls._id': payrollId });
+    const user = await User.findOne(
+      { _id: userId, 'payrolls._id': payrollId },
+      { 'payrolls.$': 1 }// Solo traer el payroll que coincide
+    );
 
     // Si el usuario o la nómina no existen, devolver false
     if (!user) {
       return false;
     }
 
+
+   if(user.payrolls[0].sign)await deleteFileById(user.payrolls[0].sign)
     const deleteResponse = await deleteFileById(pdf)
     if (deleteResponse.success) {
       const result = await User.findByIdAndUpdate(
         userId,
         { $pull: { payrolls: { _id: payrollId } } },
         { new: true }
-      );
+      ).populate({
+        path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
+        model: 'Filedrive',       // Nombre del modelo de Filedrive
+      });
       return result;
     } else {
       return false
@@ -706,38 +716,35 @@ const deletePayroll = async (userId, payrollId, pdf) => {
 
 
   } catch (error) {
+    console.log(error)
     return false;
   }
 };
 
 
 
-const createPayroll = async (idUser, file, payrollYear, payrollMonth) => {
+const  createPayroll = async (idUser, file, payrollYear, payrollMonth) => {
   try {
     const userAux = await User.findById(idUser);
     if (!userAux) {
       throw new Error('Usuario no encontrado');
     }
     // Formatear el nombre del archivo
-    const fileNameAux = `${userAux.dni}_${payrollMonth}_${payrollYear}_${userAux.firstName}_${userAux.lastName}.pdf`;
+    const fileNameAux = `${userAux.dni}_${payrollMonth}_${payrollYear}.pdf`;
 
-    const folderId = process.env.GOOGLE_DRIVE_NOMINAS;
+    const folderId = process.env.GOOGLE_DRIVE_NUEVAS_NOMINAS;
     // Subir archivo a Google Drive
     const fileAux = await uploadFileToDrive(file, folderId, fileNameAux, true);
 
     if (fileAux) {
-      // Crear objeto payroll
-      const newPayroll = {
-        payrollMonth: parseInt(payrollMonth, 10),
-        payrollYear: parseInt(payrollYear, 10),
-        pdf: fileAux.id
-      };
-
-      // Añadir la nómina al array de payrolls del usuario
-      userAux.payrolls.push(newPayroll);
-      // Guardar el usuario actualizado en la base de datos
-      await userAux.save();
-      return userAux;
+      const gestionado=await gestionAutomaticaNominas();
+      if(gestionado){
+      return  await User.findById(idUser).populate({
+        path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
+        model: 'Filedrive',       // Nombre del modelo de Filedrive
+      });  
+      }
+      
     } else {
       throw new Error('Error al subir el archivo a Google Drive');
     }
@@ -748,15 +755,24 @@ const createPayroll = async (idUser, file, payrollYear, payrollMonth) => {
 
 const signPayroll = async (idUser, file, payrollYear, payrollMonth, idPayroll) => {
   try {
-    const userAux = await User.findById(idUser);
-    if (!userAux) {
-      throw new Error('Usuario no encontrado');
-    }
-    // Formatear el nombre del archivo
-    const fileNameAux = `${userAux.dni}_${payrollMonth}_${payrollYear}_${userAux.firstName}_${userAux.lastName}_signed.pdf`;
+    const userAux = await User.findOne(
+      { _id: idUser, 'payrolls._id': idPayroll },
+      { dni: 1, 'payrolls.$': 1 }// Solo traer el payroll que coincide
+    );
 
-    const folderId = process.env.GOOGLE_DRIVE_NOMINAS;
-    // Subir archivo a Google Drive
+    if (!userAux || !userAux.payrolls || userAux.payrolls.length === 0) {
+      return null;
+    }
+
+    const result = {
+      dni: userAux.dni,
+      pdf: userAux.payrolls[0].pdf
+    };
+    // Formatear el nombre del archivo
+    const fileNameAux = `${result.dni}_${payrollMonth}_${payrollYear}_signed.pdf`;
+    
+    const folderId = await obtenerCarpetaContenedora(result.pdf);
+    //
     const fileAux = await uploadFileToDrive(file, folderId, fileNameAux, true);
 
     if (fileAux) {
@@ -774,11 +790,16 @@ const signPayroll = async (idUser, file, payrollYear, payrollMonth, idPayroll) =
         {
           new: true // Devuelve el documento actualizado
         }
-      );
+      ).populate({
+        path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
+        model: 'Filedrive',       // Nombre del modelo de Filedrive
+
+      });
     } else {
       throw new Error('Error al subir el archivo a Google Drive');
     }
   } catch (error) {
+    
     return null;
   }
 };
@@ -845,10 +866,15 @@ const payroll = async (req, res) => {
   } else if (req.body.type === 'sign') {
     const requiredFields = ['payrollYear', 'payrollMonth', 'idPayroll'];
     validateRequiredFields(req.body, requiredFields);
+    if (!file) {
+      throw new ClientError('El archivo es requerido para la firma de la nómina', 400);
+    }
     const signResult = await signPayroll(id, file, req.body.payrollYear, req.body.payrollMonth, req.body.idPayroll);
     if (!signResult) {
+
       throw new ClientError('No se ha podido subir la nómina', 400);
     } else {
+     
       return response(res, 200, signResult);
     }
   }
@@ -1006,7 +1032,7 @@ const hirings = async (req, res) => {
       throw new ClientError("No se pudo crear el periodo de contratación", 400);
 
   } else if (req.body.type === "createLeave") {
-    console.log(req.body.leave)
+
     if (typeof req.body.leave !== "object" || Array.isArray(req.body.leave))
       throw new ClientError("'leave' debe ser un objeto", 400);
     if (!req.body.hirindId)

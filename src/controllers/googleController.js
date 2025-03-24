@@ -136,7 +136,6 @@ const updateFileInDrive = async (file, fileId, fileName) => {
 
 const uploadFileToDrive = async (file, folderId, driveName, resumable = false) => {
   let fileStream;
-
   // Si el archivo se ha subido en memoria, tendremos file.buffer
   if (file.buffer) {
     const pass = new PassThrough();
@@ -148,7 +147,6 @@ const uploadFileToDrive = async (file, folderId, driveName, resumable = false) =
   } else {
     throw new Error("No se encontró buffer ni path en el archivo.");
   }
-
   // Llama a la API de Google Drive para subir el archivo
   const response = await drive.files.create({
     requestBody: {
@@ -161,7 +159,6 @@ const uploadFileToDrive = async (file, folderId, driveName, resumable = false) =
     },
     fields: 'id',
   });
-
   return response.data;
 };
 
@@ -337,17 +334,18 @@ const validateDNIorNIE = (value) => {
 
 async function gestionAutomaticaNominas() {
   const listaArchivosNuevos = await listarArchivosEnCarpeta(process.env.GOOGLE_DRIVE_NUEVAS_NOMINAS);
-
   if (!listaArchivosNuevos || listaArchivosNuevos.length === 0) {
       return;
   }
-console.log(listaArchivosNuevos.length)
   for (const archivo of listaArchivosNuevos) {
       let archivoMovido = null;
       
       try {
+
+          
           // 1. Extraer datos (DNI, mes, año)
-          const nombreSinExtension = archivo.name.replace('.pdf', '');
+          archivo.name=archivo.name.toUpperCase()
+          const nombreSinExtension = archivo.name.replace('.PDF', '');
           const partes = nombreSinExtension.split('_');
 
           // if (partes.length < 3) {
@@ -355,8 +353,13 @@ console.log(listaArchivosNuevos.length)
           // }
 
           const dniExtraido  = partes[0]; 
-          const mesExtraido  = partes[1];
+          let mesExtraido  = partes[1];
+          mesExtraido = parseInt(mesExtraido, 10).toString();
           const anioExtraido = partes[2];
+          let idNomina=false
+          if(partes.length>3){
+            idNomina=partes[4];
+          }
 
           if(!validateDNIorNIE(dniExtraido)){
             await renombrarMoverArchivos(
@@ -373,9 +376,13 @@ console.log(listaArchivosNuevos.length)
           const carpetaAnioId = await getOrCreateFolder(anioExtraido, process.env.GOOGLE_DRIVE_NOMINAS);
           const carpetaMesId  = await getOrCreateFolder(mesExtraido, carpetaAnioId);
 
+          
           // 3. Crear un nuevo nombre para el archivo
-          const nuevoNombre = `${dniExtraido}_${mesExtraido}_${anioExtraido}_PROCESADA.pdf`;
-
+          let nuevoNombre = `${dniExtraido}_${mesExtraido}_${anioExtraido}.pdf`;
+          if(!!idNomina){
+           nuevoNombre = `${dniExtraido}_${mesExtraido}_${anioExtraido}_${idNomina}.pdf`; 
+          }
+          
           // Guardar el estado original
           const archivoOriginal = { id: archivo.id, name: archivo.name, parentId: process.env.GOOGLE_DRIVE_NUEVAS_NOMINAS };
 
@@ -406,12 +413,10 @@ console.log(listaArchivosNuevos.length)
               archivo.name, 
               process.env.GOOGLE_DRIVE_FALLO_NOMINAS,
               archivoMovido.parentId
-              
           );
             console.log(`No se pudo insertar la nómina en la BD para DNI: ${dniExtraido}`)
             throw new Error(`No se pudo insertar la nómina en la BD para DNI: ${dniExtraido}`);
           }
-
       } catch (errorProcesandoArchivo) {
           console.error(`Error al procesar el archivo ${archivo.name}:`, errorProcesandoArchivo.message);
           try {
@@ -428,32 +433,34 @@ console.log(listaArchivosNuevos.length)
         }
       }
   }
+  return true
+}
+
+async function obtenerCarpetaContenedora(fileId) {
+
+  try {
+      const res = await drive.files.get({
+          fileId: fileId,
+          fields: 'parents'
+      });
+
+      if (res.data.parents && res.data.parents.length > 0) {
+          console.log(`El archivo está en la carpeta con ID: ${res.data.parents[0]}`);
+          return res.data.parents[0];
+      } else {
+          console.log('El archivo no tiene carpeta contenedora (puede estar en \"Mi unidad\").');
+          return null;
+      }
+  } catch (error) {
+      console.error('Error obteniendo la carpeta contenedora:', error);
+      throw error;
+  }
 }
 
 //
 
 
-// // Ejecutar cada 5 minutos:
-// let isRunning = false;
-
-// cron.schedule('*/5 * * * *', async () => {
-//     if (isRunning) {
-//         console.log('La tarea anterior aún está en ejecución. Esperando la siguiente ejecución.');
-//         return;
-//     }
-    
-//     isRunning = true;
-//     console.log('Iniciando verificación de archivos...');
-    
-//     try {
-//         await gestionAutomaticaNominas();
-//         console.log('Procesamiento finalizado.');
-//     } catch (error) {
-//         console.error('Error en procesamiento:', error);
-//     } finally {
-//         isRunning = false;
-//     }
-// });
+// sin 
 
 
 
@@ -464,8 +471,33 @@ console.log(listaArchivosNuevos.length)
 
 
 
+let isRunning = false;
 
 
+cron.schedule('*/15 * * * *', async () => {
+    if (isRunning) {
+        console.log('La tarea anterior aún está en ejecución. Esperando la siguiente ejecución.');
+        return;
+    }
+    
+    isRunning = true;
+    console.log('Iniciando verificación de archivos...');
+    
+    try {
+        await gestionAutomaticaNominas();
+        console.log('Procesamiento finalizado.');
+    } catch (error) {
+        console.error('Error en procesamiento:', error);
+    } finally {
+        isRunning = false;
+    }
+});
+
+// // User.updateMany({}, { $set: { payrolls: [] } });
+// const prueba=async ()=>{
+//   await User.updateMany({}, { $set: { payrolls: [] } });
+// }
+//  prueba();
 
 
 
@@ -1300,5 +1332,7 @@ module.exports = {
   uploadFileToDrive,
   getFileById,
   deleteFileById,
-  updateFileInDrive
+  updateFileInDrive,
+  gestionAutomaticaNominas,
+  obtenerCarpetaContenedora
 };
