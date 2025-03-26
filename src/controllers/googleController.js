@@ -563,29 +563,12 @@ cron.schedule('*/15 * * * *', async () => {
 // }
 
 
-// prueba();
+
 // User.updateMany({}, { $set: { payrolls: [] } });
 // const prueba=async ()=>{
 //   await User.updateMany({}, { $set: { payrolls: [] } });
 // }
 //  prueba();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -653,7 +636,6 @@ async function resetAllBackups() {
     await FileHistory.deleteMany({});
     await FileMapping.deleteMany({});
     console.log('Historial de backups y mapeos eliminados de la base de datos.');
-
     console.log('Todos los backups y historiales han sido reseteados correctamente.');
   } catch (error) {
     console.error('Error al resetear los backups:', error);
