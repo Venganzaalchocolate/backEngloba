@@ -539,31 +539,31 @@ async function obtenerCarpetaContenedora(fileId) {
 let isRunning = false;
 
 
-// cron.schedule('*/15 * * * *', async () => {
-//     if (isRunning) {
-//         console.log('La tarea anterior aún está en ejecución. Esperando la siguiente ejecución.');
-//         return;
-//     }
+cron.schedule('*/15 * * * *', async () => {
+    if (isRunning) {
+        console.log('La tarea anterior aún está en ejecución. Esperando la siguiente ejecución.');
+        return;
+    }
     
-//     isRunning = true;
-//     console.log('Iniciando verificación de archivos...');
+    isRunning = true;
+    console.log('Iniciando verificación de archivos...');
     
-//     try {
-//         await gestionAutomaticaNominas();
-//         console.log('Procesamiento finalizado.');
-//     } catch (error) {
-//         console.error('Error en procesamiento:', error);
-//     } finally {
-//         isRunning = false;
-//     }
-// });
+    try {
+        await gestionAutomaticaNominas();
+        console.log('Procesamiento finalizado.');
+    } catch (error) {
+        console.error('Error en procesamiento:', error);
+    } finally {
+        isRunning = false;
+    }
+});
 
-const prueba=async ()=>{
-  await gestionAutomaticaNominas();
-}
+// const prueba=async ()=>{
+//   await gestionAutomaticaNominas();
+// }
 
 
-prueba();
+// prueba();
 // User.updateMany({}, { $set: { payrolls: [] } });
 // const prueba=async ()=>{
 //   await User.updateMany({}, { $set: { payrolls: [] } });
