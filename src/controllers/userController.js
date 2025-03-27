@@ -1096,7 +1096,73 @@ const hirings = async (req, res) => {
       throw new ClientError("No se pudo eliminar el periodo de contratación", 400);
     });
 
-  } else {
+  } else if (req.body.type === "updateLeave") {
+    // Validar que vengan los datos necesarios:
+    if (!req.body.leaveUpdated)
+      throw new ClientError("Faltan datos del leaveUpdated", 400);
+  
+    // Extrae info del leave que queremos actualizar
+    const {
+      _id, // ID del leavePeriod a actualizar
+      startLeaveDate,
+      expectedEndLeaveDate,
+      actualEndLeaveDate,
+      leaveType
+    } = req.body.leaveUpdated;
+  
+    // Asegúrate que vengan "hiringId" o "hirindId" 
+    // (según tu front; en tu createLeave usas "hirindId")
+    if (!req.body.hirindId)
+      throw new ClientError("Falta el id del periodo de contratación (hirindId)", 400);
+  
+    // 1) Verifica que exista el usuario y el hiringPeriod
+    const userDoc = await User.findOne({
+      _id: new mongoose.Types.ObjectId(req.body.userId),
+      "hiringPeriods._id": new mongoose.Types.ObjectId(req.body.hirindId)
+    });
+    if (!userDoc)
+      throw new ClientError("Usuario o periodo de contratación no encontrado", 404);
+  
+    // 2) Prepara un update con arrayFilters para actualizar la leavePeriods
+    //    Buscamos la leave con _id = _id
+    if (!_id)
+      throw new ClientError("Falta el _id del leavePeriod", 400);
+  
+    // (Opcional) Más validaciones, por ejemplo: 
+    //  - Si hay otra baja abierta
+    //  - Overlaps
+    //  - etc.
+  
+    const updateObj = {
+      "hiringPeriods.$[hp].leavePeriods.$[lp].startLeaveDate": startLeaveDate ? new Date(startLeaveDate) : null,
+      "hiringPeriods.$[hp].leavePeriods.$[lp].expectedEndLeaveDate": expectedEndLeaveDate ? new Date(expectedEndLeaveDate) : null,
+      "hiringPeriods.$[hp].leavePeriods.$[lp].actualEndLeaveDate": actualEndLeaveDate ? new Date(actualEndLeaveDate) : null,
+      "hiringPeriods.$[hp].leavePeriods.$[lp].leaveType": leaveType ? new mongoose.Types.ObjectId(leaveType) : null
+    };
+  
+    // 3) Realiza la operación findOneAndUpdate con arrayFilters
+    data = await User.findOneAndUpdate(
+      {
+        _id: new mongoose.Types.ObjectId(req.body.userId),
+        "hiringPeriods._id": new mongoose.Types.ObjectId(req.body.hirindId)
+      },
+      { $set: updateObj },
+      {
+        new: true,
+        arrayFilters: [
+          { "hp._id": new mongoose.Types.ObjectId(req.body.hirindId) },
+          { "lp._id": new mongoose.Types.ObjectId(_id) }
+        ]
+      }
+    ).catch((err) => {
+      throw new ClientError("No se pudo actualizar la baja/excedencia", 400);
+    });
+  
+    if (!data) 
+      throw new ClientError("No se pudo actualizar la baja/excedencia", 400);
+  
+  // (Al final del if block)
+  }   else {
     throw new ClientError("Tipo inválido contacte con comunicacion@engloba.org.es", 400);
   }
 
