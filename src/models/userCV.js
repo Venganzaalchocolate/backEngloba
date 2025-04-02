@@ -132,7 +132,12 @@ const userCv = mongoose.Schema({
     disability:{
             type:Number,
             default: 0
+    },
+    fostered:{
+        type:Boolean,
+        default: false
     }
+
 
 }, { timestamps: true });
 

@@ -25,6 +25,9 @@ const postCreateUserCv = async (req, res) => {
     if (!!req.body.offer) dataUser['offer'] = req.body.offer
     if (!!req.body.job_exchange) dataUser['job_exchange'] = req.body.job_exchange
     if(!!req.body.disability) dataUser['disability']= req.body.disability
+    if (!!req.body.fostered) {
+        dataUser['fostered'] = req.body.fostered === 'si';
+      }
 
     const newUserCv = new UserCv(dataUser)
     const savedUserCv = await newUserCv.save();
@@ -49,6 +52,12 @@ const getUserCvs = async (req, res) => {
     if (req.body.provinces && req.body.provinces.length > 0) filters["provinces"] = { $in: req.body.provinces };
     if (req.body.work_schedule && req.body.work_schedule.length > 0) filters["work_schedule"] = { $in: req.body.work_schedule };
     if (req.body.studies && req.body.studies.length > 0) filters["studies"] = { $in: req.body.studies };
+
+    if (req.body.fostered === 'si') {
+        filters.fostered = true;
+      } else if (req.body.fostered === 'no') {
+        filters.fostered = false;
+      }
     
     if (req.body.offer) filters["offer"] = req.body.offer;
 
@@ -139,6 +148,9 @@ const UserCvPut = async (req, res) => {
     const dateNow = new Date();
     // Manejar comentarios independientes
 
+    if (req.body.fostered !== undefined) {
+        updateText['fostered'] = (req.body.fostered === 'si');
+    }
 
     if (req.body.commentsPhone) {
         updateText['view'] = req.body.id
@@ -198,6 +210,7 @@ const UserCvPut = async (req, res) => {
     if (doc == null)  throw new ClientError("No existe el usuario", 400)
     response(res, 200, doc);
 }
+
 
 
 module.exports = {
