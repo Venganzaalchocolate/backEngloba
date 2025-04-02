@@ -40,14 +40,30 @@ const drive = google.drive({ version: 'v3', auth });
 
 
 const deleteFileById = async (fileId) => {
+  const response = await drive.files.get({
+    fileId,
+    fields: 'owners', // También puedes pedir name, emailAddress, etc.
+    supportsAllDrives: true
+  });
+
+  const owner = response.data.owners?.[0].emailAddress;
+  const authNew = new google.auth.JWT({
+    email: client_email,
+    key: private_key,
+    scopes: ['https://www.googleapis.com/auth/drive'],
+    subject: owner,  // aquí se “impersona” a este usuario
+  });
+  const driveNew = google.drive({ version: 'v3', auth:authNew });
+
   try {
     // Eliminar el archivo en Google Drive usando el fileId
-    await drive.files.delete({
+    await driveNew.files.delete({
       fileId: fileId,
     });
     return { success: true, message: 'Archivo eliminado correctamente' };
 
   } catch (error) {
+    
     return { success: false, message: 'Error al eliminar el archivo' };
   }
 };
@@ -338,6 +354,36 @@ async function listarArchivosEnCarpeta(folderId, archivos = []) {
   }
 }
 
+// async function transferirPropiedadArchivo(fileId) {
+//   const auth = new google.auth.JWT({
+//     email: client_email,
+//     key: private_key,
+//     scopes: ['https://www.googleapis.com/auth/drive'],
+//     subject: 'nominas@engloba.org.es',  // aquí se “impersona” a este usuario
+//   });
+//   const drive = google.drive({ version: 'v3', auth });
+//   try {
+//     // Crea un nuevo permiso con role: 'owner' para 'archi@engloba.org.es'
+//     const response = await drive.permissions.create({
+//       fileId,
+//       requestBody: {
+//         role: 'owner',
+//         type: 'user',
+//         emailAddress: 'archi@engloba.org.es'
+//       },
+//       // Esto indica que realmente se está transfiriendo la propiedad
+//       transferOwnership: true,
+//       // Si el archivo estuviera en una Shared Drive, añade:
+//       supportsAllDrives: true
+//     });
+
+//     return response.data;
+//   } catch (error) {
+//     console.error('Error transfiriendo la propiedad:', error);
+//     return false;
+//   }
+// }
+
 //
 // MOVER UN ARCHIVO A OTRA CARPETA Y RENOMBRARLO
 // - idArchivo: ID del archivo
@@ -365,6 +411,9 @@ async function renombrarMoverArchivos(idArchivo, nuevoNombre, folderDestinoId, f
 }
 
 
+
+
+
 async function buscarCarpetasPorNombre(folderName, parentId) {
   const res = await drive.files.list({
     q: `'${parentId}' in parents 
@@ -378,6 +427,7 @@ async function buscarCarpetasPorNombre(folderName, parentId) {
 }
 
 async function crearCarpeta(folderName, parentId) {
+
   const fileMetadata = {
     name: folderName,
     mimeType: 'application/vnd.google-apps.folder',
@@ -394,6 +444,7 @@ async function crearCarpeta(folderName, parentId) {
 
 
 async function getOrCreateFolder(folderName, parentId) {
+
   const existingFolders = await buscarCarpetasPorNombre(folderName, parentId);
   if (existingFolders.length > 0) {
     return existingFolders[0].id;
@@ -510,7 +561,6 @@ async function obtenerCarpetaContenedora(fileId) {
       });
 
       if (res.data.parents && res.data.parents.length > 0) {
-          console.log(`El archivo está en la carpeta con ID: ${res.data.parents[0]}`);
           return res.data.parents[0];
       } else {
           console.log('El archivo no tiene carpeta contenedora (puede estar en \"Mi unidad\").');
@@ -558,12 +608,10 @@ cron.schedule('*/15 * * * *', async () => {
     }
 });
 
-// const prueba=async ()=>{
+// const pruebaSubir=async()=>{
 //   await gestionAutomaticaNominas();
 // }
-
-
-
+// pruebaSubir();
 // User.updateMany({}, { $set: { payrolls: [] } });
 // const prueba=async ()=>{
 //   await User.updateMany({}, { $set: { payrolls: [] } });

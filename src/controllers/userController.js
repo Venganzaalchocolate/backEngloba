@@ -683,7 +683,7 @@ const userPut = async (req, res) => {
 
 
 
-const deletePayroll = async (userId, payrollId, pdf) => {
+const deletePayroll = async (userId, payrollId) => {
   try {
     // Verificar si la nómina existe antes de intentar eliminarla
     const user = await User.findOne(
@@ -696,9 +696,8 @@ const deletePayroll = async (userId, payrollId, pdf) => {
       return false;
     }
 
-
    if(user.payrolls[0].sign)await deleteFileById(user.payrolls[0].sign)
-    const deleteResponse = await deleteFileById(pdf)
+    const deleteResponse = await deleteFileById(user.payrolls[0].pdf)
     if (deleteResponse.success) {
       const result = await User.findByIdAndUpdate(
         userId,
@@ -708,11 +707,12 @@ const deletePayroll = async (userId, payrollId, pdf) => {
         path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
         model: 'Filedrive',       // Nombre del modelo de Filedrive
       });
+      
       return result;
     } else {
       return false
     }
-    // Usar $pull para eliminar directamente la nómina por su _id
+   
 
 
   } catch (error) {
@@ -774,7 +774,7 @@ const signPayroll = async (idUser, file, payrollYear, payrollMonth, idPayroll) =
     const folderId = await obtenerCarpetaContenedora(result.pdf);
     //
     const fileAux = await uploadFileToDrive(file, folderId, fileNameAux, true);
-
+    
     if (fileAux) {
       // modificar una payroll existente añadiendo el campo firma de payrolls del usuario
       return await User.findOneAndUpdate(
@@ -834,10 +834,10 @@ const payroll = async (req, res) => {
       return response(res, 200, createResult);
     }
   } else if (req.body.type === 'delete') {
-    if (!req.body.idPayroll && !req.body.pdf) {
+    if (!req.body.idPayroll) {
       throw new ClientError('El campo idPayroll es requerido', 400);
     }
-    const newUser = await deletePayroll(id, req.body.idPayroll, req.body.pdf);
+    const newUser = await deletePayroll(id, req.body.idPayroll);
 
     if (!!newUser) {
       return response(res, 200, newUser);
