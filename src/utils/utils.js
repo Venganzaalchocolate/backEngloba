@@ -47,22 +47,33 @@ const getSpainCurrentDate = () => {
 
 function createAccentInsensitiveRegex(str) {
     const accentMap = {
-        'a': '[aáàâäãå]',
-        'e': '[eéèêë]',
-        'i': '[iíìîï]',
-        'o': '[oóòôöõ]',
-        'u': '[uúùûü]',
-        'n': '[nñ]',
-        'c': '[cç]'
+      'a': '[aáàâäãå]',
+      'e': '[eéèêë]',
+      'i': '[iíìîï]',
+      'o': '[oóòôöõ]',
+      'u': '[uúùûü]',
+      'n': '[nñ]',
+      'c': '[cç]'
     };
-
-    const regexStr = str.split('').map(char => {
-        const lowerChar = char.toLowerCase();
-        return accentMap[lowerChar] || char;
-    }).join('');
-
+  
+    let regexStr = '';
+  
+    for (const ch of str) {
+      if (ch === ' ') {
+        // En vez de un espacio literal, usamos ".*"
+        // para que coincida con cualquier secuencia de caracteres
+        regexStr += '.*';
+      } else {
+        // Para cada carácter, aplicamos la lógica de acentos
+        const lowerCh = ch.toLowerCase();
+        regexStr += accentMap[lowerCh] || ch;
+      }
+    }
+  
+    // Devolvemos el Regex en modo case-insensitive
     return new RegExp(regexStr, 'i');
-}
+  }
+  
 
 // Función genérica para transformar y validar arrays de fechas
 const parseAndValidateDates = (dates, fieldName) => {
