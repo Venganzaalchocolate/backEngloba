@@ -13,7 +13,7 @@ const postCreateProgram = async (req, res) => {
     name,
     acronym,
     area: area || "no identificado",
-    active: active !== undefined ? active : true,
+    active: active == 'si' ? true : (active == 'no') ? false : true,
     responsible: Array.isArray(responsible) ? responsible.filter(id => mongoose.Types.ObjectId.isValid(id)) : [],
     finantial: Array.isArray(finantial) ? finantial.filter(id => mongoose.Types.ObjectId.isValid(id)) : [],
     about: {
@@ -61,7 +61,8 @@ const ProgramPut = async (req, res) => {
   if (name !== undefined) update.name = name;
   if (acronym !== undefined) update.acronym = acronym;
   if (area !== undefined) update.area = area;
-  if (active !== undefined) update.active = active;
+  if (active === 'si') update.active = true;
+  if (active === 'no') update.active = false;
   if (Array.isArray(finantial)) update.finantial = finantial.filter(i => mongoose.Types.ObjectId.isValid(i));
   if (about) {
     if (about.description !== undefined) update['about.description'] = about.description;

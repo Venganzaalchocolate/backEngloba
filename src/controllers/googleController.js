@@ -354,35 +354,6 @@ async function listarArchivosEnCarpeta(folderId, archivos = []) {
   }
 }
 
-// async function transferirPropiedadArchivo(fileId) {
-//   const auth = new google.auth.JWT({
-//     email: client_email,
-//     key: private_key,
-//     scopes: ['https://www.googleapis.com/auth/drive'],
-//     subject: 'nominas@engloba.org.es',  // aquí se “impersona” a este usuario
-//   });
-//   const drive = google.drive({ version: 'v3', auth });
-//   try {
-//     // Crea un nuevo permiso con role: 'owner' para 'archi@engloba.org.es'
-//     const response = await drive.permissions.create({
-//       fileId,
-//       requestBody: {
-//         role: 'owner',
-//         type: 'user',
-//         emailAddress: 'archi@engloba.org.es'
-//       },
-//       // Esto indica que realmente se está transfiriendo la propiedad
-//       transferOwnership: true,
-//       // Si el archivo estuviera en una Shared Drive, añade:
-//       supportsAllDrives: true
-//     });
-
-//     return response.data;
-//   } catch (error) {
-//     console.error('Error transfiriendo la propiedad:', error);
-//     return false;
-//   }
-// }
 
 //
 // MOVER UN ARCHIVO A OTRA CARPETA Y RENOMBRARLO
