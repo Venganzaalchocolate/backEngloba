@@ -5,11 +5,15 @@ const { validateRequiredFields, createAccentInsensitiveRegex } = require('../uti
 const { uploadFileToDrive, getFileById, deleteFileById, gestionAutomaticaNominas, obtenerCarpetaContenedora } = require('./googleController');
 const { getFileCv } = require('./ovhController');
 
-const capitalize = (str) => {
-  if (!str || typeof str !== 'string') return str;
-  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-};
 
+// Capitaliza cada palabra de un string
+function toTitleCase(str) {
+  return str
+    .trim()
+    .split(/\s+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
 
 // Función para convertir IDs dentro de los datos de contratación
 const convertIds = (hirings) => {
@@ -111,8 +115,8 @@ const postCreateUser = async (req, res) => {
   const userData = {
     dni:dni.replace(/\s+/g, ""),
     role,
-    firstName: capitalize(firstName), // Capitalizar
-    lastName: capitalize(lastName),   // Capitalizar
+    firstName: toTitleCase(firstName), // Capitalizar
+    lastName: toTitleCase(lastName),   // Capitalizar
     email: email.toLowerCase(),       // Convertir a minúsculas
     phone,
     hiringPeriods: newHiring,
@@ -554,9 +558,9 @@ const userPut = async (req, res) => {
     ...updateFields,
   };
 
-  if (req.body.firstName) updateFields.firstName = capitalize(req.body.firstName);  // Capitalizamos el firstName
+  if (req.body.firstName) updateFields.firstName = toTitleCase(req.body.firstName);  // Capitalizamos el firstName
 
-  if (req.body.lastName) updateFields.lastName = capitalize(req.body.lastName);
+  if (req.body.lastName) updateFields.lastName = toTitleCase(req.body.lastName);
   if (req.body.email) updateFields.email = req.body.email.toLowerCase();
   if (req.body.role) updateFields.role = req.body.role;
   if (req.body.phone) updateFields.phone = req.body.phone;

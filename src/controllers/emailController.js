@@ -128,6 +128,7 @@ async function sendEmail(to,subject,text,html) {
     });
 
   } catch (error) {
+    console.log(error)
     console.error('Error al enviar correo');
   }
 }
