@@ -90,11 +90,13 @@ const programSchema = new Schema({
     cronology:[cronologySchema],
     essentialDocumentationProgram:{
         type:[Schema.Types.ObjectId],
-        ref: 'Documentation'
+        ref: 'Documentation',
+        default:[]
     },
     essentialDocumentationDevice:{
         type:[Schema.Types.ObjectId],
-        ref: 'Documentation'
+        ref: 'Documentation',
+        default:[]
     },
     about: {
         description: { 

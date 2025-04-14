@@ -109,7 +109,7 @@ const postCreateUser = async (req, res) => {
 
   // Construir objeto userData
   const userData = {
-    dni,
+    dni:dni.replace(/\s+/g, ""),
     role,
     firstName: capitalize(firstName), // Capitalizar
     lastName: capitalize(lastName),   // Capitalizar
@@ -560,7 +560,7 @@ const userPut = async (req, res) => {
   if (req.body.email) updateFields.email = req.body.email.toLowerCase();
   if (req.body.role) updateFields.role = req.body.role;
   if (req.body.phone) updateFields.phone = req.body.phone;
-  if (req.body.dni) updateFields.dni = req.body.dni;
+  if (req.body.dni) updateFields.dni = req.body.dni.replace(/\s+/g, "");;
   if (req.body.employmentStatus) updateFields.employmentStatus = req.body.employmentStatus;
   if (req.body.socialSecurityNumber) updateFields.socialSecurityNumber = req.body.socialSecurityNumber;
   if (req.body.bankAccountNumber) updateFields.bankAccountNumber = req.body.bankAccountNumber;
