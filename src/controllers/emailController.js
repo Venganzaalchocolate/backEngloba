@@ -121,7 +121,7 @@ async function sendEmail(to,subject,text,html) {
     // 2) Define los detalles del correo
     const info = await transporter.sendMail({
       from: user, // Remitente
-      to,              // Destinatario
+      to,         // Destinatario
       subject,
       text,
       html

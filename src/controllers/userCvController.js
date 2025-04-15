@@ -1,4 +1,4 @@
-const { UserCv } = require('../models/indexModels');
+const { UserCv, User } = require('../models/indexModels');
 const { catchAsync, response, ClientError, resError } = require('../utils/indexUtils');
 const { dateAndHour, getSpainCurrentDate, createAccentInsensitiveRegex } = require('../utils/utils');
 const { deleteFile } = require('./ovhController');
@@ -58,7 +58,7 @@ const getUserCvs = async (req, res) => {
       } else if (req.body.fostered === 'no') {
         filters.fostered = false;
       }
-    
+
     if (req.body.offer) filters["offer"] = req.body.offer;
 
     if (req.body.users) filters["_id"]={ $in: req.body.users }
@@ -66,11 +66,11 @@ const getUserCvs = async (req, res) => {
     if (req.body.view !== undefined) {
         filters["view"] = req.body.view == '0' ? null  : { $ne: null };
     }
-    
+
     if (req.body.favorite !== undefined) {
         filters["favorite"] = (req.body.favorite=='0') ? null : { $ne: null };
     }
-    
+
     if (req.body.reject !== undefined) {
         filters["reject"] = req.body.reject == '0' ? null : { $ne: null };
     }
@@ -78,9 +78,9 @@ const getUserCvs = async (req, res) => {
     if (req.body.disability > 0) {
         filters.disability = { $gt: 0 };
       }
-      
 
-    
+
+
     const totalDocs = await UserCv.countDocuments(filters);
 
     // Calcular el número total de páginas
@@ -89,9 +89,27 @@ const getUserCvs = async (req, res) => {
 
     const users = await UserCv.find(filters).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit)
 
+      // 2. Reunimos los DNIs de todos los userCV encontrados
+  const dnis = users.map((userCv) => userCv.dni);
+
+  // 3. Buscamos si existen usuarios en la colección 'User' con alguno de esos DNIs
+  const usersInEngloba = await User.find({ dni: { $in: dnis } });
+  // 4. Creamos un set con los DNIs encontrados en 'User' para luego hacer una comprobación rápida
+  const dnisSet = new Set(usersInEngloba.map((u) => u.dni));
+
+  // 5. Recorremos los userCV y añadimos un nuevo campo indicando si ha trabajado en Engloba
+  const usersWithEnglobaInfo = users.map((userCv) => {
+    // Convertimos a objeto plain (para poder añadir campos sin problemas)
+    const userCvObj = userCv.toObject();
+    // El campo `workedInEngloba` será true si el DNI está en 'dnisSet'
+    userCvObj.workedInEngloba = dnisSet.has(userCv.dni);
+    return userCvObj;
+  });
+
+
     // Responde con la lista de usuarios paginada y código de estado 200 (OK)
-    response(res, 200, { users, totalPages });
-    
+    response(res, 200, { users:usersWithEnglobaInfo, totalPages });
+
 }
 
 const getUserCvsFilter = async (req, res) => {
@@ -135,6 +153,7 @@ const UserCvPut = async (req, res) => {
     const updateText = {};
     if (!!req.body.name) updateText['name'] = req.body.name;
     if (!!req.body.email) updateText['email'] = req.body.email;
+    if (!!req.body.dni) updateText['dni'] = req.body.dni;
     if (!!req.body.phone) updateText['phone'] = req.body.phone;
     if (!!req.body.jobs) updateText['jobs'] = req.body.jobs;
     if (!!req.body.studies) updateText['studies'] = req.body.studies;
@@ -204,7 +223,6 @@ const UserCvPut = async (req, res) => {
     if (!!req.body.view || req.body.view==null) updateText['view'] = req.body.view
     if (!!req.body.favorite || req.body.favorite==null) updateText['favorite'] = req.body.favorite
     if (!!req.body.reject || req.body.reject==null) updateText['reject'] = req.body.reject
-
 
     let doc = await UserCv.findOneAndUpdate(filter, updateText,  { new: true });
     if (doc == null)  throw new ClientError("No existe el usuario", 400)

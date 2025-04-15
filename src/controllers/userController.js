@@ -224,17 +224,18 @@ const getUsers = async (req, res) => {
         idDispositive.push(y._id)
       }
     }))
-    filters["dispositiveNow"] = {$in:idDispositive}
+    filters["dispositiveNow.device"] = { $in: idDispositive };
   }
 
+ 
   if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
     const program = programs.find(pr => pr._id.toString() === req.body.programId);
     if (!program) throw new ClientError("Programa no encontrado", 404);
-    filters.dispositiveNow = { $in: program.devices.map(device => device._id) };
+    filters["dispositiveNow.device"] = { $in: program.devices.map(device => device._id) };
   }
 
   if (req.body.dispositive && mongoose.Types.ObjectId.isValid(req.body.dispositive)) {
-    filters["dispositiveNow"] = req.body.dispositive;
+    filters["dispositiveNow.device"] = new mongoose.Types.ObjectId(req.body.dispositive);
   }
 
   const totalDocs = await User.countDocuments(filters);
@@ -895,23 +896,23 @@ const changeDispositiveNow = async (user) => {
     (hp) => hp.active && !hp.endDate
   );
 
-  // Si no hay ningún hiringPeriod que cumpla la condición, se actualiza dispositiveNow a null
+  // Si no hay ningún hiringPeriod que cumpla la condición, se actualiza dispositiveNow a []
   if (activeHiringsWithoutEndDate.length === 0) {
     const updatedUser = await User.findOneAndUpdate(
       { _id: user._id },
-      { $set: { dispositiveNow: null } },
+      { $set: { dispositiveNow: [] } },
       { new: true }
     );
     return updatedUser;
   }
 
-  // Extrae el device de cada hiringPeriod que cumple la condición
-  const devices = activeHiringsWithoutEndDate.map((hp) => hp.device);
+  // // Extrae el device de cada hiringPeriod que cumple la condición
+  // const devices = activeHiringsWithoutEndDate.map((hp) => hp.device);
 
   // Actualiza en la base de datos utilizando findOneAndUpdate
   const updatedUser = await User.findOneAndUpdate(
     { _id: user._id },
-    { $set: { dispositiveNow: devices } },
+    { $set: { dispositiveNow: activeHiringsWithoutEndDate } },
     { new: true }
   );
 

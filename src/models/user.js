@@ -209,7 +209,8 @@ const UserSchema = new Schema({
         default:  'en proceso de contratación'
     },
     dispositiveNow:{
-            type: [Schema.Types.ObjectId], // ID del dispositivo
+            type: [PeriodSchema], // ID del dispositivo
+            default:[]
     },
     // Periodos de contratación del empleado
     hiringPeriods: [PeriodSchema],
