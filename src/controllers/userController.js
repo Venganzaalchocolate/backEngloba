@@ -229,7 +229,7 @@ function intersectArrays(arr1, arr2) {
 
 let deviceIdsFromProvinces = null;
 let deviceIdsFromProgram = null;
-
+console.log(req.body.provinces )
 // Filtrar por 'provinces'
 if (req.body.provinces && mongoose.Types.ObjectId.isValid(req.body.provinces)) {
   deviceIdsFromProvinces = [];
