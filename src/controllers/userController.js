@@ -229,7 +229,6 @@ function intersectArrays(arr1, arr2) {
 
 let deviceIdsFromProvinces = null;
 let deviceIdsFromProgram = null;
-console.log(req.body.provinces )
 // Filtrar por 'provinces'
 if (req.body.provinces && mongoose.Types.ObjectId.isValid(req.body.provinces)) {
   deviceIdsFromProvinces = [];
@@ -413,14 +412,87 @@ const getAllUsersWithOpenPeriods = async (req, res) => {
   }
 
 
-  if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
-    const program = programs.find(pr => pr._id.toString() === req.body.programId);
-    if (!program) throw new ClientError("Programa no encontrado", 404);
-    filters.dispositiveNow = { $in: program.devices.map(device => device._id) };
-  }
+
+//----------
+// (1) Función para intersectar dos arrays de strings rápidamente
+function intersectArrays(arr1, arr2) {
+  if (!arr1 || !arr2) return [];
+  const set1 = new Set(arr1);
+  return arr2.filter(id => set1.has(id));
+}
+
+// Imaginemos que ya cargaste 'programs' de la BD:
+// const programs = await Program.find().select('name _id devices.name devices._id devices.province');
+
+let deviceIdsFromProvinces = null;
+let deviceIdsFromProgram = null;
+// Filtrar por 'provinces'
+if (req.body.provinces && mongoose.Types.ObjectId.isValid(req.body.provinces)) {
+  deviceIdsFromProvinces = [];
+  programs.forEach(program => {
+    program.devices.forEach(device => {
+      // Convertimos a string para comparar con mayor seguridad
+      if (String(device.province) === String(req.body.provinces)) {
+        deviceIdsFromProvinces.push(String(device._id));
+      }
+    });
+  });
+}
+
+// Filtrar por 'programId'
+if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
+  const program = programs.find(pr => String(pr._id) === String(req.body.programId));
+  if (!program) throw new ClientError("Programa no encontrado", 404);
+
+  deviceIdsFromProgram = program.devices.map(device => String(device._id));
+}
+
+// (2) Calculamos la intersección para que sea un AND
+//     - Si ambas listas existen -> intersect
+//     - Si solo una existe -> esa
+//     - Si ninguna existe -> no filtramos por device
+let finalDeviceIds = null;
+
+if (deviceIdsFromProvinces && deviceIdsFromProgram) {
+  finalDeviceIds = intersectArrays(deviceIdsFromProvinces, deviceIdsFromProgram);
+} else if (deviceIdsFromProvinces) {
+  finalDeviceIds = deviceIdsFromProvinces;
+} else if (deviceIdsFromProgram) {
+  finalDeviceIds = deviceIdsFromProgram;
+}
+
+// (3) Filtrar por 'position' (si existe)
+//     También es un ObjectId en tu PeriodSchema, así que lo convertimos
+let positionId = null;
+if (req.body.position && mongoose.Types.ObjectId.isValid(req.body.position)) {
+  positionId = req.body.position; // Podrías transformarla con new ObjectId(...)
+}
+
+
+// - Caso 1: Filtramos por device Y position en el mismo subdocumento
+if (finalDeviceIds && positionId) {
+  filters.dispositiveNow = {
+    $elemMatch: {
+      device: { $in: finalDeviceIds.map(id => new mongoose.Types.ObjectId(id)) },
+      position: new mongoose.Types.ObjectId(positionId)
+    }
+  };
+
+// - Caso 2: Solo device
+} else if (finalDeviceIds) {
+  // Para que sea en cualquier subdocumento de 'dispositiveNow', basta con:
+  filters["dispositiveNow.device"] = {
+    $in: finalDeviceIds.map(id => new mongoose.Types.ObjectId(id))
+  };
+
+// - Caso 3: Solo position
+} else if (positionId) {
+  filters["dispositiveNow.position"] = new mongoose.Types.ObjectId(positionId);
+}
+//-----
 
   if (req.body.dispositive && mongoose.Types.ObjectId.isValid(req.body.dispositive)) {
-    filters["dispositiveNow"] = req.body.dispositive;
+    filters["dispositiveNow.device"] = new mongoose.Types.ObjectId(req.body.dispositive);
   }
 
 
