@@ -186,6 +186,7 @@ const putEnums = async (req, res) => {
     updateData.label = req.body.label;
     updateData.model = req.body.model;
     updateData.date = req.body.date === 'si'; // Se guarda como boolean
+    if(!!updateData.date)updateData.duration = req.body.duration;
   }
   if (req.body.type === 'jobs') {
     updateData.public = req.body.public === 'si';
@@ -240,6 +241,13 @@ const postEnums = async (req, res) => {
     newData.label = label;
     newData.model = req.body.model;
     newData.date = date === 'si'; // Convertir 'si' a true, 'no' a false
+    if (!!newData.date){
+      if(!req.body.duration) {
+       throw new ClientError("El campo duración, la duración debe ser en días, y es obligatorio si el documento tiene fecha", 400); 
+      } else {
+        newData.duration=req.body.duration
+      }
+    }
   }
   if (type === 'jobs') {
     newData.public = pub === 'si';

@@ -23,6 +23,10 @@ const documentation = mongoose.Schema({
     visible:{
         type:Boolean,
         default:true
+    },
+    duration:{
+        type:Number,
+        min: 0,
     }
 }, { timestamps: true });
 

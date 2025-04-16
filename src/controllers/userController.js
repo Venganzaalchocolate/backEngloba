@@ -120,11 +120,12 @@ const postCreateUser = async (req, res) => {
     email: email.toLowerCase(),       // Convertir a minúsculas
     phone,
     hiringPeriods: newHiring,
-    dispositiveNow: newHiring.device,
+    dispositiveNow: newHiring,
     employmentStatus,
     notes,
     gender,
   };
+
 
   if (!!birthday) {
     const parsedDate = new Date(birthday);
@@ -134,7 +135,6 @@ const postCreateUser = async (req, res) => {
       userData.birthday = parsedDate;
     }
   }
-
 
 
   // Manejar disability
@@ -155,18 +155,20 @@ const postCreateUser = async (req, res) => {
     userData.apafa = false;
   }
 
+
   if (req.body.studies) {
     userData.studies = parseField(req.body.studies, 'studies').map((s) => new mongoose.Types.ObjectId(s));
   }
 
   try {
     // Intentar crear el usuario
-    const newUser = await User.create(userData);
+    const newUser = await User.create(userData)
 
     // Responder con el usuario guardado
     response(res, 200, newUser);
 
   } catch (error) {
+    console.log(error)
     // Si se produce un error de índice duplicado (por campo único)
     if (error.code === 11000) {
       // error.keyValue tiene la forma: { email: 'valor', dni: 'valor', etc. }
