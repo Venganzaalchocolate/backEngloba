@@ -70,9 +70,24 @@ const deleteFileById = async (fileId) => {
 
 // --- getFileById.js ---
 const getFileById = async (fileId) => {
+  const response = await drive.files.get({
+    fileId,
+    fields: 'owners', // También puedes pedir name, emailAddress, etc.
+    supportsAllDrives: true
+  });
+
+  const owner = response.data.owners?.[0].emailAddress;
+  const authNew = new google.auth.JWT({
+    email: client_email,
+    key: private_key,
+    scopes: ['https://www.googleapis.com/auth/drive'],
+    subject: owner,  // aquí se “impersona” a este usuario
+  });
+  const driveNew = google.drive({ version: 'v3', auth:authNew });
+
   try {
     // Metadatos
-    const { data: file } = await drive.files.get({
+    const { data: file } = await driveNew.files.get({
       fileId,
       fields: 'id, name, mimeType, parents',
       supportsAllDrives: true,
@@ -80,7 +95,7 @@ const getFileById = async (fileId) => {
 
 
     // Descarga como stream
-    const response = await drive.files.get(
+    const response = await driveNew.files.get(
       { fileId, alt: 'media', supportsAllDrives: true },
       { responseType: 'stream' }
     );
