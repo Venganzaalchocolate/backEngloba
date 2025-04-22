@@ -7,7 +7,7 @@ const mongoose = require('mongoose');
 const { uploadFileToDrive, deleteFileById, getFileById, updateFileInDrive } = require('./googleController');
 const { User, Program, Jobs, Leavetype, Filedrive } = require('../models/indexModels');
 
-// crear usuario
+
 const postUploadFile = async (req, res) => {
   if (!req.file || !req.body.nameFile) {
     throw new ClientError('No se proporcionó archivo, o nombre para el archivo', 400);

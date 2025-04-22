@@ -74,13 +74,14 @@ const getFileById = async (fileId) => {
     // Metadatos
     const { data: file } = await drive.files.get({
       fileId,
-      fields: 'id, name, mimeType',
+      fields: 'id, name, mimeType, parents',
+      supportsAllDrives: true,
     });
 
 
     // Descarga como stream
     const response = await drive.files.get(
-      { fileId, alt: 'media' },
+      { fileId, alt: 'media', supportsAllDrives: true },
       { responseType: 'stream' }
     );
 
@@ -557,27 +558,27 @@ async function obtenerCarpetaContenedora(fileId) {
 
 
 
-let isRunning = false;
+// let isRunning = false;
 
 
-cron.schedule('*/15 * * * *', async () => {
-    if (isRunning) {
-        console.log('La tarea anterior aún está en ejecución. Esperando la siguiente ejecución.');
-        return;
-    }
+// cron.schedule('*/15 * * * *', async () => {
+//     if (isRunning) {
+//         console.log('La tarea anterior aún está en ejecución. Esperando la siguiente ejecución.');
+//         return;
+//     }
     
-    isRunning = true;
-    console.log('Iniciando verificación de archivos...');
+//     isRunning = true;
+//     console.log('Iniciando verificación de archivos...');
     
-    try {
-        await gestionAutomaticaNominas();
-        console.log('Procesamiento finalizado.');
-    } catch (error) {
-        console.error('Error en procesamiento:', error);
-    } finally {
-        isRunning = false;
-    }
-});
+//     try {
+//         await gestionAutomaticaNominas();
+//         console.log('Procesamiento finalizado.');
+//     } catch (error) {
+//         console.error('Error en procesamiento:', error);
+//     } finally {
+//         isRunning = false;
+//     }
+// });
 
 // const pruebaSubir=async()=>{
 //   await gestionAutomaticaNominas();

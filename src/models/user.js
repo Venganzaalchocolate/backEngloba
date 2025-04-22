@@ -137,6 +137,9 @@ const PayrollSchema = new Schema({
     // Archivo de la firma
     sign: {
         type: String
+    },
+    datetimeSign:{
+        type:Date
     }
 });
 

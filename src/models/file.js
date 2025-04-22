@@ -47,6 +47,11 @@ const fileSchema = new Schema({
     },
     idDrive:{
         type:String,
+    },
+    category:{
+        type:String,
+        enum:['Varios'],
+        default:'Varios'
     }
 }, { timestamps: true });
 

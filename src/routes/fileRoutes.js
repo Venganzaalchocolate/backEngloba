@@ -1,23 +1,38 @@
-
+// routes/indexRoutes.js
 const express = require('express');
-const router = express.Router()
-const bodyParser = require('body-parser');
-const urlencodedParser = bodyParser.urlencoded({ extended: false })
+const router = express.Router();
 const multer = require('multer');
-const { uploadFile, postUploadFile, getFile, tokenValid, deleteIdFile, tokenValidAdmin, createFileDrive, deleteFileDrive, updateFileDrive, getFileDrive} = require('../controllers/indexController');
+const os = require('os');
+const path = require('path');
+const {
+  uploadFile,
+  postUploadFile,
+  getFile,
+  tokenValid,
+  deleteIdFile,
+  tokenValidAdmin,
+  createFileDrive,
+  deleteFileDrive,
+  updateFileDrive,
+  getFileDrive,
+  confirmSignature,
+  requestSignature
+} = require('../controllers/indexController');
 
-// Configura `multer` para almacenamiento en memoria
-const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
+// Multer en memoria (CV, FileDrive)
+const uploadMem = multer({ storage: multer.memoryStorage() });
 
-router.post("/uploadcv", upload.single('file'),  postUploadFile)
-router.post('/getfile', tokenValid, getFile)
-router.delete('/deletefilecv', tokenValidAdmin, deleteIdFile)
+// RUTAS EXISTENTES
+router.post(   '/uploadcv',        uploadMem.single('file'),postUploadFile);
+router.post(   '/getfile',         tokenValid, getFile);
+router.delete( '/deletefilecv',    tokenValidAdmin, deleteIdFile);
+router.post(   '/crfilemodel',     tokenValid, uploadMem.single('file'), createFileDrive);
+router.post(   '/dlfilemodel',     tokenValid, uploadMem.single('file'), deleteFileDrive);
+router.post(   '/upfilemodel',     tokenValid, uploadMem.single('file'), updateFileDrive);
+router.post(   '/getfiledrive',    tokenValid, getFileDrive);
 
-router.post('/crfilemodel', tokenValid, upload.single('file'), createFileDrive)
-router.post('/dlfilemodel', tokenValid, upload.single('file'), deleteFileDrive)
-router.post('/upfilemodel', tokenValid, upload.single('file'), updateFileDrive)
-router.post('/getfiledrive', tokenValid, getFileDrive)
-
+// NUEVAS RUTAS PARA FIRMA DE PDF
+router.post('/pdf/request-sign', tokenValid, requestSignature);
+router.post('/pdf/confirm-sign', tokenValid, confirmSignature);
 
 module.exports = router;

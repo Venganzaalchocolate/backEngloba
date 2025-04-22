@@ -11,6 +11,7 @@ const { getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEm
 const {sendEmail, generateEmailHTML}=require("./emailController");
 const {main}=require("./controladordepruebas");
 const { getDocumentation } = require("./documentationController");
+const { confirmSignature, requestSignature } = require("./pdfSignController");
 
 
 
@@ -29,6 +30,7 @@ module.exports = {
     getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers,
     sendEmail, generateEmailHTML,
     getDocumentation,
+    requestSignature,confirmSignature,
 
     main
 

@@ -14,7 +14,7 @@ const googleRoutes=require('./routes/googleRoutes')
 const documentationRoutes=require('./routes/documentationRoutes')
 const { connectToDatabase } = require('./database/connect');
 const { listFiles, watchFolder } = require('./controllers/googleController');
-
+require('./controllers/cronScheduleController');
 
 require('dotenv').config();
 const port = process.env.PORT || 10000;

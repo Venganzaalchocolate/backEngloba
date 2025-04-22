@@ -836,8 +836,10 @@ const deletePayroll = async (userId, payrollId) => {
       return false;
     }
 
-   if(user.payrolls[0].sign)await deleteFileById(user.payrolls[0].sign)
-    const deleteResponse = await deleteFileById(user.payrolls[0].pdf)
+   if(user.payrolls[0].sign){
+    await deleteFileById(user.payrolls[0].sign);
+   }
+  const deleteResponse = await deleteFileById(user.payrolls[0].pdf)
     if (deleteResponse.success) {
       const result = await User.findByIdAndUpdate(
         userId,
