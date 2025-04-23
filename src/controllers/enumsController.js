@@ -276,6 +276,8 @@ const deleteSubcategory = async (req, res) => {
 };
   
 
+
+
 module.exports = {
     //gestiono los errores con catchAsync
     getEnums: catchAsync(getEnums),

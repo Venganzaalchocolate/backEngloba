@@ -127,13 +127,13 @@ const createFileDrive = async (req, res, next) => {
       if (originModel.toLowerCase() === 'program') {
         updated = await Program.findByIdAndUpdate(
           idModel,
-          { $addToSet: { files: newFile._id } },
+          { $push: { files: newFile._id } },
           { new: true, session }
         ).populate('files');
       } else if (originModel.toLowerCase() === 'user') {
         updated = await User.findByIdAndUpdate(
           idModel,
-          { $addToSet: { files: { filesId: newFile._id } } },
+          { $push: { files: { filesId: newFile._id } } },
           { new: true, session }
         ).populate('files.filesId');
       } else if (originModel.toLowerCase() === 'device') {
@@ -142,7 +142,7 @@ const createFileDrive = async (req, res, next) => {
         if (!deviceId) throw new ClientError('Falta deviceId para asociar el archivo a un dispositivo', 400);
         updated = await Program.findOneAndUpdate(
           { _id: idModel, "devices._id": deviceId},
-          { $addToSet:{"devices.$.files":newFile._id}},
+          { $push:{"devices.$.files":newFile._id}},
           { new: true, session }
         ).populate({ path: 'devices.files' });
       }
@@ -314,6 +314,7 @@ const deleteFileDrive = async (req, res, next) => {
 
   response(res, 200, updatedParent);
 };
+
 
 
 
