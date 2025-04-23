@@ -27,6 +27,9 @@ const documentation = mongoose.Schema({
     duration:{
         type:Number,
         min: 0,
+    },
+    categoryFiles:{
+        type: String
     }
 }, { timestamps: true });
 

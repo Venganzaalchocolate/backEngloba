@@ -50,7 +50,7 @@ const fileSchema = new Schema({
     },
     category:{
         type:String,
-        enum:['Varios'],
+        enum:['Varios', 'Seguros', 'PRL', 'Funcionamiento', 'Registros', 'Sanidad'],
         default:'Varios'
     }
 }, { timestamps: true });

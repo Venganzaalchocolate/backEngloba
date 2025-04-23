@@ -78,7 +78,7 @@ const createFileDrive = async (req, res, next) => {
   }
   const {
     originModel, idModel, originDocumentation,
-    fileName, fileLabel, date, notes, description, cronology
+    fileName, fileLabel, date, notes, description, cronology, category
   } = req.body;
   const file = req.file;
 
@@ -93,6 +93,7 @@ const createFileDrive = async (req, res, next) => {
     originModel,
     idModel: new mongoose.Types.ObjectId(idModel),
     cronology: cronology || {},
+    category: category || 'Varios'
   };
 
   if (originDocumentation) {
@@ -140,8 +141,8 @@ const createFileDrive = async (req, res, next) => {
         const { deviceId } = req.body;
         if (!deviceId) throw new ClientError('Falta deviceId para asociar el archivo a un dispositivo', 400);
         updated = await Program.findOneAndUpdate(
-          { _id: idModel, "devices._id": deviceId },
-          { $addToSet: { "devices.$.files": newFile._id } },
+          { _id: idModel, "devices._id": deviceId},
+          { $addToSet:{"devices.$.files":newFile._id}},
           { new: true, session }
         ).populate({ path: 'devices.files' });
       }
@@ -168,7 +169,8 @@ const updateFileDrive = async (req, res, next) => {
     description,
     cronology,
     originModel,
-    idModel
+    idModel,
+    category
   } = req.body;
   // Para el caso de dispositivos, esperamos que venga deviceId
   const { deviceId } = req.body;
@@ -193,6 +195,7 @@ const updateFileDrive = async (req, res, next) => {
       if (notes !== undefined) fileDoc.notes = notes;
       if (date) fileDoc.date = new Date(date);
       if (cronology) fileDoc.cronology = cronology;
+      if (category) fileDoc.category=category;
 
       if (originDocumentation) {
         fileDoc.originDocumentation = new mongoose.Types.ObjectId(originDocumentation);

@@ -1,5 +1,5 @@
 
-const { Jobs, Studies, Provinces, Work_schedule, Finantial, Offer, Program, User, Leavetype, Documentation } = require('../models/indexModels');
+const { Jobs, Studies, Provinces, Work_schedule, Finantial, Offer, Program, User, Leavetype, Documentation,Filedrive } = require('../models/indexModels');
 const leavetype = require('../models/leavetype');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 
@@ -87,7 +87,8 @@ const getEnumEmployers = async (req, res) => {
           workSchedule,
           offers,
           finantial,
-          documentation
+          documentation,
+          categoryFiles
       ] = await Promise.all([
           Provinces.find().lean(),
           Program.find().populate('files').lean(),
@@ -97,7 +98,8 @@ const getEnumEmployers = async (req, res) => {
           Work_schedule.find().lean(),
           Offer.find({ active: true }).lean(),
           Finantial.find().lean(),
-          Documentation.find().lean()
+          Documentation.find().lean(),
+          Filedrive.schema.path('category').enumValues
       ]);
 
       // Construimos el objeto de respuesta
@@ -114,7 +116,8 @@ const getEnumEmployers = async (req, res) => {
           leavesIndex: createCategoriesIndex(leavetype),
           programsIndex: createProgramDevicesIndex(programs),
           finantial,
-          documentation
+          documentation,
+          categoryFiles
       };
 
       // Verificar que los valores críticos no sean undefined o vacíos
@@ -186,6 +189,7 @@ const putEnums = async (req, res) => {
     updateData.label = req.body.label;
     updateData.model = req.body.model;
     updateData.date = req.body.date === 'si'; // Se guarda como boolean
+    if(!!req.body.categoryFiles)updateData.categoryFiles=req.body.categoryFiles
     if(!!updateData.date)updateData.duration = req.body.duration;
   }
   if (req.body.type === 'jobs') {
@@ -241,6 +245,7 @@ const postEnums = async (req, res) => {
     newData.label = label;
     newData.model = req.body.model;
     newData.date = date === 'si'; // Convertir 'si' a true, 'no' a false
+    if(!!req.body.categoryFiles) newData.categoryFiles=req.body.categoryFiles
     if (!!newData.date){
       if(!req.body.duration) {
        throw new ClientError("El campo duración, la duración debe ser en días, y es obligatorio si el documento tiene fecha", 400); 

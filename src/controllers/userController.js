@@ -670,10 +670,6 @@ const userPut = async (req, res) => {
   let updateFields = {};
 
 
-
-
-
-
   if (req.body.vacationDays) {
     updateFields.vacationDays = parseField(req.body.vacationDays, 'vacationDays').map((date) => {
       const parsedDate = new Date(date);
@@ -1334,7 +1330,157 @@ const delPayroll = async (idUser, idPayroll) => {
   }
 }
 
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
+/**
+ * Exporta un CSV compatible con Excel en español (UTF-8 con BOM y separador ;)
+ * @param {Array} users - Lista de usuarios a exportar
+ * @param {string} filename - Nombre del archivo (por defecto: usuarios.csv)
+ */
+const exportUsersToCSV = (users, filename = 'usuarios.csv') => {
+  const headers = ['Nombre', 'Apellidos', 'DNI', 'Apafa', 'Tipos de Excedencia'];
+
+  const rows = users.map(user => {
+    const leaveTypes = (user.leaveTypeNames || []).join(' | ');
+    return [
+      user.firstName,
+      user.lastName,
+      user.dni,
+      user.apafa ? 'Sí' : 'No',
+      leaveTypes
+    ].join(';');
+  });
+
+  const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\n'); // BOM + CSV
+
+  const desktopPath = path.join(os.homedir(), 'Desktop', filename);
+  fs.writeFileSync(desktopPath, csvContent, { encoding: 'utf8' });
+
+  console.log(`✅ CSV exportado correctamente en: ${desktopPath}`);
+};
+
+const findUsersWithoutPayrollAndGroupByLeavePeriods = async (month, year) => {
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    throw new Error('Mes no válido (1‑12)');
+  }
+  if (!Number.isInteger(year) || year < 2000) {
+    throw new Error('Año no válido');
+  }
+
+  const users = await User.find({
+    employmentStatus: 'activo',
+    apafa: false,
+    payrolls: {
+      $not: {
+        $elemMatch: {
+          payrollMonth: month,
+          payrollYear: year
+        }
+      }
+    },
+    dispositiveNow: { $exists: true, $not: { $size: 0 } }
+  })
+    .select('firstName lastName dni dispositiveNow apafa')
+    .populate('dispositiveNow.leavePeriods.leaveType')
+    .lean();
+
+  const withoutLeavePeriods = [];
+  const withLeavePeriods = [];
+
+  for (const user of users) {
+    const dispositives = user.dispositiveNow || [];
+
+    // Extraemos todos los nombres de leaveType si existen
+    const leaveTypeNames = dispositives.flatMap(p =>
+      (p.leavePeriods || [])
+        .map(lp => lp.leaveType?.name)
+        .filter(Boolean) // solo si existe
+    );
+
+    const userSummary = {
+      firstName: user.firstName,
+      lastName: user.lastName,
+      dni: user.dni,
+      apafa: user.apafa,
+      leaveTypeNames,
+    };
+
+    if (leaveTypeNames.length > 0) {
+      withLeavePeriods.push(userSummary);
+    } else {
+      withoutLeavePeriods.push(userSummary);
+    }
+  }
+  console.table(withoutLeavePeriods)
+  console.table(withLeavePeriods)
+  return {
+    withoutLeavePeriods,
+    withLeavePeriods,
+  };
+};
+
+
+
+const findUsersWithoutDispositiveNow = async () => {
+
+  const usersWithoutDevice = await User.aggregate([
+    {
+      $match: {
+        $expr: {
+          $eq: [
+            { $size: { $ifNull: ['$dispositiveNow', []] } },
+            0
+          ]
+        }
+      }
+    },
+    { $project: { firstName: 1, lastName: 1, dni: 1, dispositiveNow: 1 } }
+  ]);
+  return usersWithoutDevice
+};
+
+const findUsersWithDispositiveNowAsObjectId = async () => {
+  const users=await User.find({
+    dispositiveNow: {
+      $elemMatch: { $type: 'objectId' } // ← al menos un ObjectId puro
+    }
+  })
+  .select('firstName lastName dni dispositiveNow')
+  .lean();
+  console.log(users)
+
+};
+
+const fixDispositiveNow = async () => {
+  const users = await User.find({
+    dispositiveNow: {
+      $elemMatch: { $type: 'objectId' }
+    }
+  }).select('_id') // Solo necesitas el _id para reconsultar
+    .lean();
+
+  console.log(`Usuarios con dispositiveNow como ObjectId: ${users.length}`);
+
+  for (const u of users) {
+    const fullUser = await User.findById(u._id); // Trae todo el documento
+    if (!fullUser) continue;
+
+    const updated = await changeDispositiveNow(fullUser);
+    console.log(`✔️  Usuario actualizado: ${updated.firstName} ${updated.lastName}`);
+  }
+
+  console.log('✅ Procesamiento completo.');
+};
+
+
+// const prueba=async()=>{
+//   const { withLeavePeriods,  withoutLeavePeriods} = await findUsersWithoutPayrollAndGroupByLeavePeriods(3, 2025);
+//   exportUsersToCSV(withLeavePeriods, 'usuarios_con_excedencia.csv');
+//   exportUsersToCSV(withoutLeavePeriods, 'usuarios_sin_excedencia.csv');
+// }
+// prueba();
 
 module.exports = {
   //gestiono los errores con catchAsync
@@ -1349,5 +1495,4 @@ module.exports = {
   getFileUser: catchAsync(getFileUser),
   getUserName: catchAsync(getUserName),
   getAllUsersWithOpenPeriods: catchAsync(getAllUsersWithOpenPeriods),
-
 }

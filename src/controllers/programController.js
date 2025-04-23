@@ -68,7 +68,10 @@ const ProgramPut = async (req, res) => {
     if (about.description !== undefined) update['about.description'] = about.description;
     if (about.objectives !== undefined) update['about.objectives'] = about.objectives;
     if (about.profile !== undefined) update['about.profile'] = about.profile;
-  }
+  };
+
+
+
   if (Object.keys(update).length) updateObj.$set = update;
 
   // Procesa documentación (solo "add" o "delete")

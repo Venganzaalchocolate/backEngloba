@@ -337,7 +337,13 @@ async function gestionAutomaticaNominas() {
   return true;
 }
 
+const prueba=async ()=>{
+await gestionAutomaticaNominas();
+}
+
+prueba();
 //
+
 // FUNCION RECURSIVA: LISTA ARCHIVOS (Y SUBCARPETAS)
 //
 async function listarArchivosEnCarpeta(folderId, archivos = []) {
