@@ -83,7 +83,7 @@ const postCreateUser = async (req, res) => {
     email,
     phone,
     hiringPeriods,
-    employmentStatus = "activo",
+    employmentStatus = "en proceso de contratación",
     role,
     notes,
     disability,
