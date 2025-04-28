@@ -96,7 +96,24 @@ const PeriodSchema = new Schema({
             ref:'User' 
         },
         notes:{
-            type:String
+            nameUser:{
+                type:String
+            },
+            dniUser:{
+                type:String
+            },
+            cause:{
+                type:Schema.Types.ObjectId,
+                ref:'Leavetype'
+            },
+            startLeaveDate: {
+                type: Date,
+            },
+            // Fecha prevista de fin de la excedencia o baja laboral
+            expectedEndLeaveDate: {
+                type: Date
+            },
+
         }
         
     }

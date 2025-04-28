@@ -2,6 +2,7 @@ const { Program } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { validateRequiredFields } = require('../utils/utils');
+const { generateEmailHTML, sendEmail } = require('./emailController');
 
 const postCreateProgram = async (req, res) => {
 
@@ -23,7 +24,28 @@ const postCreateProgram = async (req, res) => {
     }
   });
 
+  //j
+
+
+
   const savedProgram = await newProgram.save();
+  // 5. Enviar el email al usuario con el código
+  const asunto = "Creación de un nuevo programa";
+  const textoPlano = `Area: ${savedProgram.area}
+            Nombre: ${savedProgram.name}
+            Creador: ${req.body?.userCreate}
+            `;
+
+  const htmlContent = generateEmailHTML({
+    logoUrl: "https://app.engloba.org.es/graphic/logotipo_blanco.png",
+    title: "Creación de un nuevo programa",
+    greetingName: 'Persona maravillosa', // o user.nombre
+    bodyText: 'Se ha creado un nuevo programa',
+    highlightText: textoPlano, // el código que quieras resaltar
+    footerText: "Gracias por usar nuestra plataforma. Si tienes dudas, contáctanos."
+  });
+
+  await sendEmail(['comunicacion@engloba.org.es', 'web@engloba.org.es'], asunto, textoPlano, htmlContent);
   response(res, 200, savedProgram);
 
 };
@@ -148,6 +170,23 @@ const addDispositive = async (req, res) => {
 
   program.devices.push(newDevice);
   const savedProgram = await program.save();
+
+  const asunto = "Creación de un nuevo dispositivo";
+  const textoPlano = `Programa padre: ${savedProgram.name}
+            Nombre del Dispositivo: ${newDevice.name}
+            Creador: ${req.body?.userCreate}
+            `;
+
+  const htmlContent = generateEmailHTML({
+    logoUrl: "https://app.engloba.org.es/graphic/logotipo_blanco.png",
+    title: "Creación de un nuevo dispositivo",
+    greetingName: 'Persona maravillosa', // o user.nombre
+    bodyText: 'Se ha creado un nuevo dispositivo',
+    highlightText: textoPlano, // el código que quieras resaltar
+    footerText: "Gracias por usar nuestra plataforma. Si tienes dudas, contáctanos."
+  });
+
+  await sendEmail(['comunicacion@engloba.org.es', 'web@engloba.org.es'], asunto, textoPlano, htmlContent);
   response(res, 200, savedProgram);
 };
 
@@ -305,9 +344,11 @@ const getDispositiveResponsable = async (req, res) => {
       dispositiveName: device.name || null,    // Nombre del dispositivo (si existe)
       dispositiveId: device._id || null,       // ID del dispositivo (si existe)
       isDeviceResponsible: device.isDeviceResponsible || false,
-      isDeviceCoordinator: device.isDeviceCoordinator || false
+      isDeviceCoordinator: device.isDeviceCoordinator || false,
+
     }))
   );
+
 
   // // Enviamos la respuesta al cliente con código 200 y los datos procesados
   response(res, 200, result);

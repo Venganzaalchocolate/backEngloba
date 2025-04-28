@@ -67,6 +67,7 @@ function generateEmailHTML({
           margin: 10px 0;
           font-weight: bold;
           font-size: 1.2em;
+          white-space: pre-line; /* <— mantiene los saltos de línea */
         }
         .footer {
           text-align: center;
@@ -88,11 +89,7 @@ function generateEmailHTML({
             : ""
         }
         <p>${bodyText}</p>
-        ${
-          highlightText
-            ? `<div class="highlight">${highlightText}</div>`
-            : ""
-        }
+        ${highlightText ? `<div class="highlight">${highlightText}</div>` : ""}
       </div>
       ${
         footerText
@@ -105,31 +102,32 @@ function generateEmailHTML({
 }
 
 
-async function sendEmail(to,subject,text,html) {
+async function sendEmail(to, subject, text, html) {
   try {
-    // 1) Crea el transporte SMTP usando la configuración de Arsys
+    // 1) Crear el transporte SMTP usando la configuración de Arsys
     const transporter = nodemailer.createTransport({
-      host,   // SMTP de Arsys
-      port,                          // Puerto SSL
-      secure: true,                       // Requerido para el puerto 465 (SSL/TLS)
+      host, // SMTP de Arsys
+      port, // Puerto SSL
+      secure: true, // Requerido para el puerto 465 (SSL/TLS)
       auth: {
-        user,    // Tu cuenta de correo completa
-        pass             // Contraseña de la cuenta
-      }
+        user, // Cuenta de correo completa
+        pass, // Contraseña de la cuenta
+      },
     });
 
-    // 2) Define los detalles del correo
-    const info = await transporter.sendMail({
-      from: user, // Remitente
-      to,         // Destinatario
+    // 2) Asegurar el formato correcto de los destinatarios
+    const recipients = Array.isArray(to) ? to.join(',') : to;
+
+    // 3) Enviar el correo
+    await transporter.sendMail({
+      from: user,
+      to: recipients,
       subject,
       text,
-      html
+      html,
     });
-
   } catch (error) {
-    console.log(error)
-    console.error('Error al enviar correo');
+    console.error('Error al enviar correo:', error);
   }
 }
 

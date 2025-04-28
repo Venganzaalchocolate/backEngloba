@@ -102,14 +102,50 @@ const postCreateUser = async (req, res) => {
 
   // Si newHiring.reason existe y tiene la propiedad dni, se busca el usuario por ese dni
   if (newHiring.reason && newHiring.reason.dni) {
-    const replacementUser = await User.findOne({ dni: newHiring.reason.dni });
-    if (replacementUser) {
-      newHiring.reason = { user: replacementUser._id, replacement: true }
-    } else {
+    const replacementUser = await User.findOne({
+      dni: { $regex: `^${newHiring.reason.dni.trim()}$`, $options: 'i' }
+    });
+  
+    if (!replacementUser) {
       throw new ClientError("El trabajador al que sustituye no existe", 404);
     }
-
+  
+    let cause = undefined;
+    let startLeaveDate = undefined;
+    let expectedEndLeaveDate = undefined;
+  
+    // Buscar el hiringPeriod activo con leavePeriods
+    const activeHiringPeriod = replacementUser.hiringPeriods.find(period =>
+      period.active &&
+      period.leavePeriods &&
+      period.leavePeriods.length > 0
+    );
+  
+    if (activeHiringPeriod) {
+      // Buscar el leavePeriod activo dentro del hiringPeriod
+      const activeLeavePeriod = activeHiringPeriod.leavePeriods.find(lp => lp.active);
+  
+      if (activeLeavePeriod) {
+        cause = activeLeavePeriod.leaveType;
+        startLeaveDate = activeLeavePeriod.startLeaveDate;
+        expectedEndLeaveDate = activeLeavePeriod.expectedEndLeaveDate;
+      }
+    }
+  
+    // Ahora construimos siempre el reason completo, con o sin leave info
+    newHiring.reason = {
+      replacement: true,
+      user: replacementUser._id,
+      notes: {
+        nameUser: `${replacementUser.firstName || ''} ${replacementUser.lastName || ''}`.trim(),
+        dniUser: replacementUser.dni.replace(/\s+/g, ""),
+        ...(cause && { cause }),
+        ...(startLeaveDate && { startLeaveDate }),
+        ...(expectedEndLeaveDate && { expectedEndLeaveDate })
+      }
+    };
   }
+  
 
   // Construir objeto userData
   const userData = {
@@ -161,6 +197,7 @@ const postCreateUser = async (req, res) => {
   }
 
   try {
+    console.log(userData)
     // Intentar crear el usuario
     const newUser = await User.create(userData)
 
@@ -168,7 +205,6 @@ const postCreateUser = async (req, res) => {
     response(res, 200, newUser);
 
   } catch (error) {
-    console.log(error)
     // Si se produce un error de índice duplicado (por campo único)
     if (error.code === 11000) {
       // error.keyValue tiene la forma: { email: 'valor', dni: 'valor', etc. }
@@ -1128,14 +1164,52 @@ const hirings = async (req, res) => {
     const [newHiring] = convertIds([req.body.hirings]);
 
     // Si newHiring.reason existe y tiene la propiedad dni, se busca el usuario por ese dni
+
     if (newHiring.reason && newHiring.reason.dni) {
-      const replacementUser = await User.findOne({ dni: newHiring.reason.dni });
-      if (replacementUser) {
-        newHiring.reason = { user: replacementUser._id, replacement: true };
-      } else {
+      const replacementUser = await User.findOne({
+        dni: { $regex: `^${newHiring.reason.dni.trim()}$`, $options: 'i' }
+      });
+    
+      if (!replacementUser) {
         throw new ClientError("El trabajador al que sustituye no existe", 404);
       }
+    
+      let cause = undefined;
+      let startLeaveDate = undefined;
+      let expectedEndLeaveDate = undefined;
+    
+      // Buscar el hiringPeriod activo con leavePeriods
+      const activeHiringPeriod = replacementUser.hiringPeriods.find(period =>
+        period.active &&
+        period.leavePeriods &&
+        period.leavePeriods.length > 0
+      );
+    
+      if (activeHiringPeriod) {
+        // Buscar el leavePeriod activo dentro del hiringPeriod
+        const activeLeavePeriod = activeHiringPeriod.leavePeriods.find(lp => lp.active);
+    
+        if (activeLeavePeriod) {
+          cause = activeLeavePeriod.leaveType;
+          startLeaveDate = activeLeavePeriod.startLeaveDate;
+          expectedEndLeaveDate = activeLeavePeriod.expectedEndLeaveDate;
+        }
+      }
+    
+      // Ahora construimos siempre el reason completo, con o sin leave info
+      newHiring.reason = {
+        replacement: true,
+        user: replacementUser._id,
+        notes: {
+          nameUser: `${replacementUser.firstName || ''} ${replacementUser.lastName || ''}`.trim(),
+          dniUser: replacementUser.dni.replace(/\s+/g, ""),
+          ...(cause && { cause }),
+          ...(startLeaveDate && { startLeaveDate }),
+          ...(expectedEndLeaveDate && { expectedEndLeaveDate })
+        }
+      };
     }
+    
 
     const userDoc = await User.findById(req.body.userId);
     if (!userDoc) throw new ClientError("Usuario no encontrado", 404);
@@ -1481,6 +1555,8 @@ const fixDispositiveNow = async () => {
 //   exportUsersToCSV(withoutLeavePeriods, 'usuarios_sin_excedencia.csv');
 // }
 // prueba();
+
+
 
 module.exports = {
   //gestiono los errores con catchAsync
