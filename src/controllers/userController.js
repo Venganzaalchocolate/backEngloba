@@ -107,7 +107,7 @@ const postCreateUser = async (req, res) => {
     });
   
     if (!replacementUser) {
-      throw new ClientError("El trabajador al que sustituye no existe", 404);
+      throw new ClientError("El trabajador al que sustituye no existe", 400);
     }
   
     let cause = undefined;
@@ -1116,14 +1116,51 @@ const hirings = async (req, res) => {
     cuerpo = await Promise.all(
       cuerpo.map(async period => {
         if (period.reason && period.reason.dni) {
-          const replacementUser = await User.findOne({ dni: period.reason.dni });
-          if (replacementUser) {
-            return { ...period, reason: { user: replacementUser._id, replacement: true } };
-          } else {
-            throw new ClientError("El trabajador al que sustituye no existe", 404);
+          const replacementUser = await User.findOne({
+            dni: { $regex: `^${period.reason.dni.trim()}$`, $options: 'i' }
+          });
+    
+          if (!replacementUser) {
+            throw new ClientError("El trabajador al que sustituye no existe", 400);
           }
+    
+          let cause = undefined;
+          let startLeaveDate = undefined;
+          let expectedEndLeaveDate = undefined;
+    
+          const activeHiringPeriod = replacementUser.hiringPeriods.find(period =>
+            period.active &&
+            period.leavePeriods &&
+            period.leavePeriods.length > 0
+          );
+    
+          if (activeHiringPeriod) {
+            const activeLeavePeriod = activeHiringPeriod.leavePeriods.find(lp => lp.active);
+    
+            if (activeLeavePeriod) {
+              cause = activeLeavePeriod.leaveType;
+              startLeaveDate = activeLeavePeriod.startLeaveDate;
+              expectedEndLeaveDate = activeLeavePeriod.expectedEndLeaveDate;
+            }
+          }
+    
+          // Construir correctamente el reason actualizado
+          return {
+            ...period,
+            reason: {
+              replacement: true,
+              user: replacementUser._id,
+              notes: {
+                nameUser: `${replacementUser.firstName || ''} ${replacementUser.lastName || ''}`.trim(),
+                dniUser: replacementUser.dni.replace(/\s+/g, ""),
+                ...(cause && { cause }),
+                ...(startLeaveDate && { startLeaveDate }),
+                ...(expectedEndLeaveDate && { expectedEndLeaveDate })
+              }
+            }
+          };
         }
-        return period;
+        return period; // Si no hay reason.dni, devolver tal cual
       })
     );
 
@@ -1171,7 +1208,7 @@ const hirings = async (req, res) => {
       });
     
       if (!replacementUser) {
-        throw new ClientError("El trabajador al que sustituye no existe", 404);
+        throw new ClientError("El trabajador al que sustituye no existe", 400);
       }
     
       let cause = undefined;
@@ -1212,7 +1249,7 @@ const hirings = async (req, res) => {
     
 
     const userDoc = await User.findById(req.body.userId);
-    if (!userDoc) throw new ClientError("Usuario no encontrado", 404);
+    if (!userDoc) throw new ClientError("Usuario no encontrado", 400);
 
     const openPeriods = userDoc.hiringPeriods.filter(
       p => !p.endDate && p.active !== false
@@ -1255,7 +1292,7 @@ const hirings = async (req, res) => {
       "hiringPeriods._id": req.body.hirindId
     });
     if (!userDoc)
-      throw new ClientError("No se encontró el periodo de contratación", 404);
+      throw new ClientError("No se encontró el periodo de contratación", 400);
 
     const hiringPeriod = userDoc.hiringPeriods.find(
       hp => hp._id.toString() === req.body.hirindId
