@@ -12,6 +12,7 @@ const offerRoutes = require('./routes/offerRoutes');
 const enumsRoutes = require('./routes/enumsRoutes');
 const googleRoutes=require('./routes/googleRoutes')
 const documentationRoutes=require('./routes/documentationRoutes')
+const auditRoutes=require('./routes/auditRoutes')
 const { connectToDatabase } = require('./database/connect');
 const { listFiles, watchFolder } = require('./controllers/googleController');
 require('./controllers/cronScheduleController');
@@ -56,6 +57,7 @@ app.use('/api', programRoutes);
 app.use('/api', offerRoutes);
 app.use('/api', enumsRoutes);
 app.use('/api', documentationRoutes)
+app.use('/api', auditRoutes)
 
 // Middleware para manejar rutas no encontradas (404)
 app.use((req, res, next) => {

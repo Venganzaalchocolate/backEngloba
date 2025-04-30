@@ -5,9 +5,7 @@ const { deleteFile } = require('./ovhController');
 
 // crear usuario
 const postCreateUserCv = async (req, res) => {
-
     if (!req.body.email || !req.body.phone || !req.body.jobs || !req.body.studies || !req.body.provinces || !req.body.work_schedule) throw new ClientError("Los datos no son correctos", 400);
-
     let dataUser = {
         date: new Date(),
         name: req.body.firstName.toLowerCase()+' '+req.body.lastName.toLowerCase(),
@@ -17,10 +15,14 @@ const postCreateUserCv = async (req, res) => {
         studies:req.body.studies,
         provinces: req.body.provinces,
         work_schedule:req.body.work_schedule,
-        dni:req.body.dni,
         firstName:req.body.firstName.toLowerCase(),
         lastName:req.body.lastName.toLowerCase(),
     }
+
+    if (!!req.body.dni) {               // el doble !! no hace falta
+        const dni = req.body.dni.trim().toUpperCase();  // opcional: trim para limpiar espacios
+        dataUser['dni'] = dni;           // usa notación punto o corchetes, ambas valen
+      }
     if (!!req.body.about) dataUser['about'] = req.body.about
     if (!!req.body.offer) dataUser['offer'] = req.body.offer
     if (!!req.body.job_exchange) dataUser['job_exchange'] = req.body.job_exchange
@@ -130,8 +132,25 @@ const getUsersCvsIDs = async (req, res) => {
     // Utiliza el método findById() de Mongoose para buscar un usuario por su ID
     // Si no se encuentra el usuario, responde con un código de estado 404 (Not Found)
     const usuarios = await UserCv.find({ _id: { $in: userIds } })
+    const dnis = usuarios.map((userCv) => userCv.dni);
+
+    // 3. Buscamos si existen usuarios en la colección 'User' con alguno de esos DNIs
+    const usersInEngloba = await User.find({ dni: { $in: dnis } });
+    // 4. Creamos un set con los DNIs encontrados en 'User' para luego hacer una comprobación rápida
+    const dnisSet = new Set(usersInEngloba.map((u) => u.dni));
+  
+    // 5. Recorremos los userCV y añadimos un nuevo campo indicando si ha trabajado en Engloba
+    const usersWithEnglobaInfo = usuarios.map((userCv) => {
+      // Convertimos a objeto plain (para poder añadir campos sin problemas)
+      const userCvObj = userCv.toObject();
+      // El campo `workedInEngloba` será true si el DNI está en 'dnisSet'
+      userCvObj.workedInEngloba = dnisSet.has(userCv.dni);
+      return userCvObj;
+    });
+  
+
     // Responde con el usuario encontrado y código de estado 200 (OK)
-    response(res, 200, usuarios);
+    response(res, 200, usersWithEnglobaInfo);
 }
 
 const getUserCvID=()=>{
@@ -153,7 +172,10 @@ const UserCvPut = async (req, res) => {
     const updateText = {};
     if (!!req.body.name) updateText['name'] = req.body.name;
     if (!!req.body.email) updateText['email'] = req.body.email;
-    if (!!req.body.dni) updateText['dni'] = req.body.dni;
+    if (!!req.body.dni) {               // el doble !! no hace falta
+        const dni = req.body.dni.trim().toUpperCase();  // opcional: trim para limpiar espacios
+        updateText.dni = dni;           // usa notación punto o corchetes, ambas valen
+      }
     if (!!req.body.phone) updateText['phone'] = req.body.phone;
     if (!!req.body.jobs) updateText['jobs'] = req.body.jobs;
     if (!!req.body.studies) updateText['studies'] = req.body.studies;
@@ -228,6 +250,7 @@ const UserCvPut = async (req, res) => {
     if (doc == null)  throw new ClientError("No existe el usuario", 400)
     response(res, 200, doc);
 }
+
 
 
 
