@@ -586,23 +586,28 @@ const getUserID = async (req, res) => {
 
 //busca un usuario por ID
 const getUserName = async (req, res) => {
-  // Obtener la lista de IDs desde la solicitud
   const ids = req.body.ids;
-
-  // Validar que `ids` sea un array y contenga al menos un ID
   if (!Array.isArray(ids) || ids.length === 0) {
-    throw new ClientError("Debes proporcionar una lista de IDs válida", 400);
+    throw new ClientError('Debes proporcionar una lista de IDs válida', 400);
   }
 
-  // Buscar los usuarios cuyos _id coincidan con los proporcionados
+  // Eliminar duplicados
+  const uniqueIds = Array.from(new Set(ids));
+
+
+  // Buscar documentos
   const users = await User.find(
-    { _id: { $in: ids } }, // Filtra los usuarios por los IDs
-    { firstName: 1, lastName: 1 } // Solo devuelve estos campos
+    { _id: { $in: uniqueIds } },
+    { firstName: 1, lastName: 1 }
   );
 
-  // Responder con la lista de usuarios encontrados
+
   response(res, 200, users);
 }
+
+
+
+
 
 // Descargar archivos de usuario
 const getFileUser = async (req, res) => {

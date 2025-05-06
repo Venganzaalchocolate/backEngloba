@@ -1,4 +1,4 @@
-const { Program } = require('../models/indexModels');
+const { Program, User } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { validateRequiredFields } = require('../utils/utils');
@@ -592,6 +592,7 @@ const handleResponsibles = async (req, res) => {
 
   return response(res, 200, dataToReturn);
 };
+
 
 
 
