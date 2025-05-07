@@ -1,7 +1,8 @@
 // auditorController.js
 const { default: mongoose } = require('mongoose');
-const { User, Program, Filedrive } = require('../models/indexModels');
+const { User, Program, Filedrive, Documentation } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
+const { exists } = require('../models/programs');
 
 const auditMissingFieldsInfoUser = async (req, res) => {
   const { fields } = req.body;
@@ -70,7 +71,7 @@ const auditMissingFieldsProgram = async (req, res) => {
         // ...o es null
         { [f]: null }
       ];
-  
+
       if (arrayList.includes(f)) {
         // ...o es un array vacío
         ors.push({ [f]: { $size: 0 } });
@@ -78,11 +79,11 @@ const auditMissingFieldsProgram = async (req, res) => {
         // si no es booleano, también chequeamos cadena vacía
         ors.push({ [f]: '' });
       }
-  
+
       return ors;
     });
   };
-  
+
 
 
   /* -------------------------------------------------------------- */
@@ -118,9 +119,9 @@ const auditMissingFieldsDevice = async (req, res) => {
   /* -------------------------------------------------------------- */
   /* 2. Listados de “tipos especiales”                              */
   /* -------------------------------------------------------------- */
-  const booleanDeviceFields = [];  
+  const booleanDeviceFields = [];
   // ahora incluimos también 'responsible'
-  const arrayDeviceFields   = ['responsible', 'coordinators'];  
+  const arrayDeviceFields = ['responsible', 'coordinators'];
 
   /* -------------------------------------------------------------- */
   /* 3. Auxiliar para generar condiciones $or                       */
@@ -216,34 +217,38 @@ const auditMissingFieldsDocumentationUser = async (req, res) => {
     { $group: { _id: '$idModel', present: { $addToSet: '$originDocumentation' } } },
     { $project: { present: 1, missing: { $setDifference: [docs, '$present'] } } },
     { $match: { 'missing.0': { $exists: true } } },
-    { $lookup: {
+    {
+      $lookup: {
         from: User.collection.name,
         localField: '_id',
         foreignField: '_id',
         as: 'user'
-    }},
+      }
+    },
     { $unwind: '$user' },
-    { $project: {
-        _id:        '$user._id',
-        firstName:  '$user.firstName',
-        lastName:   '$user.lastName',
+    {
+      $project: {
+        _id: '$user._id',
+        firstName: '$user.firstName',
+        lastName: '$user.lastName',
         dni: '$user.dni',
-        email:      '$user.email',
-        phone:      '$user.phone',
+        email: '$user.email',
+        phone: '$user.phone',
         dispositiveNow: '$user.dispositiveNow',
-        missingDocs:'$missing'
-    }}
+        missingDocs: '$missing'
+      }
+    }
   ]);
 
   // 5) A los que no tienen ninguno, marcarles todos como faltantes
   const noneAtAll = usersWithoutAny.map(u => ({
-    _id:         u._id,
-    firstName:   u.firstName,
-    lastName:    u.lastName,
+    _id: u._id,
+    firstName: u.firstName,
+    lastName: u.lastName,
     dni: u.dni,
-    dispositiveNow:u.dispositiveNow,
-    email:       u.email,
-    phone:       u.phone,
+    dispositiveNow: u.dispositiveNow,
+    email: u.email,
+    phone: u.phone,
     missingDocs: docs
   }));
 
@@ -251,11 +256,174 @@ const auditMissingFieldsDocumentationUser = async (req, res) => {
   const result = [...haveSomeMissing, ...noneAtAll];
   response(res, 200, result);
 };
+const auditMissingFieldsDocumentationProgram = async (req, res) => {
+  const { docIds } = req.body;
+
+  if (!Array.isArray(docIds) || docIds.length === 0) {
+    throw new ClientError('Debes proporcionar un array no vacío de docIds en body.docIds', 400);
+  }
+
+  const docs = docIds.map(id => {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new ClientError(`ID de documentación inválido: ${id}`, 400);
+    }
+    return new mongoose.Types.ObjectId(id);
+  });
+
+  // 1. Buscar programas con al menos uno de los documentos esenciales
+  const programs = await Program.find({
+    essentialDocumentationProgram: { $in: docs }
+  }).populate('files');
+
+  // 2. Buscar documentos que tienen duración (para caducidad)
+  const documentationWithTime = await Documentation.find({
+    _id: { $in: docs },
+    duration: { $exists: true }
+  });
+
+  const results = [];
+
+  for (const program of programs) {
+    const comunes = program.essentialDocumentationProgram
+      .map(id => id.toString())
+      .filter(id => docIds.includes(id));
+
+    const missingDocs = comunes.filter(docId =>
+      !program.files.some(file => file.originDocumentation?.toString() === docId)
+    );
+
+    const expiredDocs = [];
+
+    for (const doc of documentationWithTime) {
+      if (!comunes.includes(doc._id.toString())) continue;
+
+      const relevantFiles = program.files.filter(
+        file => file.originDocumentation?.toString() === doc._id.toString()
+      );
+
+      const latestFile = relevantFiles.reduce((latest, file) =>
+        !latest || new Date(file.createdAt) > new Date(latest.createdAt)
+          ? file
+          : latest,
+        null
+      );
+
+      if (!latestFile) continue;
+
+      const expirationDate = new Date(latestFile.createdAt);
+      expirationDate.setDate(expirationDate.getDate() + doc.duration);
+
+      if (expirationDate < new Date()) {
+        expiredDocs.push(doc._id.toString());
+      }
+    }
+
+    if (missingDocs.length > 0 || expiredDocs.length > 0) {
+      results.push({
+        _id: program._id,
+        name: program.name,
+        acronym: program.acronym,
+        responsible: program.responsible,
+        missingDocs,
+        expiredDocs
+      });
+    }
+  }
+
+  response(res, 200, results);
+};
+
+const auditMissingFieldsDocumentationDevice = async (req, res) => {
+  const { docIds } = req.body;
+
+  if (!Array.isArray(docIds) || docIds.length === 0) {
+    throw new ClientError('Debes proporcionar un array no vacío de docIds en body.docIds', 400);
+  }
+
+  const docs = docIds.map(id => {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new ClientError(`ID de documentación inválido: ${id}`, 400);
+    }
+    return new mongoose.Types.ObjectId(id);
+  });
+
+  // 1. Buscar programas con dispositivos (y documentos esenciales definidos)
+  const programs = await Program.find({
+    essentialDocumentationDevice: { $in: docs }
+  }).populate('devices.files');
+
+  // 2. Buscar documentos con duración (para ver si están caducados)
+  const documentationWithTime = await Documentation.find({
+    _id: { $in: docs },
+    duration: { $exists: true }
+  });
+
+  const results = [];
+
+  for (const program of programs) {
+    const comunes = (program.essentialDocumentationDevice || [])
+      .map(id => id.toString())
+      .filter(id => docIds.includes(id)); // limitar solo a los seleccionados
+
+    for (const device of program.devices || []) {
+      // Documentos faltantes (no están en ningún archivo del dispositivo)
+      const missingDocs = comunes.filter(docId =>
+        !device.files.some(file => file.originDocumentation?.toString() === docId)
+      );
+
+      // Documentos caducados
+      const expiredDocs = [];
+
+      for (const doc of documentationWithTime) {
+        if (!comunes.includes(doc._id.toString())) continue;
+
+        const relevantFiles = device.files.filter(
+          file => file.originDocumentation?.toString() === doc._id.toString()
+        );
+
+        const latestFile = relevantFiles.reduce((latest, file) =>
+          !latest || new Date(file.createdAt) > new Date(latest.createdAt)
+            ? file
+            : latest,
+          null
+        );
+
+        if (!latestFile) continue;
+
+        const expirationDate = new Date(latestFile.createdAt);
+        expirationDate.setDate(expirationDate.getDate() + doc.duration);
+
+        if (expirationDate < new Date()) {
+          expiredDocs.push(doc._id.toString());
+        }
+      }
+
+      if (missingDocs.length > 0 || expiredDocs.length > 0) {
+        results.push({
+          _id: device._id,
+          name: device.name,
+          responsible: device.responsible,
+          coordinators: device.coordinators,
+          programId: program._id,
+          programName: program.name,
+          missingDocs,
+          expiredDocs
+        });
+      }
+    }
+  }
+
+  response(res, 200, results);
+};
+
+
 
 module.exports = {
   // …tus otros controladores…
-  auditMissingFieldsInfoUser:catchAsync(auditMissingFieldsInfoUser),
-  auditMissingFieldsProgram:catchAsync(auditMissingFieldsProgram),
-  auditMissingFieldsDevice:catchAsync(auditMissingFieldsDevice),
-  auditMissingFieldsDocumentationUser:catchAsync(auditMissingFieldsDocumentationUser)
+  auditMissingFieldsInfoUser: catchAsync(auditMissingFieldsInfoUser),
+  auditMissingFieldsProgram: catchAsync(auditMissingFieldsProgram),
+  auditMissingFieldsDevice: catchAsync(auditMissingFieldsDevice),
+  auditMissingFieldsDocumentationUser: catchAsync(auditMissingFieldsDocumentationUser),
+  auditMissingFieldsDocumentationProgram: catchAsync(auditMissingFieldsDocumentationProgram),
+  auditMissingFieldsDocumentationDevice:catchAsync(auditMissingFieldsDocumentationDevice)
 };
