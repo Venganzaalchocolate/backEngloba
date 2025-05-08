@@ -12,7 +12,7 @@ const {sendEmail, generateEmailHTML}=require("./emailController");
 const {main}=require("./controladordepruebas");
 const { getDocumentation } = require("./documentationController");
 const { confirmSignature, requestSignature } = require("./pdfSignController");
-const { auditMissingFieldsInfoUser, auditMissingFieldsProgram, auditMissingFieldsDevice,auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram, auditMissingFieldsDocumentationDevice } = require("./auditorController");
+const { auditMissingFieldsInfoUser, auditMissingFieldsProgram, auditMissingFieldsDevice,auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram, auditMissingFieldsDocumentationDevice, auditMissingFieldsContractAndLeave } = require("./auditorController");
 
 
 
@@ -32,7 +32,7 @@ module.exports = {
     sendEmail, generateEmailHTML,
     getDocumentation,
     requestSignature,confirmSignature,
-    auditMissingFieldsInfoUser,auditMissingFieldsProgram,auditMissingFieldsDevice,auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram,auditMissingFieldsDocumentationDevice,
+    auditMissingFieldsInfoUser,auditMissingFieldsProgram,auditMissingFieldsDevice,auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram,auditMissingFieldsDocumentationDevice,auditMissingFieldsContractAndLeave,
 
     main
 

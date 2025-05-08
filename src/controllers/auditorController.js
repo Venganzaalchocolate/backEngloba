@@ -11,7 +11,7 @@ const auditMissingFieldsInfoUser = async (req, res) => {
   }
 
   // Lista de campos booleanos en tu schema
-  const booleanFields = ['apafa', 'fostered', 'consetmentDataProtection'];
+  const booleanFields = ['fostered', 'consetmentDataProtection'];
 
   // Lista de campos que son realmente arrays
   const arrayFields = [
@@ -40,8 +40,18 @@ const auditMissingFieldsInfoUser = async (req, res) => {
     }
   }
 
-  const users = await User.find({ $or: orConditions })
+  const apafaValue = !!req.body.apafa; // si no viene, será false
+
+  const users = await User.find({
+    $and: [
+      { $or: orConditions },
+      { apafa: apafaValue },
+      { employmentStatus: 'activo' }
+    ]
+  });
+
   response(res, 200, users);
+
 };
 
 const auditMissingFieldsProgram = async (req, res) => {
@@ -98,8 +108,13 @@ const auditMissingFieldsProgram = async (req, res) => {
   /* -------------------------------------------------------------- */
   /* 5. Query final para Programa                                    */
   /* -------------------------------------------------------------- */
-  const query = { $or: programOr };
 
+  const query = {
+    $and: [
+      { $or: programOr },
+      { active: true}
+    ]
+  };
   /* -------------------------------------------------------------- */
   /* 6. Ejecutar y devolver                                         */
   /* -------------------------------------------------------------- */
@@ -153,8 +168,18 @@ const auditMissingFieldsDevice = async (req, res) => {
   /* -------------------------------------------------------------- */
   /* 5. Traer programas con al menos un dispositivo incompleto      */
   /* -------------------------------------------------------------- */
+
+
   const programs = await Program.find({
-    $or: [{ devices: { $elemMatch: { $or: deviceOr } } }]
+    active: true,
+    devices: {
+      $elemMatch: {
+        $and: [
+          { active: true },
+          { $or: deviceOr }
+        ]
+      }
+    }
   });
 
   /* -------------------------------------------------------------- */
@@ -197,6 +222,7 @@ const auditMissingFieldsDocumentationUser = async (req, res) => {
     return new mongoose.Types.ObjectId(id);
   });
 
+  const apafaValue = !!req.body.apafa;
   // 2) Agrupar todos los userId que tienen al menos uno de esos docs
   const haveSomeDocs = await Filedrive.aggregate([
     { $match: { originModel: 'User', originDocumentation: { $in: docs } } },
@@ -205,10 +231,14 @@ const auditMissingFieldsDocumentationUser = async (req, res) => {
   const usersWithSomeIds = haveSomeDocs.map(g => g._id);
 
   // 3) Usuarios que NO tienen ninguno de esos docs
+  
+
   const usersWithoutAny = await User.find({
-    _id: { $nin: usersWithSomeIds }
+    _id: { $nin: usersWithSomeIds },
+    employmentStatus: 'activo',
+    apafa: apafaValue
   })
-    .select(' firstName lastName dni email phone dispositiveNow')
+    .select('firstName lastName dni email phone dispositiveNow')
     .lean();
 
   // 4) Usuarios que tienen algunos pero les faltan otros
@@ -220,12 +250,20 @@ const auditMissingFieldsDocumentationUser = async (req, res) => {
     {
       $lookup: {
         from: User.collection.name,
-        localField: '_id',
-        foreignField: '_id',
+        let: { userId: '$_id' },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ['$_id', '$$userId'] },
+              employmentStatus: 'activo',
+              apafa: apafaValue
+            }
+          }
+        ],
         as: 'user'
       }
     },
-    { $unwind: '$user' },
+    { $unwind: '$user' },    
     {
       $project: {
         _id: '$user._id',
@@ -256,6 +294,7 @@ const auditMissingFieldsDocumentationUser = async (req, res) => {
   const result = [...haveSomeMissing, ...noneAtAll];
   response(res, 200, result);
 };
+
 const auditMissingFieldsDocumentationProgram = async (req, res) => {
   const { docIds } = req.body;
 
@@ -272,7 +311,8 @@ const auditMissingFieldsDocumentationProgram = async (req, res) => {
 
   // 1. Buscar programas con al menos uno de los documentos esenciales
   const programs = await Program.find({
-    essentialDocumentationProgram: { $in: docs }
+    essentialDocumentationProgram: { $in: docs },
+    active: true
   }).populate('files');
 
   // 2. Buscar documentos que tienen duración (para caducidad)
@@ -349,7 +389,8 @@ const auditMissingFieldsDocumentationDevice = async (req, res) => {
 
   // 1. Buscar programas con dispositivos (y documentos esenciales definidos)
   const programs = await Program.find({
-    essentialDocumentationDevice: { $in: docs }
+    essentialDocumentationDevice: { $in: docs },
+    active:true
   }).populate('devices.files');
 
   // 2. Buscar documentos con duración (para ver si están caducados)
@@ -412,11 +453,141 @@ const auditMissingFieldsDocumentationDevice = async (req, res) => {
       }
     }
   }
-
   response(res, 200, results);
 };
 
+const auditMissingFieldsContractAndLeave = async (req, res) => {
+  const {
+    periodFields = [],
+    leaveFields  = [],
+  } = req.body;
 
+  if ((!Array.isArray(periodFields) || periodFields.length === 0) &&
+      (!Array.isArray(leaveFields)  || leaveFields.length  === 0)) {
+    throw new ClientError(
+      'Debes enviar al menos un campo en periodFields o leaveFields',
+      400
+    );
+  }
+
+  /* -------------------------------------------------------------- */
+  /* 1. Listados de tipos especiales                                */
+  /* -------------------------------------------------------------- */
+  // Ajusta estas listas si añades más campos booleanos/array
+  const booleanPeriodFields = ['active'];                        // hiringPeriods
+  const arrayPeriodFields   = [];                                // hiringPeriods
+
+  const booleanLeaveFields  = ['active'];                        // leavePeriods
+  const arrayLeaveFields    = [];                                // leavePeriods
+
+  /* -------------------------------------------------------------- */
+  /* 2. Auxiliar genérico para crear condiciones $or                */
+  /* -------------------------------------------------------------- */
+  const buildOr = (fields, booleanList, arrayList, prefix = '') =>
+    fields.flatMap(f => {
+      // prefijo sirve para aplanar el path, ej: 'hiringPeriods.' o 'hiringPeriods.leavePeriods.'
+      const fieldPath = `${prefix}${f}`;
+      const ors = [
+        { [fieldPath]: { $exists: false } },
+        { [fieldPath]: null },
+      ];
+
+      if (arrayList.includes(f)) {
+        ors.push({ [fieldPath]: { $size: 0 } });
+      } else if (!booleanList.includes(f)) {
+        ors.push({ [fieldPath]: '' });
+      }
+      return ors;
+    });
+
+  const periodOr = buildOr(
+    periodFields,
+    booleanPeriodFields,
+    arrayPeriodFields,
+    'hiringPeriods.'
+  );
+
+  const leaveOr = buildOr(
+    leaveFields,
+    booleanLeaveFields,
+    arrayLeaveFields,
+    'hiringPeriods.leavePeriods.'
+  );
+
+  /* -------------------------------------------------------------- */
+  /* 3. Query principal — usuarios “activos” con apafa opcional     */
+  /* -------------------------------------------------------------- */
+  const apafaValue = !!req.body.apafa;   // por defecto false
+  const users = await User.find({
+    employmentStatus: 'activo',
+    apafa: apafaValue,
+    // Al menos un hiringPeriod activo con carencias en sus propios campos O en sus leavePeriods
+    hiringPeriods: {
+      $elemMatch: {
+        active: true,
+        $or: [
+          ...(periodOr.length ? periodOr : []),
+          ...(leaveOr.length  ? [{
+            // leavePeriods con lagunas
+            leavePeriods: { $elemMatch: { active: true, $or: leaveOr } }
+          }] : [])
+        ]
+      }
+    }
+  }).lean();
+
+  /* -------------------------------------------------------------- */
+  /* 4. Filtrado ‘en memoria’ para devolver SOLO los periodos con    */
+  /*    problemas y señalar qué campos faltan                       */
+  /* -------------------------------------------------------------- */
+  const flagged = users
+    .map(user => {
+      // Clon superficial
+      const u = { ...user };
+      u.hiringPeriods = (u.hiringPeriods || []).filter(period => {
+        if (!period.active) return false;
+
+        /* ----------------- detectar lagunas en el periodo -------- */
+        const missingPeriodFields = periodFields.filter(f => {
+          const v = period[f];
+          if (v === undefined || v === null) return true;
+          if (arrayPeriodFields.includes(f) && Array.isArray(v) && v.length === 0) return true;
+          if (!booleanPeriodFields.includes(f) && typeof v === 'string' && v === '') return true;
+          return false;
+        });
+
+        /* ------------- detectar lagunas en leavePeriods ---------- */
+        const leavesFlagged = (period.leavePeriods || [])
+          .filter(lp => lp.active)
+          .map(lp => {
+            const missingLeaveFields = leaveFields.filter(f => {
+              const v = lp[f];
+              if (v === undefined || v === null) return true;
+              if (arrayLeaveFields.includes(f) && Array.isArray(v) && v.length === 0) return true;
+              if (!booleanLeaveFields.includes(f) && typeof v === 'string' && v === '') return true;
+              return false;
+            });
+            return missingLeaveFields.length ? { ...lp, missingLeaveFields } : null;
+          })
+          .filter(Boolean);
+
+        // Añade info de qué falta
+        period.missingPeriodFields = missingPeriodFields;
+        period.leavePeriods = leavesFlagged;
+
+        // Mantén el periodo SOLO si falta algo en él o en alguno de sus leavePeriods
+        return missingPeriodFields.length || leavesFlagged.length;
+      });
+
+      return u.hiringPeriods.length ? u : null;
+    })
+    .filter(Boolean);
+
+  /* -------------------------------------------------------------- */
+  /* 5. Respuesta                                                   */
+  /* -------------------------------------------------------------- */
+  response(res, 200, flagged);
+};
 
 module.exports = {
   // …tus otros controladores…
@@ -425,5 +596,6 @@ module.exports = {
   auditMissingFieldsDevice: catchAsync(auditMissingFieldsDevice),
   auditMissingFieldsDocumentationUser: catchAsync(auditMissingFieldsDocumentationUser),
   auditMissingFieldsDocumentationProgram: catchAsync(auditMissingFieldsDocumentationProgram),
-  auditMissingFieldsDocumentationDevice:catchAsync(auditMissingFieldsDocumentationDevice)
+  auditMissingFieldsDocumentationDevice: catchAsync(auditMissingFieldsDocumentationDevice),
+  auditMissingFieldsContractAndLeave:catchAsync(auditMissingFieldsContractAndLeave)
 };

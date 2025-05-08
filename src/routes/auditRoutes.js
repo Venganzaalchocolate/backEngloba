@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router()
-const {auditMissingFieldsInfoUser, tokenValid, auditMissingFieldsProgram, auditMissingFieldsDevice, auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram, auditMissingFieldsDocumentationDevice} = require('../controllers/indexController')
+const {auditMissingFieldsContractAndLeave, auditMissingFieldsInfoUser, tokenValid, auditMissingFieldsProgram, auditMissingFieldsDevice, auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram, auditMissingFieldsDocumentationDevice} = require('../controllers/indexController')
 const bodyParser = require('body-parser');
 const urlencodedParser = bodyParser.urlencoded({ extended: false })
 
@@ -11,6 +11,7 @@ router.post("/auditinfodevice", urlencodedParser, tokenValid, auditMissingFields
 router.post('/auditdocumentuser', urlencodedParser, tokenValid, auditMissingFieldsDocumentationUser)
 router.post('/auditdocumentprogram', urlencodedParser, tokenValid, auditMissingFieldsDocumentationProgram)
 router.post('/auditdocumentdevice', urlencodedParser, tokenValid, auditMissingFieldsDocumentationDevice)
+router.post('/audituserperiod', urlencodedParser, tokenValid, auditMissingFieldsContractAndLeave)
 
 
 module.exports = router;
