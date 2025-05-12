@@ -455,139 +455,94 @@ const auditMissingFieldsDocumentationDevice = async (req, res) => {
   }
   response(res, 200, results);
 };
+// controllers/leaveAudit.js
+const auditMissingFieldsLeaveOnly = async (req, res) => {
+  const { leaveFields = [], apafa = false } = req.body;
+  if (!leaveFields.length) throw new ClientError('leaveFields vacío', 400);
 
-const auditMissingFieldsContractAndLeave = async (req, res) => {
-  const {
-    periodFields = [],
-    leaveFields  = [],
-  } = req.body;
+  /* ──────────────────────────────────────────────────────────────
+   *  Configuración de campo “especial”
+   * ────────────────────────────────────────────────────────────── */
+  const SPECIAL_END_FIELD = 'actualEndLeaveDateSin';
+  const INDEF_LEAVE_ID    = '673dba22eb7280f56e22b504';   // id del tipo de baja “indefinida”
 
-  if ((!Array.isArray(periodFields) || periodFields.length === 0) &&
-      (!Array.isArray(leaveFields)  || leaveFields.length  === 0)) {
-    throw new ClientError(
-      'Debes enviar al menos un campo en periodFields o leaveFields',
-      400
-    );
-  }
+  /* 1 · Campos con reglas de carencia particulares */
+  const booleanF = new Set(['active']);
+  const arrayF   = new Set();                        // ← añade aquí arrays con size-0 como carencia
 
-  /* -------------------------------------------------------------- */
-  /* 1. Listados de tipos especiales                                */
-  /* -------------------------------------------------------------- */
-  // Ajusta estas listas si añades más campos booleanos/array
-  const booleanPeriodFields = ['active'];                        // hiringPeriods
-  const arrayPeriodFields   = [];                                // hiringPeriods
-
-  const booleanLeaveFields  = ['active'];                        // leavePeriods
-  const arrayLeaveFields    = [];                                // leavePeriods
-
-  /* -------------------------------------------------------------- */
-  /* 2. Auxiliar genérico para crear condiciones $or                */
-  /* -------------------------------------------------------------- */
-  const buildOr = (fields, booleanList, arrayList, prefix = '') =>
-    fields.flatMap(f => {
-      // prefijo sirve para aplanar el path, ej: 'hiringPeriods.' o 'hiringPeriods.leavePeriods.'
-      const fieldPath = `${prefix}${f}`;
-      const ors = [
-        { [fieldPath]: { $exists: false } },
-        { [fieldPath]: null },
-      ];
-
-      if (arrayList.includes(f)) {
-        ors.push({ [fieldPath]: { $size: 0 } });
-      } else if (!booleanList.includes(f)) {
-        ors.push({ [fieldPath]: '' });
-      }
+  /* 2 · $or genérico de carencias (excepto campo especial) */
+  const carencias = leaveFields
+    .filter(f => f !== SPECIAL_END_FIELD)            // ignoramos el sintético
+    .flatMap(f => {
+      const path = `hiringPeriods.leavePeriods.${f}`;
+      const ors  = [{ [path]: { $exists: false } }, { [path]: null }];
+      if (arrayF.has(f))        ors.push({ [path]: { $size: 0 } });
+      else if (!booleanF.has(f)) ors.push({ [path]: '' });
       return ors;
     });
 
-  const periodOr = buildOr(
-    periodFields,
-    booleanPeriodFields,
-    arrayPeriodFields,
-    'hiringPeriods.'
-  );
+  /* 3 · $elemMatch para leavePeriods */
+  const leaveMatch = {
+    active: true,
+    actualEndLeaveDate: null                         // siempre buscamos bajas sin fin real
+  };
+  if (leaveFields.includes(SPECIAL_END_FIELD)) {
+    leaveMatch.leaveType = { $ne: INDEF_LEAVE_ID };  // excluye tipo indefinido
+  }
+  if (carencias.length) {
+    leaveMatch.$or = carencias;                      // añade otras carencias (si las hay)
+  }
 
-  const leaveOr = buildOr(
-    leaveFields,
-    booleanLeaveFields,
-    arrayLeaveFields,
-    'hiringPeriods.leavePeriods.'
-  );
-
-  /* -------------------------------------------------------------- */
-  /* 3. Query principal — usuarios “activos” con apafa opcional     */
-  /* -------------------------------------------------------------- */
-  const apafaValue = !!req.body.apafa;   // por defecto false
+  /* 4 · Query principal */
   const users = await User.find({
     employmentStatus: 'activo',
-    apafa: apafaValue,
-    // Al menos un hiringPeriod activo con carencias en sus propios campos O en sus leavePeriods
+    apafa: !!apafa,
     hiringPeriods: {
       $elemMatch: {
         active: true,
-        $or: [
-          ...(periodOr.length ? periodOr : []),
-          ...(leaveOr.length  ? [{
-            // leavePeriods con lagunas
-            leavePeriods: { $elemMatch: { active: true, $or: leaveOr } }
-          }] : [])
-        ]
+        leavePeriods: { $elemMatch: leaveMatch }
       }
     }
   }).lean();
 
-  /* -------------------------------------------------------------- */
-  /* 4. Filtrado ‘en memoria’ para devolver SOLO los periodos con    */
-  /*    problemas y señalar qué campos faltan                       */
-  /* -------------------------------------------------------------- */
+  /* 5 · Post-filtrado y anotación de campos faltantes */
   const flagged = users
-    .map(user => {
-      // Clon superficial
-      const u = { ...user };
-      u.hiringPeriods = (u.hiringPeriods || []).filter(period => {
-        if (!period.active) return false;
-
-        /* ----------------- detectar lagunas en el periodo -------- */
-        const missingPeriodFields = periodFields.filter(f => {
-          const v = period[f];
-          if (v === undefined || v === null) return true;
-          if (arrayPeriodFields.includes(f) && Array.isArray(v) && v.length === 0) return true;
-          if (!booleanPeriodFields.includes(f) && typeof v === 'string' && v === '') return true;
-          return false;
-        });
-
-        /* ------------- detectar lagunas en leavePeriods ---------- */
-        const leavesFlagged = (period.leavePeriods || [])
-          .filter(lp => lp.active)
+    .map(u => ({
+      ...u,
+      hiringPeriods: (u.hiringPeriods || []).filter(p => p.active).map(p => ({
+        ...p,
+        leavePeriods: (p.leavePeriods || [])
+          .filter(lp => lp.active && !lp.actualEndLeaveDate &&
+                        (!leaveFields.includes(SPECIAL_END_FIELD) || lp.leaveType !== INDEF_LEAVE_ID))
           .map(lp => {
-            const missingLeaveFields = leaveFields.filter(f => {
-              const v = lp[f];
-              if (v === undefined || v === null) return true;
-              if (arrayLeaveFields.includes(f) && Array.isArray(v) && v.length === 0) return true;
-              if (!booleanLeaveFields.includes(f) && typeof v === 'string' && v === '') return true;
-              return false;
-            });
-            return missingLeaveFields.length ? { ...lp, missingLeaveFields } : null;
+            const missing = leaveFields
+              .filter(f => {
+                if (f === SPECIAL_END_FIELD) return false;        // manejado aparte
+                const v = lp[f];
+                if (v === undefined || v === null) return true;
+                if (arrayF.has(f) && Array.isArray(v) && !v.length)  return true;
+                if (!booleanF.has(f) && typeof v === 'string' && !v) return true;
+                return false;
+              });
+
+            /* campo sintético */
+            if (leaveFields.includes(SPECIAL_END_FIELD) &&
+                lp.actualEndLeaveDate == null &&
+                lp.leaveType !== INDEF_LEAVE_ID) {
+              missing.push(SPECIAL_END_FIELD);
+            }
+
+            return missing.length ? { ...lp, missingLeaveFields: missing } : null;
           })
-          .filter(Boolean);
+          .filter(Boolean)
+      })).filter(p => p.leavePeriods.length)
+    }))
+    .filter(u => u.hiringPeriods.length);
 
-        // Añade info de qué falta
-        period.missingPeriodFields = missingPeriodFields;
-        period.leavePeriods = leavesFlagged;
-
-        // Mantén el periodo SOLO si falta algo en él o en alguno de sus leavePeriods
-        return missingPeriodFields.length || leavesFlagged.length;
-      });
-
-      return u.hiringPeriods.length ? u : null;
-    })
-    .filter(Boolean);
-
-  /* -------------------------------------------------------------- */
-  /* 5. Respuesta                                                   */
-  /* -------------------------------------------------------------- */
+  /* 6 · Respuesta */
   response(res, 200, flagged);
 };
+
 
 module.exports = {
   // …tus otros controladores…
@@ -597,5 +552,5 @@ module.exports = {
   auditMissingFieldsDocumentationUser: catchAsync(auditMissingFieldsDocumentationUser),
   auditMissingFieldsDocumentationProgram: catchAsync(auditMissingFieldsDocumentationProgram),
   auditMissingFieldsDocumentationDevice: catchAsync(auditMissingFieldsDocumentationDevice),
-  auditMissingFieldsContractAndLeave:catchAsync(auditMissingFieldsContractAndLeave)
+  auditMissingFieldsContractAndLeave:catchAsync(auditMissingFieldsLeaveOnly)
 };

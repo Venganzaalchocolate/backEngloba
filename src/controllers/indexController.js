@@ -5,7 +5,7 @@ const { getUserCvsFilter, postCreateUserCv, getUsersCvsIDs, getUserCvs, UserCvDe
 const { uploadFile, listBucketContents, getFileCv, deleteFile } = require("./ovhController");
 const { postUploadFile, getFile, deleteIdFile, createFileDrive, updateFileDrive, deleteFileDrive, getFileDrive } = require("./fileController");
 const { postCreateBag, getBags, getBagID, bagDeactivateId, BagPut, getBagsFilter, BagPutDeleteUser } = require("./bagController");
-const { getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, addDispositive, getDispositive, updateDispositive, deleteDispositive, getDispositiveResponsable, handleCoordinators, handleResponsibles } = require("./programController");
+const { getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, addDispositive, getDispositive, updateDispositive, deleteDispositive, getDispositiveResponsable, handleCoordinators, handleResponsibles, listsResponsiblesAndCoordinators } = require("./programController");
 const { postCreateOfferJob, getOfferJobID, getOfferJobs, OfferJobDeleteId, OfferJobPut } = require("./offerController");
 const { getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers } = require("./enumsController");
 const {sendEmail, generateEmailHTML}=require("./emailController");
@@ -26,7 +26,7 @@ module.exports = {
     createFileDrive,updateFileDrive, deleteFileDrive,uploadFile, listBucketContents, getFile, deleteFile, getFileDrive,
     postUploadFile, deleteIdFile,
     postCreateBag, getBags, getBagID,bagDeactivateId, BagPut,getBagsFilter, BagPutDeleteUser,
-    getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, addDispositive, getDispositive, updateDispositive, deleteDispositive,getDispositiveResponsable,handleCoordinators, handleResponsibles,
+    getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, addDispositive, getDispositive, updateDispositive, deleteDispositive,getDispositiveResponsable,handleCoordinators, handleResponsibles,listsResponsiblesAndCoordinators,
     postCreateOfferJob, getOfferJobID, getOfferJobs,OfferJobDeleteId, OfferJobPut,
     getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers,
     sendEmail, generateEmailHTML,

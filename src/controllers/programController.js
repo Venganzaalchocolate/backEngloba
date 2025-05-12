@@ -1,8 +1,9 @@
-const { Program, User } = require('../models/indexModels');
+const { Program, User, Provinces } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { validateRequiredFields } = require('../utils/utils');
 const { generateEmailHTML, sendEmail } = require('./emailController');
+
 
 const postCreateProgram = async (req, res) => {
 
@@ -594,9 +595,104 @@ const handleResponsibles = async (req, res) => {
 };
 
 
+/**
+ *  POST /api/programs/list-resp-coord
+ *  Body: { responsibles?: boolean, coordinators?: boolean, resAndCorr?: boolean }
+ */
+const listsResponsiblesAndCoordinators = async (req, res) => {
+  const { responsibles, coordinators, resAndCorr } = req.body;
 
+  /* ---------- 1. Validación ---------------------------------------- */
+  if (!responsibles && !coordinators && !resAndCorr) {
+    throw new ClientError(
+      "Debes indicar 'responsibles', 'coordinators' o 'resAndCorr'.",
+      400
+    );
+  }
+  const wantResponsibles = responsibles || resAndCorr;
+  const wantCoordinators = coordinators || resAndCorr;
 
+  /* ---------- 2. Índice provincia / sub-provincia ------------------ */
+  /*    Mapa:  _id (string) → "provincia"   /   "provincia – sub"      */
+  const provinceMap = new Map();
+  const provinces = await Provinces.find({}).lean();
+  provinces.forEach(p => {
+    provinceMap.set(String(p._id), p.name);
+    (p.subcategories || []).forEach(sub =>
+      provinceMap.set(String(sub._id), `${p.name} – ${sub.name}`)
+    );
+  });
 
+  /* ---------- 3. Obtener programas con usuarios -------------------- */
+  const programs = await Program.find({})
+    .populate({ path: 'responsible',          select: 'firstName lastName email phone' })
+    .populate({ path: 'devices.responsible',  select: 'firstName lastName email phone' })
+    .populate({ path: 'devices.coordinators', select: 'firstName lastName email phone' })
+    // NO populamos province: solo necesitamos el _id
+    .lean();
+
+  /* ---------- 4. Construir listado --------------------------------- */
+  const list = [];
+
+  programs.forEach(program => {
+    const programName = program.name ?? '';
+
+    /* Responsables de programa */
+    if (wantResponsibles && Array.isArray(program.responsible)) {
+      program.responsible.forEach(u => {
+        list.push({
+          program   : programName,
+          device    : null,
+          province  : null,                       // a este nivel no aplica
+          role      : 'responsible-program',
+          firstName : u?.firstName ?? '',
+          lastName  : u?.lastName  ?? '',
+          email     : u?.email     ?? '',
+          phone     : u?.phone     ?? ''
+        });
+      });
+    }
+
+    /* Responsables / coordinadores de dispositivos */
+    (program.devices || []).forEach(device => {
+      const deviceName   = device?.name ?? '';
+      const provinceName = provinceMap.get(String(device.province)) || null;
+
+      if (wantResponsibles && Array.isArray(device.responsible)) {
+        device.responsible.forEach(u =>
+          list.push({
+            program   : programName,
+            device    : deviceName,
+            province  : provinceName,
+            role      : 'responsible',
+            firstName : u?.firstName ?? '',
+            lastName  : u?.lastName  ?? '',
+            email     : u?.email     ?? '',
+            phone     : u?.phone     ?? ''
+          })
+        );
+      }
+
+      if (wantCoordinators && Array.isArray(device.coordinators)) {
+        device.coordinators.forEach(u =>
+          list.push({
+            program   : programName,
+            device    : deviceName,
+            province  : provinceName,
+            role      : 'coordinator',
+            firstName : u?.firstName ?? '',
+            lastName  : u?.lastName  ?? '',
+            email     : u?.email     ?? '',
+            phone     : u?.phone     ?? ''
+          })
+        );
+      }
+    });
+  });
+
+  /* ---------- 5. Respuesta ----------------------------------------- */
+  return response(res, 200, list);
+};
 
 
 
@@ -614,5 +710,5 @@ module.exports = {
   getDispositiveResponsable: catchAsync(getDispositiveResponsable),
   handleCoordinators: catchAsync(handleCoordinators),
   handleResponsibles: catchAsync(handleResponsibles),
-
+  listsResponsiblesAndCoordinators:catchAsync(listsResponsiblesAndCoordinators)
 };
