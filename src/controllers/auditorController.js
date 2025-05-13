@@ -476,7 +476,7 @@ const auditMissingFieldsLeaveOnly = async (req, res) => {
     .flatMap(f => {
       const path = `hiringPeriods.leavePeriods.${f}`;
       const ors  = [{ [path]: { $exists: false } }, { [path]: null }];
-      if (arrayF.has(f))        ors.push({ [path]: { $size: 0 } });
+      if (arrayF.has(f)) ors.push({ [path]: { $size: 0 } });
       else if (!booleanF.has(f)) ors.push({ [path]: '' });
       return ors;
     });

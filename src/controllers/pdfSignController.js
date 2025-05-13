@@ -7,7 +7,7 @@ const { rgb, PDFDocument, StandardFonts } = require('pdf-lib');
 const { uploadFileToDrive, getFileById, deleteFileById  } = require('./googleController');
 
 
-const addSignatureBox = async (pdfDoc, text, o = {}) => {
+const addSignatureBox = async (pdfDoc, text, o = {}, apafa) => {
   const {
     boxWidth = 200,
     boxHeight = 40,
@@ -16,7 +16,7 @@ const addSignatureBox = async (pdfDoc, text, o = {}) => {
     offsetY = 50,
     fontStart = 9,
     fontMin = 5,
-    imgPath = './src/img/ImagotipoEngloba.png',
+    imgPath = (!!apafa)?'./src/img/logoApafa.jpg':'./src/img/ImagotipoEngloba.png',
     opacity = 0.35,
   } = o;
   /* ── 2.  Recursos ───────────────────────────────────────────────────── */
@@ -235,7 +235,8 @@ const confirmSignature = async (req, res) => {
   }
 
   const fecha = new Date();
-  const userAux = await User.findById(userId, { dni: 1, firstName: 1, lastName: 1 });
+  const userAux = await User.findById(userId, { dni: 1, firstName: 1, lastName: 1, apafa:1 });
+  
   const text = `Firmado digitalmente por:
 Nombre: ${userAux.firstName} ${userAux.lastName}
 DNI: ${userAux.dni}
@@ -248,7 +249,7 @@ Hora: ${fecha.toLocaleTimeString('es-ES')}`;
       boxHeight: 70,
       offsetX: 40,
       offsetY: 35
-    });
+    }, userAux.apafa);
 
   } catch (error) {
     console.error('[confirmSignature] Error al firmar el documento:', error);
