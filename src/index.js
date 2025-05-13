@@ -23,6 +23,8 @@ const port = process.env.PORT || 10000;
 // Crear la aplicación Express
 const app = express();
 
+app.get('/healthz', (_, res) => res.sendStatus(200));
+
 // Middleware para parsear JSON
 app.use(express.json());
 

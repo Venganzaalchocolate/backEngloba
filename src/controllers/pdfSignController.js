@@ -6,64 +6,73 @@ const { sendEmail, generateEmailHTML } = require('./emailController');
 const { rgb, PDFDocument, StandardFonts } = require('pdf-lib');
 const { uploadFileToDrive, getFileById, deleteFileById  } = require('./googleController');
 
-
-const addSignatureBox = async (pdfDoc, text, o = {}, apafa) => {
+const addSignatureBox = async (pdfDoc, text, o = {}, apafa = false) => {
   const {
-    boxWidth = 200,
+    boxWidth  = 200,
     boxHeight = 40,
-    margin = 5,
-    offsetX = 50,
-    offsetY = 50,
+    margin    = 5,
+    offsetX   = 50,
+    offsetY   = 50,
     fontStart = 9,
-    fontMin = 5,
-    imgPath = (!!apafa)?'./src/img/logoApafa.jpg':'./src/img/ImagotipoEngloba.png',
-    opacity = 0.35,
+    fontMin   = 5,
+    imgPath   = './src/img/ImagotipoEngloba.png', // solo se usa si !apafa
+    opacity   = 0.35,
   } = o;
-  /* ── 2.  Recursos ───────────────────────────────────────────────────── */
+
+  /* ── 1.  Página y fuente ────────────────────────────────────────────── */
   const [page] = pdfDoc.getPages();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const imgBuf = fs.readFileSync(imgPath);
-  const img = imgPath.toLowerCase().endsWith('.jpg')
-    ? await pdfDoc.embedJpg(imgBuf)
-    : await pdfDoc.embedPng(imgBuf);
 
-  /* ── 3.  Rectángulo base ────────────────────────────────────────────── */
+  /* ── 2.  Coordenadas del cajetín ────────────────────────────────────── */
   const x = page.getWidth() - boxWidth - offsetX;
   const y = offsetY;
 
-  /* ── 4.  Marca de agua (se dibuja primero) ──────────────────────────── */
-  const { width: w0, height: h0 } = img.size();
-  const s = Math.min(
-    (boxWidth - margin * 2) / w0,
-    (boxHeight - margin * 2) / h0,
-  );
-  page.drawImage(img, {
-    x: x + margin + (boxWidth - margin * 2 - w0 * s) / 2,
-    y: y + margin + (boxHeight - margin * 2 - h0 * s) / 2,
-    width: w0 * s,
-    height: h0 * s,
-    opacity,
-  });
-  /* ── 5.  Borde ──────────────────────────────────────────────────────── */
+  /* ── 3.  Marca de agua (solo si NO es apafa) ────────────────────────── */
+  if (!apafa) {
+    const imgBuf = fs.readFileSync(imgPath);
+    const img = imgPath.toLowerCase().endsWith('.jpg')
+      ? await pdfDoc.embedJpg(imgBuf)
+      : await pdfDoc.embedPng(imgBuf);
+
+    const { width: w0, height: h0 } = img.size();
+    const s = Math.min(
+      (boxWidth  - margin * 2) / w0,
+      (boxHeight - margin * 2) / h0,
+    );
+
+    page.drawImage(img, {
+      x: x + margin + (boxWidth  - margin * 2 - w0 * s) / 2,
+      y: y + margin + (boxHeight - margin * 2 - h0 * s) / 2,
+      width : w0 * s,
+      height: h0 * s,
+      opacity,
+    });
+  }
+
+  /* ── 4.  Borde del cajetín ──────────────────────────────────────────── */
   page.drawRectangle({
     x, y, width: boxWidth, height: boxHeight,
-    borderColor: rgb(1,1,1), borderWidth: 1,
+    borderColor: rgb(1, 1, 1),
+    borderWidth: 1,
   });
 
-  /* ── 6.  Word‑wrap + ajuste de fuente ───────────────────────────────── */
-  const innerW = boxWidth - margin * 2;
+  /* ── 5.  Ajuste de texto (word-wrap + tamaño de fuente) ─────────────── */
+  const innerW = boxWidth  - margin * 2;
   const innerH = boxHeight - margin * 2;
-  const linesFor = (size) => {                // → array de líneas ajustadas
+  const lineH  = s => s + 1;
+
+  const wrapLines = (size) => {
     const out = [];
     text.split(/\r?\n/).forEach(p => {
-      if (!p.trim()) return out.push('');     // mantiene líneas en blanco
+      if (!p.trim()) return out.push('');
       let line = '';
       p.split(' ').forEach(word => {
         const test = line ? `${line} ${word}` : word;
         if (font.widthOfTextAtSize(test, size) <= innerW) {
           line = test;
         } else {
-          out.push(line); line = word;
+          out.push(line);
+          line = word;
         }
       });
       out.push(line);
@@ -71,31 +80,31 @@ const addSignatureBox = async (pdfDoc, text, o = {}, apafa) => {
     return out;
   };
 
-  let size = fontStart;
-  let lines = linesFor(size);
-  const lineH = s => s + 1;
-
+  let size  = fontStart;
+  let lines = wrapLines(size);
   while (lines.length * lineH(size) > innerH && size > fontMin) {
     size -= 1;
-    lines = linesFor(size);
+    lines = wrapLines(size);
   }
   if (lines.length * lineH(size) > innerH) {
     throw new Error('Texto demasiado largo para el cajetín');
   }
 
-  /* ── 7.  Dibujar texto (encima de todo) ─────────────────────────────── */
+  /* ── 6.  Dibujar texto ──────────────────────────────────────────────── */
   let ty = y + boxHeight - margin - size;
   lines.forEach(l => {
     page.drawText(l, {
-      x: x + margin, y: ty,
-      size, font, color: rgb(0, 0, 0),
+      x: x + margin,
+      y: ty,
+      size,
+      font,
+      color: rgb(0, 0, 0),
     });
     ty -= lineH(size);
   });
 
   return pdfDoc;
-}
-
+};
 
 // Configuración por tipo de documento
 const docTypeConfig = {

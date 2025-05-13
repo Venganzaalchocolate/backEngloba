@@ -1592,12 +1592,6 @@ const fixDispositiveNow = async () => {
 };
 
 
-// const prueba=async()=>{
-//   const { withLeavePeriods,  withoutLeavePeriods} = await findUsersWithoutPayrollAndGroupByLeavePeriods(3, 2025);
-//   exportUsersToCSV(withLeavePeriods, 'usuarios_con_excedencia.csv');
-//   exportUsersToCSV(withoutLeavePeriods, 'usuarios_sin_excedencia.csv');
-// }
-// prueba();
 
 
 
