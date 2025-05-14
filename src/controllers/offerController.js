@@ -154,7 +154,13 @@ const OfferJobPut = async (req, res) => {
     response(res, 200, updatedOffer);
 }
 
+const prueba = async () => {
+  return Offer.find({
+    "dispositive.dispositiveId": "679b363108f2794750cb9936"
+  });
+};
 
+prueba().then(result => console.log(result)).catch(error => console.error(error));
 
 
 //work_schedule

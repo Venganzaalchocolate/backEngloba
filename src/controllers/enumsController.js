@@ -1,137 +1,142 @@
 
-const { Jobs, Studies, Provinces, Work_schedule, Finantial, Offer, Program, User, Leavetype, Documentation,Filedrive } = require('../models/indexModels');
+const { Jobs, Studies, Provinces, Work_schedule, Finantial, Offer, Program, User, Leavetype, Documentation, Filedrive } = require('../models/indexModels');
 const leavetype = require('../models/leavetype');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 
 // Función para crear índice de leaveTypes
 const createCategoriesIndex = (x) => {
-    const index = {};
-    x.forEach(x => {
-        // Crear un diccionario donde la clave es el ID y el valor es el leaveType completo
-        index[x._id.toString()] = x;
-    });
-    return index;
+  const index = {};
+  x.forEach(x => {
+    // Crear un diccionario donde la clave es el ID y el valor es el leaveType completo
+    index[x._id.toString()] = x;
+  });
+  return index;
 };
 
 // Función para crear índice de subcategorías de trabajos //jobs
 const createSubcategoriesIndex = (x) => {
-    const index = {};
-    x.forEach(x => {
-        // Crear un diccionario donde la clave es el ID de la subcategoría y el valor es la subcategoría completa
-        x.subcategories?.forEach(sub => {
-            index[sub._id.toString()] = sub;
-        });
+  const index = {};
+  x.forEach(x => {
+    // Crear un diccionario donde la clave es el ID de la subcategoría y el valor es la subcategoría completa
+    x.subcategories?.forEach(sub => {
+      index[sub._id.toString()] = sub;
     });
-    return index;
+  });
+  return index;
 };
 
 
 // crea un índice que tiene entradas tanto para programs como para devices
 const createProgramDevicesIndex = (programs) => {
-    const index = {};
+  const index = {};
 
-    programs.forEach(program => {
-        // Primero, creamos un registro donde la clave es el "programId"
-        index[program._id.toString()] = {
-            _id: program._id.toString(),
-            type: "program",
-            name: program.name,
-            responsible: program.responsible, // responsables del PROGRAMA
-            devicesIds: program.devices.map(d => d._id.toString()) // para saber qué devices pertenecen
-            // ... más campos si deseas
+  programs.forEach(program => {
+    // Primero, creamos un registro donde la clave es el "programId"
+    index[program._id.toString()] = {
+      _id: program._id.toString(),
+      type: "program",
+      name: program.name,
+      responsible: program.responsible, // responsables del PROGRAMA
+      devicesIds: program.devices.map(d => d._id.toString()) // para saber qué devices pertenecen
+      // ... más campos si deseas
+    };
+
+    // Luego, creamos registros para cada device
+    if (Array.isArray(program.devices)) {
+      program.devices.forEach(device => {
+        index[device._id.toString()] = {
+          _id: device._id.toString(),
+          type: "device",
+          name: device.name,
+          responsible: device.responsible,
+          coordinators: device.coordinators,
+          programId: program._id.toString()
+          // ... más campos si necesitas
         };
-
-        // Luego, creamos registros para cada device
-        if (Array.isArray(program.devices)) {
-            program.devices.forEach(device => {
-                index[device._id.toString()] = {
-                    _id: device._id.toString(),
-                    type: "device",
-                    name: device.name,
-                    responsible: device.responsible,
-                    coordinators: device.coordinators,
-                    programId: program._id.toString()
-                    // ... más campos si necesitas
-                };
-            });
-        }
-    });
-    return index;
+      });
+    }
+  });
+  return index;
 };
 
 const getEnums = async (req, res) => {
-    let enumValues = {}
-    enumValues['jobs'] = await Jobs.find();
-    enumValues['provinces'] = await Provinces.find();
-    enumValues['work_schedule'] = await Work_schedule.find();
-    enumValues['studies'] = await Studies.find();
-    enumValues['finantial'] = await Finantial.find();
+  let enumValues = {}
+  enumValues['jobs'] = await Jobs.find();
+  enumValues['provinces'] = await Provinces.find();
+  enumValues['work_schedule'] = await Work_schedule.find();
+  enumValues['studies'] = await Studies.find();
+  enumValues['finantial'] = await Finantial.find();
 
-    if (enumValues.jobs == undefined) throw new ClientError('Error al solicitar los enums de los trabajos', 500)
-    if (enumValues.provinces == undefined) throw new ClientError('Error al solicitar los enums de las provincias ', 500)
-    if (enumValues.work_schedule == undefined) throw new ClientError('Error al solicitar los enums de los horarios', 500)
-    if (enumValues.studies == undefined) throw new ClientError('Error al solicitar los enums de los estudios', 500)
-    if (enumValues.finantial == undefined) throw new ClientError('Error al solicitar los enums de las financiaciones', 500)
-    response(res, 200, enumValues);
+  if (enumValues.jobs == undefined) throw new ClientError('Error al solicitar los enums de los trabajos', 500)
+  if (enumValues.provinces == undefined) throw new ClientError('Error al solicitar los enums de las provincias ', 500)
+  if (enumValues.work_schedule == undefined) throw new ClientError('Error al solicitar los enums de los horarios', 500)
+  if (enumValues.studies == undefined) throw new ClientError('Error al solicitar los enums de los estudios', 500)
+  if (enumValues.finantial == undefined) throw new ClientError('Error al solicitar los enums de las financiaciones', 500)
+  response(res, 200, enumValues);
 }
 
 const getEnumEmployers = async (req, res) => {
   try {
-      // Ejecutar todas las consultas en paralelo con Promise.all para mejorar el rendimiento
-      const [
-          provinces,
-          programs,
-          leavetype,
-          jobs,
-          studies,
-          workSchedule,
-          offers,
-          finantial,
-          documentation,
-          categoryFiles
-      ] = await Promise.all([
-          Provinces.find().lean(),
-          Program.find().populate('files').lean(),
-          Leavetype.find().lean(),
-          Jobs.find().lean(),
-          Studies.find().lean(),
-          Work_schedule.find().lean(),
-          Offer.find({ active: true }).lean(),
-          Finantial.find().lean(),
-          Documentation.find().lean(),
-          Filedrive.schema.path('category').enumValues
-      ]);
+    // Ejecutar todas las consultas en paralelo con Promise.all para mejorar el rendimiento
+    const [
+      provinces,
+      programs,
+      leavetype,
+      jobs,
+      studies,
+      workSchedule,
+      offers,
+      finantial,
+      documentation,
+      categoryFiles
+    ] = await Promise.all([
+      Provinces.find().lean(),
+      Program.find().populate({
+        path: 'devices',               // primero resuelve los devices…
+        populate: {                    // …y luego los files de cada device
+          path: 'files'
+        }
+      }).lean(),
+      Leavetype.find().lean(),
+      Jobs.find().lean(),
+      Studies.find().lean(),
+      Work_schedule.find().lean(),
+      Offer.find({ active: true }).lean(),
+      Finantial.find().lean(),
+      Documentation.find().lean(),
+      Filedrive.schema.path('category').enumValues
+    ]);
 
-      // Construimos el objeto de respuesta
-      let enumValues = {
-          provinces,
-          programs,
-          status: User.schema.path('employmentStatus').enumValues,  // Esto no necesita await
-          leavetype,
-          jobs,
-          studies,
-          work_schedule: workSchedule,
-          offers,
-          jobsIndex: createSubcategoriesIndex(jobs),
-          leavesIndex: createCategoriesIndex(leavetype),
-          programsIndex: createProgramDevicesIndex(programs),
-          finantial,
-          documentation,
-          categoryFiles
-      };
+    // Construimos el objeto de respuesta
+    let enumValues = {
+      provinces,
+      programs,
+      status: User.schema.path('employmentStatus').enumValues,  // Esto no necesita await
+      leavetype,
+      jobs,
+      studies,
+      work_schedule: workSchedule,
+      offers,
+      jobsIndex: createSubcategoriesIndex(jobs),
+      leavesIndex: createCategoriesIndex(leavetype),
+      programsIndex: createProgramDevicesIndex(programs),
+      finantial,
+      documentation,
+      categoryFiles
+    };
 
-      // Verificar que los valores críticos no sean undefined o vacíos
-      if (!programs || !provinces) {
-          throw new ClientError('Error al solicitar los enums', 500);
-      }
+    // Verificar que los valores críticos no sean undefined o vacíos
+    if (!programs || !provinces) {
+      throw new ClientError('Error al solicitar los enums', 500);
+    }
 
-      // Responder con los datos obtenidos
-      response(res, 200, enumValues);
+    // Responder con los datos obtenidos
+    response(res, 200, enumValues);
 
   } catch (error) {
-      response(res, error.statusCode || 500, {
-          message: error.message || 'Error interno del servidor',
-      });
+    response(res, error.statusCode || 500, {
+      message: error.message || 'Error interno del servidor',
+    });
   }
 };
 
@@ -189,8 +194,8 @@ const putEnums = async (req, res) => {
     updateData.name = req.body.name;
     updateData.model = req.body.model;
     updateData.date = req.body.date === 'si'; // Se guarda como boolean
-    if(!!req.body.categoryFiles)updateData.categoryFiles=req.body.categoryFiles
-    if(!!updateData.date)updateData.duration = req.body.duration;
+    if (!!req.body.categoryFiles) updateData.categoryFiles = req.body.categoryFiles
+    if (!!updateData.date) updateData.duration = req.body.duration;
   }
   if (req.body.type === 'jobs') {
     updateData.public = req.body.public === 'si';
@@ -245,12 +250,12 @@ const postEnums = async (req, res) => {
     newData.name = name;
     newData.model = req.body.model;
     newData.date = date === 'si'; // Convertir 'si' a true, 'no' a false
-    if(!!req.body.categoryFiles) newData.categoryFiles=req.body.categoryFiles
-    if (!!newData.date){
-      if(!req.body.duration) {
-       throw new ClientError("El campo duración, la duración debe ser en días, y es obligatorio si el documento tiene fecha", 400); 
+    if (!!req.body.categoryFiles) newData.categoryFiles = req.body.categoryFiles
+    if (!!newData.date) {
+      if (!req.body.duration) {
+        throw new ClientError("El campo duración, la duración debe ser en días, y es obligatorio si el documento tiene fecha", 400);
       } else {
-        newData.duration=req.body.duration
+        newData.duration = req.body.duration
       }
     }
   }
@@ -274,17 +279,17 @@ const deleteSubcategory = async (req, res) => {
   const updatedEnum = await Model.findOneAndUpdate(filter, update, { new: true });
   response(res, 200, updatedEnum);
 };
-  
+
 
 
 
 module.exports = {
-    //gestiono los errores con catchAsync
-    getEnums: catchAsync(getEnums),
-    putEnums: catchAsync(putEnums),
-    postEnums: catchAsync(postEnums),
-    deleteEnums: catchAsync(deleteEnums),
-    postSubcategory: catchAsync(postSubcategory),
-    deleteSubcategory: catchAsync(deleteSubcategory),
-    getEnumEmployers: catchAsync(getEnumEmployers),
+  //gestiono los errores con catchAsync
+  getEnums: catchAsync(getEnums),
+  putEnums: catchAsync(putEnums),
+  postEnums: catchAsync(postEnums),
+  deleteEnums: catchAsync(deleteEnums),
+  postSubcategory: catchAsync(postSubcategory),
+  deleteSubcategory: catchAsync(deleteSubcategory),
+  getEnumEmployers: catchAsync(getEnumEmployers),
 }

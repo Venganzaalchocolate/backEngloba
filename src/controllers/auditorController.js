@@ -313,8 +313,14 @@ const auditMissingFieldsDocumentationProgram = async (req, res) => {
   const programs = await Program.find({
     essentialDocumentationProgram: { $in: docs },
     active: true
-  }).populate('files');
-
+  }).populate({
+        path: 'devices',               // primero resuelve los devices…
+        populate: {                    // …y luego los files de cada device
+          path: 'files'
+        }
+      });
+//
+//
   // 2. Buscar documentos que tienen duración (para caducidad)
   const documentationWithTime = await Documentation.find({
     _id: { $in: docs },
