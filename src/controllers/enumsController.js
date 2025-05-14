@@ -184,9 +184,9 @@ const putEnums = async (req, res) => {
   const updateData = { name: req.body.name };
   if (req.body.type === 'documentation') {
     // Se requieren los campos label y model
-    if (!req.body.label || !req.body.model)
-      throw new ClientError("El campo label y el modelo son obligatorios para documentation", 400);
-    updateData.label = req.body.label;
+    if (!req.body.name || !req.body.model)
+      throw new ClientError("El campo nombre y el modelo son obligatorios para documentation", 400);
+    updateData.name = req.body.name;
     updateData.model = req.body.model;
     updateData.date = req.body.date === 'si'; // Se guarda como boolean
     if(!!req.body.categoryFiles)updateData.categoryFiles=req.body.categoryFiles
@@ -232,17 +232,17 @@ const postEnums = async (req, res) => {
   if (!req.body.name || !req.body.type)
     throw new ClientError("Los datos no son correctos", 400);
 
-  const { name, date, type, public: pub, label } = req.body;
+  const { name, date, type, public: pub } = req.body;
   const Model = getModelByType(type);
 
   const newData = { name };
   if (type === 'documentation') {
     // Se requiere el campo label y el campo model al crear documentation
-    if (!label)
-      throw new ClientError("El campo label es obligatorio para documentation", 400);
+    if (!name)
+      throw new ClientError("El campo nombre es obligatorio para documentation", 400);
     if (!req.body.model)
       throw new ClientError("El campo model es obligatorio para documentation", 400);
-    newData.label = label;
+    newData.name = name;
     newData.model = req.body.model;
     newData.date = date === 'si'; // Convertir 'si' a true, 'no' a false
     if(!!req.body.categoryFiles) newData.categoryFiles=req.body.categoryFiles
