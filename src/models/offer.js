@@ -96,6 +96,9 @@ const offer= mongoose.Schema({
         type:String,
         enum: ['internal', 'external'],
         default: 'external'
+    },
+    datecreate:{
+        type:Date
     }
 }, { timestamps: true })
 

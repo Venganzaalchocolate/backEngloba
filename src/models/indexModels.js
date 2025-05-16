@@ -2,7 +2,6 @@
 const UserCv=require('./userCV');
 const Bag=require('./bag');
 const Program=require('./programs')
-const OfferJob=require('./offerJob')
 const Jobs=require('./jobs');
 const Provinces=require('./provinces');
 const Studies=require('./estudies')
@@ -19,7 +18,6 @@ module.exports = {
     UserCv,
     Bag,
     Program,
-    OfferJob,
     Jobs,
     Provinces,
     Studies,

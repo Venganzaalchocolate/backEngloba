@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { OfferJob, Offer } = require('../models/indexModels');
+const { Offer } = require('../models/indexModels');
 const {  catchAsync, response, ClientError } = require('../utils/indexUtils');
 const { validateRequiredFields } = require('../utils/utils');
 
@@ -25,7 +25,8 @@ const postCreateOfferJob = async (req, res) => {
         job_title,
         entity,
         programId,
-        type
+        type,
+        datecreate
       } = req.body;
 
     validateRequiredFields(req.body, requiredFields);
@@ -48,7 +49,8 @@ const postCreateOfferJob = async (req, res) => {
         },
         studies: Array.isArray(studies) ? studies : [], // Asegurar array
         sepe: sepe === "si", // Convertir a booleano
-        type: type || "external"
+        type: type || "external",
+        datecreate:datecreate || new Date()
     };
 
     const savedOfferJob = await Offer.create(dataOfferJob);
@@ -105,7 +107,8 @@ const OfferJobPut = async (req, res) => {
         id,
         active,
         userCv, 
-        type
+        type,
+        datecreate
     } = req.body;
 
     // Verificar si la oferta existe
@@ -132,6 +135,7 @@ const OfferJobPut = async (req, res) => {
     if (studies) updatedFields.studies = Array.isArray(studies) ? studies : [];
     if (typeof sepe !== "undefined") updatedFields.sepe = sepe === "si";
     if(type) updatedFields.type=type
+    if(datecreate) updatedFields.datecreate=datecreate
 
     if (active){
         if(active === "si"){
@@ -154,16 +158,7 @@ const OfferJobPut = async (req, res) => {
     response(res, 200, updatedOffer);
 }
 
-const prueba = async () => {
-  return Offer.find({
-    "dispositive.dispositiveId": "679b363108f2794750cb9936"
-  });
-};
 
-prueba().then(result => console.log(result)).catch(error => console.error(error));
-
-
-//work_schedule
 
 module.exports = {
     //gestiono los errores con catchAsync
