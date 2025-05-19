@@ -10,11 +10,9 @@ const { resError } = require('./utils/indexUtils');
 const programRoutes = require('./routes/programRoutes');
 const offerRoutes = require('./routes/offerRoutes');
 const enumsRoutes = require('./routes/enumsRoutes');
-const googleRoutes=require('./routes/googleRoutes')
 const documentationRoutes=require('./routes/documentationRoutes')
 const auditRoutes=require('./routes/auditRoutes')
 const { connectToDatabase } = require('./database/connect');
-const { listFiles, watchFolder } = require('./controllers/googleController');
 require('./controllers/cronScheduleController');
 
 require('dotenv').config();
@@ -23,23 +21,17 @@ const port = process.env.PORT || 10000;
 // Crear la aplicación Express
 const app = express();
 
+
+
 app.get('/healthz', (_, res) => res.sendStatus(200));
 
 // Middleware para parsear JSON
 app.use(express.json());
 
-// Middleware para CORS y UTF-8
-app.use((req, res, next) => {
-  // Aplicar CORS con las opciones definidas
-  cors(corsOptions)(req, res, () => {
-    next();
-  });
-});
+app.use(express.urlencoded({ extended: false }));
 
-// Middleware para solicitudes preflight OPTIONS
-app.options('*', cors(corsOptions), (req, res) => {
-  res.sendStatus(200);
-});
+// 1) Aplicar CORS globalmente
+app.use(cors(corsOptions));
 
 // Aplicar Rate Limiting a todas las rutas
 app.use(limiter);

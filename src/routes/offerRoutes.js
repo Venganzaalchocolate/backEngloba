@@ -1,15 +1,14 @@
 const express = require('express');
 const router = express.Router()
 const {getOfferJobs, getOfferJobID, postCreateOfferJob, OfferJobDeleteId, OfferJobPut, tokenValid, tokenValidAdmin} = require('../controllers/indexController')
-const bodyParser = require('body-parser');
-const urlencodedParser = bodyParser.urlencoded({ extended: false })
 
 
-router.get("/offerjobs", urlencodedParser, getOfferJobs)
-router.post("/offerjob", urlencodedParser, getOfferJobID)
-router.post("/createofferjob", urlencodedParser,postCreateOfferJob)
-router.delete("/deleteofferjob/:id", urlencodedParser, tokenValidAdmin,OfferJobDeleteId)
-router.put("/modifyofferjob", urlencodedParser, OfferJobPut)
+
+router.get("/offerjobs", getOfferJobs)
+router.post("/offerjob", getOfferJobID)
+router.post("/createofferjob",postCreateOfferJob)
+router.delete("/deleteofferjob/:id", tokenValidAdmin,OfferJobDeleteId)
+router.put("/modifyofferjob", OfferJobPut)
 
 
 module.exports = router;
