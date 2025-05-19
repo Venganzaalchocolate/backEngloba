@@ -2,7 +2,6 @@
 const { default: mongoose } = require('mongoose');
 const { User, Program, Filedrive, Documentation } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
-const { exists } = require('../models/programs');
 
 const auditMissingFieldsInfoUser = async (req, res) => {
   const { fields } = req.body;

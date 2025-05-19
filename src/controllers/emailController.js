@@ -3,7 +3,6 @@ const nodemailer = require('nodemailer');
 const user=process.env.EMAIL
 const pass=process.env.EMAIL_PASS
 const host=process.env.EMAIL_HOST
-const port=process.env.EMAIL_PORT
 
 /**
  * Genera una plantilla HTML básica para correos.
@@ -103,17 +102,16 @@ function generateEmailHTML({
 
 
 async function sendEmail(to, subject, text, html) {
-  try {
-    // 1) Crear el transporte SMTP usando la configuración de Arsys
     const transporter = nodemailer.createTransport({
-      host, // SMTP de Arsys
-      port, // Puerto SSL
-      secure: true, // Requerido para el puerto 465 (SSL/TLS)
-      auth: {
-        user, // Cuenta de correo completa
-        pass, // Contraseña de la cuenta
-      },
-    });
+    host,
+    port: parseInt(process.env.EMAIL_PORT, 10),
+    secure: true,
+    auth: { user, pass },
+  });
+
+  try {
+    // 1) Verificar el transporte (conexión y credenciales)
+    await transporter.verify();
 
     // 2) Asegurar el formato correcto de los destinatarios
     const recipients = Array.isArray(to) ? to.join(',') : to;

@@ -66,13 +66,14 @@ app.use((req, res, next) => {
   res.status(404).json({ message: 'Ruta no encontrada' });
 });
 
-// Manejador de errores personalizado
-app.use((err, req, res, next) => {
+// Manejador de errores compatible con Express 5
+app.use((err, req, res) => {
   if (res.headersSent) {
-    return next(err);
+    return;
   }
+
   res.header('Access-Control-Allow-Origin', process.env.CORS_ALLOWED_ORIGIN);
-  
+
   const statusCode = err.status || 500;
   const message = (statusCode === 429)
     ? "Ha alcanzado el número máximo de solicitudes, inténtelo más tarde"

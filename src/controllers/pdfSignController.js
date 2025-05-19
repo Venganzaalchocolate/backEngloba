@@ -5,6 +5,9 @@ const { ClientError, response, catchAsync } = require('../utils/indexUtils');
 const { sendEmail, generateEmailHTML } = require('./emailController');
 const { rgb, PDFDocument, StandardFonts } = require('pdf-lib');
 const { uploadFileToDrive, getFileById, deleteFileById  } = require('./googleController');
+const path = require('path'); 
+
+
 
 const addSignatureBox = async (pdfDoc, text, o = {}, apafa = false) => {
   const {
@@ -109,9 +112,117 @@ const addSignatureBox = async (pdfDoc, text, o = {}, apafa = false) => {
 // Configuración por tipo de documento
 const docTypeConfig = {
   payroll: { emailTitle: 'nómina', emailSubject: 'Tu código para firmar nómina' },
-  contract: { emailTitle: 'contrato', emailSubject: 'Tu código para firmar contrato' }
+  contract: { emailTitle: 'contrato', emailSubject: 'Tu código para firmar contrato' },
+  recibi  : { emailTitle: 'recibí'  , emailSubject: 'Tu código para firmar el recibí'}
 };
 
+
+async function generateReceiptPDF({
+  worker,
+  concept,
+  logoPath = './src/img/ImagotipoEngloba.png',
+  includeSignature = true,
+  signatureOptions = {},
+}) {
+  if (!worker || !concept) {
+    throw new Error('[generateReceiptPDF] Falta worker o concept');
+  }
+  
+      console.log('llega')
+
+  /* ── 1. Crear PDF ─────────────────────────────────────────────── */
+  const pdfDoc = await PDFDocument.create();
+  const page   = pdfDoc.addPage([595.28, 841.89]); // A4 en puntos (72 dpi)
+  const { width, height } = page.getSize();
+
+  /* ── 2. Fuentes ──────────────────────────────────────────────── */
+  const fontBold   = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontNormal = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+  /* ── 3. Logo empresa ─────────────────────────────────────────── */
+  try {
+    const logoBuf = fs.readFileSync(logoPath);
+    const logoImg = /\.jpe?g$/i.test(logoPath)
+      ? await pdfDoc.embedJpg(logoBuf)
+      : await pdfDoc.embedPng(logoBuf);
+
+    const logoW = 120;                       // Ancho deseado (pt)
+    const scale = logoW / logoImg.width;     // Mantener proporción
+    const logoH = logoImg.height * scale;
+
+    page.drawImage(logoImg, {
+      x: width - logoW - 40, // 40 pt de margen derecho
+      y: height - logoH - 40, // 40 pt de margen superior
+      width : logoW,
+      height: logoH,
+    });
+  } catch (err) {
+    console.warn('[generateReceiptPDF] No se pudo cargar el logo:', err.message);
+  }
+
+  const marginX = 60;
+  let cursorY   = height - 120; // Debajo del logo
+
+  /* ── 4. Título del documento ─────────────────────────────────── */
+  const title = 'RECIBÍ';
+  const titleSize = 22;
+  page.drawText(title, {
+    x: marginX,
+    y: cursorY,
+    size: titleSize,
+    font: fontBold,
+    color: rgb(0, 0, 0),
+  });
+
+  cursorY -= titleSize + 30;
+
+  /* ── 5. Cuerpo del recibí ────────────────────────────────────── */
+  const bodyText =
+    `Yo, ${worker.firstName} ${worker.lastName} (DNI ${worker.dni}), ` +
+    `declaro haber recibido ${concept}.\n\n` +
+    `En ${new Date().toLocaleDateString('es-ES')}.`;
+
+  const bodySize = 12;
+  const lineHeight = bodySize + 4;
+  bodyText.split(/\n/).forEach(line => {
+    page.drawText(line, {
+      x: marginX,
+      y: cursorY,
+      size: bodySize,
+      font: fontNormal,
+      color: rgb(0, 0, 0),
+    });
+    cursorY -= lineHeight;
+  });
+
+  console.log('llega')
+  /* ── 6. Caja de firma digital ────────────────────────────────── */
+  if (includeSignature) {
+    const signText =
+      `Firmado digitalmente por:\n` +
+      `Nombre: ${worker.firstName} ${worker.lastName}\n` +
+      `DNI: ${worker.dni}\n` +
+      `Fecha: ${new Date().toLocaleDateString('es-ES')}\n` +
+      `Hora: ${new Date().toLocaleTimeString('es-ES')}`;
+
+      console.log('llega')
+    await addSignatureBox(
+      pdfDoc,
+      signText,
+      {
+        boxWidth : 220,
+        boxHeight: 70,
+        offsetX  : 40,
+        offsetY  : 35,
+        ...signatureOptions,
+      },
+      worker.apafa // Marca de agua solo si NO es apafa
+    );
+  }
+
+  /* ── 7. Salvar PDF ───────────────────────────────────────────── */
+  return pdfDoc.save(); // Devuelve Buffer
+}
 // Genera un código de 6 dígitos
 const generarCodigoTemporal = () => ('' + Math.floor(Math.random() * 999999)).padStart(6, '0');
 
@@ -119,12 +230,12 @@ const generarCodigoTemporal = () => ('' + Math.floor(Math.random() * 999999)).pa
 const requestSignature = async (req, res) => {
   const { userId, docType, docId, meta } = req.body;
 
-  if (!userId || !docType || !docId) {
-
-    throw new ClientError('Parámetros insuficientes', 400);
-  }
+  if (!userId || !docType || (docType !== 'recibi' && !docId)) {
+  throw new ClientError('Parámetros insuficientes', 400);
+}
 
   const config = docTypeConfig[docType];
+
   if (!config) {
 
     throw new ClientError('Tipo de documento no soportado', 400);
@@ -180,31 +291,33 @@ const requestSignature = async (req, res) => {
 };
 
 // Paso 2: Verificar OTP y subir PDF firmado como nuevo archivo
+// Paso 2: Verificar OTP y firmar / subir el PDF
 const confirmSignature = async (req, res) => {
   const { userId, fileId, code } = req.body;
 
-
+  /* ── A. Validación inicial ─────────────────────────────────────── */
   if (!userId || !fileId || !code) {
-
     throw new ClientError('Faltan parámetros', 400);
   }
 
+  console.log(req.body)
+
+  /* ── B. Obtener el OTP ─────────────────────────────────────────── */
   let otp;
   try {
     otp = await OneTimeCode.findById(fileId);
 
-  } catch (error) {
-    console.error('[confirmSignature] Error al encontrar el OTP:', error);
+  } catch (err) {
+    console.error('[confirmSignature] OTP no encontrado:', err);
     throw new ClientError('Código inválido o expirado', 403);
   }
 
-  if (otp.userId.toString() !== userId) {
-
+  if (!otp || otp.userId.toString() !== userId) {
     throw new ClientError('Código inválido o expirado', 403);
   }
 
+  /* ── C. Control de intentos ────────────────────────────────────── */
   if (otp.attempts >= 3) {
-
     await OneTimeCode.deleteOne({ _id: fileId });
     throw new ClientError('Máximo de intentos excedido', 403);
   }
@@ -212,109 +325,146 @@ const confirmSignature = async (req, res) => {
   if (otp.code !== code) {
     otp.attempts += 1;
     await otp.save();
-
-    if (otp.attempts >= 3) {
-
-      await OneTimeCode.deleteOne({ _id: fileId });
-    }
-
+    if (otp.attempts >= 3) await OneTimeCode.deleteOne({ _id: fileId });
     throw new ClientError('Código incorrecto', 403);
   }
 
-  let file, stream;
-  try {
+  /* ── D. Obtener (o generar) el PDF original ───────────────────── */
+  let originalBuffer;
+  let mimeType   = 'application/pdf';
+  let folderId   = null;               // carpeta destino en Drive
+  let file;                            // sólo para payroll / contrato
+
+  if (otp.docType === 'recibi') {
+    console.log('pasaporrecibi')
+    // 1. Generar recibí genérico
+    const worker = await User.findById(userId, {
+      dni: 1, firstName: 1, lastName: 1, apafa: 1
+    });
+
+    const concept = otp.meta?.concept || 'la documentación entregada';
+console.log('concept')
+    originalBuffer = await generateReceiptPDF({
+      worker,
+      concept,
+      includeSignature: false   // la firma se añade después
+    });
+
+    console.log(originalBuffer)
+    folderId = process.env.GOOGLE_DRIVE_FILES || null;
+  } else {
+    // 2. Descargar nómina / contrato desde Drive
+    let stream;
     ({ file, stream } = await getFileById(otp.docId));
 
-  } catch (error) {
-    console.error('[confirmSignature] Error al descargar el documento:', error);
-    throw new ClientError('No se pudo descargar el documento', 500);
+    const chunks = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    originalBuffer = Buffer.concat(chunks);
+
+    mimeType = file.mimeType;
+    folderId = file.parents?.[0] || null;
   }
 
-  const chunks = [];
-  for await (const chunk of stream) chunks.push(chunk);
-  const originalBuffer = Buffer.concat(chunks);
-
+  /* ── E. Cargar PDF y añadir caja de firma ─────────────────────── */
   let pdfDoc;
   try {
     pdfDoc = await PDFDocument.load(originalBuffer);
-
-  } catch (error) {
-    console.error('[confirmSignature] Error al cargar el PDF:', error);
+  } catch (err) {
+    console.log('[confirmSignature] Error al cargar PDF:', err)
+    console.error('[confirmSignature] Error al cargar PDF:', err);
     throw new ClientError('Error al cargar el PDF', 500);
   }
 
-  const fecha = new Date();
-  const userAux = await User.findById(userId, { dni: 1, firstName: 1, lastName: 1, apafa:1 });
-  
-  const text = `Firmado digitalmente por:
+  const fecha   = new Date();
+  const userAux = await User.findById(userId, {
+    dni: 1, firstName: 1, lastName: 1, apafa: 1
+  });
+
+  const signText = `Firmado digitalmente por:
 Nombre: ${userAux.firstName} ${userAux.lastName}
 DNI: ${userAux.dni}
 Fecha: ${fecha.toLocaleDateString('es-ES')}
 Hora: ${fecha.toLocaleTimeString('es-ES')}`;
 
+console.log(signText)
   try {
-    await addSignatureBox(pdfDoc, text, {
-      boxWidth: 220,
-      boxHeight: 70,
-      offsetX: 40,
-      offsetY: 35
-    }, userAux.apafa);
-
-  } catch (error) {
-    console.error('[confirmSignature] Error al firmar el documento:', error);
+    await addSignatureBox(
+      pdfDoc,
+      signText,
+      { boxWidth: 220, boxHeight: 70, offsetX: 40, offsetY: 35 },
+      userAux.apafa
+    );
+  } catch (err) {
+    console.error('[confirmSignature] Error al firmar PDF:', err);
     throw new ClientError('Error al firmar el documento', 500);
   }
 
+  
   const signedBuffer = await pdfDoc.save();
 
-  const folderId = file.parents?.[0] || null;
-  const signedName = `${userAux.dni}_${otp.meta.month}_${otp.meta.year}_signed.pdf`;
+  /* ── F. Subir a Drive ──────────────────────────────────────────── */
+  const signedName =
+    otp.docType === 'recibi'
+      ? `${userAux.dni}_${fecha.toISOString().slice(0,10)}_recibi_signed.pdf`
+      : `${userAux.dni}_${otp.meta.month}_${otp.meta.year}_signed.pdf`;
+
   let uploaded;
+
   try {
     uploaded = await uploadFileToDrive(
-      { buffer: signedBuffer, mimetype: file.mimeType },
+      { buffer: signedBuffer, mimetype: mimeType },
       folderId,
       signedName
     );
-
-  } catch (error) {
-    console.error('[confirmSignature] Error al subir el archivo firmado:', error);
+  } catch (err) {
+    console.error('[confirmSignature] Error al subir PDF:', err);
     throw new ClientError('Error al subir documento firmado', 500);
   }
 
+  if (!uploaded) throw new ClientError('Error al subir documento firmado', 500);
+
+  /* ── G. Borrar OTP (éxito) ─────────────────────────────────────── */
   await OneTimeCode.deleteOne({ _id: fileId });
 
-
-  if (!uploaded) {
-
-    throw new ClientError('Error al subir documento firmado', 500);
-  }
-
-  const dateInSpain = new Date();
+  /* ── H. Actualizaciones específicas por tipo ───────────────────── */
+  const dateInSpain = new Date(); // ya está en hora local servidor (ES)
 
   if (otp.docType === 'payroll') {
-
-
     const updatedUser = await User.findOneAndUpdate(
       { _id: userId, 'payrolls._id': otp.meta.id },
       {
         $set: {
-          'payrolls.$.sign': uploaded.id,
-          'payrolls.$.datetimeSign': dateInSpain // Fecha y hora ajustada a la zona horaria de España
+          'payrolls.$.sign'        : uploaded.id,
+          'payrolls.$.datetimeSign': dateInSpain
         }
       },
       { new: true }
-    ).populate({ path: 'files.filesId', model: 'Filedrive' })
+    ).populate({ path: 'files.filesId', model: 'Filedrive' });
 
-    if(!updatedUser) deleteFileById(uploaded.id)
+    if (!updatedUser) await deleteFileById(uploaded.id);
+
     return response(res, 200, { data: updatedUser });
-    
-  } else if (otp.docType === 'contract') {
-    return response(res, 200, { message: 'Contrato firmado correctamente', data: { id: uploaded.id } });
+  }
+
+  if (otp.docType === 'contract') {
+    return response(res, 200, {
+      message: 'Contrato firmado correctamente',
+      data   : { id: uploaded.id }
+    });
+  }
+
+  if (otp.docType === 'recibi') {
+    return response(res, 200, {
+      message: 'Recibí firmado correctamente',
+      data   : { id: uploaded.id }
+    });
   }
 };
 
+
+
 module.exports = {
   requestSignature: catchAsync(requestSignature),
-  confirmSignature: catchAsync(confirmSignature)
+  confirmSignature: catchAsync(confirmSignature),
+  addSignatureBox
 };

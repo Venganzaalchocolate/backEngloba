@@ -26,7 +26,7 @@ const oneTimeCodeSchema = new mongoose.Schema({
   // Tipo de documento a firmar (opcional para flujos de firma)
   docType: {
     type: String,
-    enum: ["payroll", "contract"],
+    enum: ["payroll", "contract", "recibi"],
     default: null
   },
   // Identificador del documento en Drive (opcional para flujos de firma)
