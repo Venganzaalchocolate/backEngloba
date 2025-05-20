@@ -1570,26 +1570,7 @@ const findUsersWithDispositiveNowAsObjectId = async () => {
 
 };
 
-const fixDispositiveNow = async () => {
-  const users = await User.find({
-    dispositiveNow: {
-      $elemMatch: { $type: 'objectId' }
-    }
-  }).select('_id') // Solo necesitas el _id para reconsultar
-    .lean();
 
-  console.log(`Usuarios con dispositiveNow como ObjectId: ${users.length}`);
-
-  for (const u of users) {
-    const fullUser = await User.findById(u._id); // Trae todo el documento
-    if (!fullUser) continue;
-
-    const updated = await changeDispositiveNow(fullUser);
-    console.log(`✔️  Usuario actualizado: ${updated.firstName} ${updated.lastName}`);
-  }
-
-  console.log('✅ Procesamiento completo.');
-};
 
 
 

@@ -21,10 +21,6 @@ const port = process.env.PORT || 10000;
 // Crear la aplicación Express
 const app = express();
 
-
-
-app.get('/healthz', (_, res) => res.sendStatus(200));
-
 // Middleware para parsear JSON
 app.use(express.json());
 
@@ -36,10 +32,15 @@ app.use(cors(corsOptions));
 // Aplicar Rate Limiting a todas las rutas
 app.use(limiter);
 
-// Verificar encabezados `origin`, `referer` y solicitudes de Google
-app.use(verifyOriginAndReferer);
 
+app.use((req, res, next) => {
+  // Deja pasar los preflight
+  if (req.method === 'OPTIONS') return next();
+  verifyOriginAndReferer(req, res, next);
+});
 
+/* ----------  Health check ---------- */
+app.get('/healthz', (_, res) => res.sendStatus(200));
 
 // Rutas con prefijo `/api`
 app.use('/api', userRoutes);
@@ -54,27 +55,26 @@ app.use('/api', documentationRoutes)
 app.use('/api', auditRoutes)
 
 // Middleware para manejar rutas no encontradas (404)
-app.use((req, res, next) => {
+app.use((req, res) => {
   res.status(404).json({ message: 'Ruta no encontrada' });
 });
 
-// Manejador de errores compatible con Express 5
-app.use((err, req, res) => {
-  if (res.headersSent) {
-    return;
-  }
 
-  res.header('Access-Control-Allow-Origin', process.env.CORS_ALLOWED_ORIGIN);
 
-  const statusCode = err.status || 500;
-  const message = (statusCode === 429)
-    ? "Ha alcanzado el número máximo de solicitudes, inténtelo más tarde"
-    : (statusCode === 500)
-    ? 'Error interno en el servidor'
-    : err.message;
+ 
 
-  resError(res, statusCode, message);
+/* ----------  Manejador de errores ---------- */
+app.use((err, req, res, next) => {            // <-- ¡las 4 params!
+  const status = err.status || 500;
+
+  const message =
+    status === 429 ? 'Ha alcanzado el número máximo de solicitudes, inténtelo más tarde'
+  : status === 500 ? 'Error interno en el servidor'
+  : err.message;
+
+  resError(res, status, message);
 });
+
 
 // Iniciar el servidor
 const startServer = async () => {
