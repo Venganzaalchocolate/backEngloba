@@ -194,6 +194,9 @@ const putEnums = async (req, res) => {
     updateData.name = req.body.name;
     updateData.model = req.body.model;
     updateData.date = req.body.date === 'si'; // Se guarda como boolean
+    if ('requiresSignature' in req.body) {
+      updateData.requiresSignature = req.body.requiresSignature;
+    }
     if (!!req.body.categoryFiles) updateData.categoryFiles = req.body.categoryFiles
     if (!!updateData.date) updateData.duration = req.body.duration;
   }
@@ -250,6 +253,7 @@ const postEnums = async (req, res) => {
     newData.name = name;
     newData.model = req.body.model;
     newData.date = date === 'si'; // Convertir 'si' a true, 'no' a false
+    newData.requiresSignature = !!req.body.requiresSignature;
     if (!!req.body.categoryFiles) newData.categoryFiles = req.body.categoryFiles
     if (!!newData.date) {
       if (!req.body.duration) {

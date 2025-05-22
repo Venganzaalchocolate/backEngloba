@@ -198,7 +198,6 @@ const postCreateUser = async (req, res) => {
   }
 
   try {
-    console.log(userData)
     // Intentar crear el usuario
     const newUser = await User.create(userData)
 
@@ -1566,7 +1565,6 @@ const findUsersWithDispositiveNowAsObjectId = async () => {
   })
   .select('firstName lastName dni dispositiveNow')
   .lean();
-  console.log(users)
 
 };
 

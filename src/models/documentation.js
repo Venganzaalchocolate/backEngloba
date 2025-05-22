@@ -26,6 +26,10 @@ const documentation = mongoose.Schema({
     },
     categoryFiles:{
         type: String
+    },
+    requiresSignature:{
+        type: Boolean,
+        default:false
     }
 }, { timestamps: true });
 

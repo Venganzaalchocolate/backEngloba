@@ -13,6 +13,7 @@ const {main}=require("./controladordepruebas");
 const { getDocumentation } = require("./documentationController");
 const { confirmSignature, requestSignature } = require("./pdfSignController");
 const { auditMissingFieldsInfoUser, auditMissingFieldsProgram, auditMissingFieldsDevice,auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram, auditMissingFieldsDocumentationDevice, auditMissingFieldsContractAndLeave } = require("./auditorController");
+const { getCvOverview, getCvMonthly, getCvDistribution, getCvConversion } = require("./statisticsController");
 
 
 
@@ -33,6 +34,7 @@ module.exports = {
     getDocumentation,
     requestSignature,confirmSignature,
     auditMissingFieldsInfoUser,auditMissingFieldsProgram,auditMissingFieldsDevice,auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram,auditMissingFieldsDocumentationDevice,auditMissingFieldsContractAndLeave,
+    getCvOverview,getCvMonthly,getCvDistribution, getCvConversion,
 
     main
 
