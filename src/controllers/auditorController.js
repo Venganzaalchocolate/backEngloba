@@ -549,6 +549,8 @@ const auditMissingFieldsLeaveOnly = async (req, res) => {
 };
 
 
+
+
 module.exports = {
   // …tus otros controladores…
   auditMissingFieldsInfoUser: catchAsync(auditMissingFieldsInfoUser),

@@ -343,6 +343,489 @@ const getCvConversion = async (req, res) => {
   response(res, 200, { data, years });
 };
 
+//----------------------TRABAJADORES-----------------------------
+
+const auditWorkersStats = async (req, res) => {
+  const { month, year, programId, deviceId, apafa } = req.body;
+
+  /* 1 · Validaciones */
+  if (month && !year)
+    throw new ClientError('Si envías month debes enviar también year', 400);
+
+  if (month && (month < 1 || month > 12))
+    throw new ClientError('month debe ser 1-12', 400);
+
+  if (programId && !mongoose.Types.ObjectId.isValid(programId))
+    throw new ClientError('programId inválido', 400);
+
+  if (deviceId && !mongoose.Types.ObjectId.isValid(deviceId))
+    throw new ClientError('deviceId inválido', 400);
+
+  if (programId && !mongoose.Types.ObjectId.isValid(programId))
+    throw new ClientError('programId inválido', 400);
+  if (deviceId && !mongoose.Types.ObjectId.isValid(deviceId))
+    throw new ClientError('deviceId inválido', 400);
+
+  let refDate = null;
+  let periodDateMatch = null;
+
+  if (year && month) {
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 0, 23, 59, 59, 999);
+
+    periodDateMatch = {
+      startDate: { $lte: end },
+      $or: [{ endDate: null }, { endDate: { $gte: start } }]
+    };
+    refDate = end;
+  } else if (year) {
+    const start = new Date(year, 0, 1);
+    const end = new Date(year, 11, 31, 23, 59, 59, 999);
+
+    periodDateMatch = {
+      startDate: { $lte: end },
+      $or: [{ endDate: null }, { endDate: { $gte: start } }]
+    };
+    refDate = end;
+  } else {
+    refDate = new Date();   // sin filtros de fecha
+  }
+
+
+  /* 4 · Dispositivos de interés (para filtro programa/device) */
+  let deviceIdsFilter = [];
+
+  if (programId) {
+    const program = await Program.findById(programId).select('devices._id');
+    if (!program) throw new ClientError('Programa no encontrado', 404);
+    deviceIdsFilter = program.devices.map(d => d._id.toString());
+  }
+  if (deviceId) {                               // prioriza dispositivo explícito
+    if (deviceIdsFilter.length && !deviceIdsFilter.includes(deviceId)) {
+      // el dispositivo no pertenece a ese programa → sin resultados
+      return response(res, 200, {
+        total: 0, disability: 0, male: 0, female: 0,
+        fostered: 0, over55: 0, under25: 0
+      });
+    }
+    deviceIdsFilter = [deviceId];
+  }
+
+let match = { employmentStatus: 'activo' };
+
+if (apafa === 'si') match.apafa = true;
+else if (apafa === 'no') match.apafa = false;
+
+  // a) filtro histórico (mes/año) sobre hiringPeriods
+  if (periodDateMatch) {
+    match.hiringPeriods = { $elemMatch: periodDateMatch };
+  }
+
+  // b) filtro por programa/dispositivo “actual” usando dispositiveNow
+  if (deviceIdsFilter.length) {
+    match.dispositiveNow = {
+      $elemMatch: {
+        active: true,                                         // por claridad
+        device: { $in: deviceIdsFilter.map(id => new mongoose.Types.ObjectId(id)) }
+      }
+    };
+  }
+
+  /* 6 · Pipeline */
+  const stats = await User.aggregate([
+    { $match: match },
+    {
+      $addFields: {
+        age: {
+          $dateDiff: {
+            startDate: '$birthday',
+            endDate: refDate,
+            unit: 'year'
+          }
+        }
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        disability: { $sum: { $cond: [{ $gt: ['$disability.percentage', 0] }, 1, 0] } },
+        male: { $sum: { $cond: [{ $eq: ['$gender', 'male'] }, 1, 0] } },
+        female: { $sum: { $cond: [{ $eq: ['$gender', 'female'] }, 1, 0] } },
+        fostered: { $sum: { $cond: ['$fostered', 1, 0] } },       // jóvenes extutelados
+        over55: { $sum: { $cond: [{ $gte: ['$age', 55] }, 1, 0] } },
+        under25: { $sum: { $cond: [{ $lt: ['$age', 25] }, 1, 0] } }
+      }
+    },
+    { $project: { _id: 0 } }
+  ]);
+
+  const normalized = stats[0] ?? {
+    total: 0, disability: 0, male: 0, female: 0,
+    fostered: 0, over55: 0, under25: 0
+  };
+
+  /* 7 · Respuesta */
+  response(res, 200, normalized);
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 1 · Pirámide de edad  (male / female)
+//    →  [{ age: 18, male: 4, female: 6 }, … ]
+// ──────────────────────────────────────────────────────────────────────────────
+
+
+async function buildMatchStage({ year, month, programId, deviceId, apafa }) {
+
+  /* ───── 1 · Validaciones básicas ────────────────────────────────────── */
+  if (month && !year) {
+    throw new ClientError('Si envías month debes enviar también year', 400);
+  }
+  if (month && (month < 1 || month > 12)) {
+    throw new ClientError('month debe estar entre 1-12', 400);
+  }
+  if (programId && !mongoose.Types.ObjectId.isValid(programId)) {
+    throw new ClientError('programId inválido', 400);
+  }
+  if (deviceId && !mongoose.Types.ObjectId.isValid(deviceId)) {
+    throw new ClientError('deviceId inválido', 400);
+  }
+
+  /* ───── 2 · refDate + filtro temporal sobre hiringPeriods ───────────── */
+  let refDate          = new Date(); // por defecto: ahora
+  let periodDateMatch  = null;       // se usará en $elemMatch
+
+  if (year && month) {
+    const start = new Date(year, month - 1, 1);
+    const end   = new Date(year, month, 0, 23, 59, 59, 999);
+
+    periodDateMatch = {
+      startDate: { $lte: end },
+      $or      : [{ endDate: null }, { endDate: { $gte: start } }]
+    };
+    refDate = end;
+
+  } else if (year) {
+    const start = new Date(year, 0, 1);
+    const end   = new Date(year, 11, 31, 23, 59, 59, 999);
+
+    periodDateMatch = {
+      startDate: { $lte: end },
+      $or      : [{ endDate: null }, { endDate: { $gte: start } }]
+    };
+    refDate = end;
+  }
+
+  /* ───── 3 · Determinar dispositivos válidos según programa/device ───── */
+  let deviceIdsFilter = [];
+
+  if (programId) {
+    const program = await Program.findById(programId).select('devices._id');
+    if (!program) throw new ClientError('Programa no encontrado', 404);
+    deviceIdsFilter = program.devices.map(d => String(d._id));
+  }
+
+  if (deviceId) {
+    // si ya tenemos deviceIdsFilter (por programa) comprueba pertenencia
+    if (deviceIdsFilter.length && !deviceIdsFilter.includes(deviceId)) {
+      // el dispositivo no forma parte del programa ⇒ ningún usuario coincidirá
+      deviceIdsFilter = ['000000000000000000000000']; // id imposible
+    } else {
+      deviceIdsFilter = [deviceId];
+    }
+  }
+
+  /* ───── 4 · Construir el $match base ─────────────────────────────────── */
+  const match = { employmentStatus: 'activo' };
+
+  // a) filtro APAFA
+  if (apafa === 'si')      match.apafa = true;
+  else if (apafa === 'no') match.apafa = false;
+
+  // b) rango temporal sobre hiringPeriods
+  if (periodDateMatch) {
+    match.hiringPeriods = { $elemMatch: periodDateMatch };
+  }
+
+  // c) dispositivo actual (dispositiveNow.activo = true)
+  if (deviceIdsFilter.length) {
+    match.dispositiveNow = {
+      $elemMatch: {
+        active: true,
+        device: { $in: deviceIdsFilter.map(id => new mongoose.Types.ObjectId(id)) }
+      }
+    };
+  }
+
+  return { match, refDate };
+}
+
+const getWorkersPyramid = async (req, res) => {
+  const { year, month, programId, deviceId, apafa } = req.body;
+  const { match, refDate } = await buildMatchStage({ year, month, programId, deviceId, apafa });
+
+  const data = await User.aggregate([
+    { $match: match },
+    { $addFields: {
+        age: { $dateDiff: { startDate: '$birthday', endDate: refDate, unit: 'year' } }
+    }},
+    { $group: {
+        _id: '$age',
+        male  : { $sum: { $cond:[{ $eq:['$gender','male']  },1,0] } },
+        female: { $sum: { $cond:[{ $eq:['$gender','female']},1,0] } }
+    }},
+    { $project:{ _id:0, age:'$_id', male:1, female:1 } },
+    { $sort:{ age:1 } }
+  ]);
+
+  response(res, 200, data);
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 2 · Pie genérico (gender, apafa, fostered, disability)
+//    body.field puede ser: 'gender' (default) | 'apafa' | 'fostered' | 'disability'
+//    →  [{ key:'male', value:120 }, … ]
+// ──────────────────────────────────────────────────────────────────────────────
+const getWorkersPie = async (req, res) => {
+  const { year, month, programId, deviceId, apafa, field = 'gender' } = req.body;
+  const allowed = ['gender', 'apafa', 'fostered', 'disability'];
+  if (!allowed.includes(field)) throw new ClientError('Campo no permitido', 400);
+
+  const { match } = await buildMatchStage({ year, month, programId, deviceId, apafa });
+
+  // Selector para el $group
+  let groupExpr;
+  switch (field) {
+    case 'disability':
+      groupExpr = { $cond:[ { $gt:['$disability.percentage',0] }, 'disability', 'no_disability' ] };
+      break;
+    case 'apafa':
+      groupExpr = { $cond:[ '$apafa', 'apafa', 'engloba' ] };
+      break;
+    case 'fostered':
+      groupExpr = { $cond:[ '$fostered', 'fostered', 'no_fostered' ] };
+      break;
+    default: // gender
+      groupExpr = '$gender';
+  }
+
+  const data = await User.aggregate([
+    { $match: match },
+    { $group:{ _id: groupExpr, value:{ $sum:1 } } },
+    { $project:{ _id:0, key:'$_id', value:1 } }
+  ]);
+
+
+  response(res, 200, data);
+};
+
+function buildMatchStageDispositiveNow({ year, month, programId, deviceId, apafa }) {
+  const match = {
+    employmentStatus: 'activo',
+    dispositiveNow: { $exists: true, $ne: [] }, // asegúrate de que haya algo
+  };
+
+  // Filtro APAFA
+  if (apafa === 'si') match.apafa = true;
+  else if (apafa === 'no') match.apafa = false;
+
+  // Filtro por dispositivo
+  if (deviceId && mongoose.Types.ObjectId.isValid(deviceId)) {
+    match['dispositiveNow.device'] = new mongoose.Types.ObjectId(deviceId);
+  }
+
+  // Filtro por programa → solo si cada dispositivo tiene programId guardado (NO es tu caso)
+  // Se omite aquí porque en tu modelo `dispositiveNow.device` no guarda programId directamente.
+  // Si lo necesitas, tendrías que hacer `$lookup` a la colección `Device`.
+
+  // Filtro temporal sobre el rango de fechas activas de dispositiveNow
+  if (year && month) {
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 0, 23, 59, 59, 999);
+    match['dispositiveNow.startDate'] = { $lte: end };
+    match.$or = [
+      { 'dispositiveNow.endDate': null },
+      { 'dispositiveNow.endDate': { $gte: start } },
+    ];
+  } else if (year) {
+    const start = new Date(year, 0, 1);
+    const end = new Date(year, 11, 31, 23, 59, 59, 999);
+    match['dispositiveNow.startDate'] = { $lte: end };
+    match.$or = [
+      { 'dispositiveNow.endDate': null },
+      { 'dispositiveNow.endDate': { $gte: start } },
+    ];
+  }
+
+  return { match };
+}
+
+function expandElemMatchObject(elemMatchObj = {}) {
+  if (!elemMatchObj.$elemMatch) return {};
+  const criteria = elemMatchObj.$elemMatch;
+  const flat = {};
+  for (const [k, v] of Object.entries(criteria)) {
+    flat[`hiringPeriods.${k}`] = v;
+  }
+  return flat;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 3 · Altas vs Bajas mensuales
+//    →  [{ year:2024, month:4, hired:8, ended:3 }, … ]
+// ──────────────────────────────────────────────────────────────────────────────
+const getWorkersHiredEnded = async (req, res) => {
+  const { year, month, programId, deviceId, apafa } = req.body;
+
+  const { match } = await buildMatchStage({ year, month, programId, deviceId, apafa });
+  const hiringMatch = expandElemMatchObject(match.hiringPeriods);
+
+  const data = await User.aggregate([
+  { $match: match },
+  { $unwind: '$hiringPeriods' },
+  { $match: hiringMatch },
+
+    /* ------------------------------------------------------------- *
+     * 1) Facet: contratados (hired)  vs  finalizados (ended)
+     * ------------------------------------------------------------- */
+    {
+      $facet: {
+        hired: [
+          {
+            $group: {
+              _id: {
+                y: { $year: '$hiringPeriods.startDate' },
+                m: { $month: '$hiringPeriods.startDate' }
+              },
+              hired: { $sum: 1 }
+            }
+          }
+        ],
+        ended: [
+          { $match: { 'hiringPeriods.endDate': { $ne: null } } },
+          {
+            $group: {
+              _id: {
+                y: { $year: '$hiringPeriods.endDate' },
+                m: { $month: '$hiringPeriods.endDate' }
+              },
+              ended: { $sum: 1 }
+            }
+          }
+        ]
+      }
+    },
+
+    /* ------------------------------------------------------------- *
+     * 2) Unimos los dos arrays y aplanamos
+     * ------------------------------------------------------------- */
+    { $project: { union: { $setUnion: ['$hired', '$ended'] } } },
+    { $unwind: '$union' },
+
+    /* ¡ojo aquí! ↓↓↓ cambiamos new → newRoot */
+    { $replaceRoot: { newRoot: '$union' } },
+
+    /* ------------------------------------------------------------- *
+     * 3) Sumamos los conteos cuando coinciden año+mes
+     * ------------------------------------------------------------- */
+    {
+      $group: {
+        _id: '$_id',
+        hired: { $sum: '$hired' },
+        ended: { $sum: '$ended' }
+      }
+    },
+
+    /* ------------------------------------------------------------- *
+     * 4) Dejamos formato limpio y ordenamos
+     * ------------------------------------------------------------- */
+    {
+      $project: {
+        _id: 0,
+        year: '$_id.y',
+        month: '$_id.m',
+        hired: 1,
+        ended: 1
+      }
+    },
+    { $sort: { year: 1, month: 1 } }
+  ])
+
+  response(res, 200, data);
+};
+
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 4 · Jornada (full-time / part-time)
+//    →  [{ type:'completa', total:92 }, … ]
+// ──────────────────────────────────────────────────────────────────────────────
+
+
+
+const getWorkersWorkShift = async (req, res) => {
+  const { year, month, programId, deviceId, apafa } = req.body;
+  const { match } = await buildMatchStageDispositiveNow({ year, month, programId, deviceId, apafa });
+  
+  const data = await User.aggregate([
+    { $match: match },
+    { $unwind: '$dispositiveNow' },
+    { $match: { 'dispositiveNow.active': true } },
+    {
+      $group: {
+        _id: '$dispositiveNow.workShift.type',
+        total: { $sum: 1 }
+      }
+    },
+    {
+      $project: {
+        _id: 0,
+        type: '$_id',
+        total: 1
+      }
+    }
+  ])
+  response(res, 200, data);
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 5 · Antigüedad (buckets 0-1 / 1-3 / 3-5 / 5+ años)
+//    →  [{ bucket:'0-1', total:35 }, … ]
+// ──────────────────────────────────────────────────────────────────────────────
+const getWorkersTenure = async (req, res) => {
+  const { year, month, programId, deviceId, apafa } = req.body;
+  const { match, refDate } = await buildMatchStage({ year, month, programId, deviceId, apafa });
+
+  const data = await User.aggregate([
+    { $match: match },
+    { $unwind: '$hiringPeriods' },
+    { $match: { 'hiringPeriods.active': true } },
+    { $addFields:{
+        tenureYears: {
+          $divide: [
+            { $subtract: [ refDate, '$hiringPeriods.startDate' ] },
+            1000 * 60 * 60 * 24 * 365
+          ]
+        }
+    }},
+    { $addFields:{
+        bucket: {
+          $switch:{
+            branches:[
+              { case:{ $lt:['$tenureYears', 1] }, then:'0-1' },
+              { case:{ $lt:['$tenureYears', 3] }, then:'1-3' },
+              { case:{ $lt:['$tenureYears', 5] }, then:'3-5' }
+            ],
+            default:'5+'
+          }
+        }
+    }},
+    { $group:{ _id:'$bucket', total:{ $sum:1 } } },
+    { $project:{ _id:0, bucket:'$_id', total:1 } },
+    { $sort:{ bucket:1 } }
+  ]);
+
+  response(res, 200, data);
+};
 
 
 //------------------------------------------------------------------
@@ -350,5 +833,12 @@ module.exports = {
   getCvOverview: catchAsync(getCvOverview),
   getCvMonthly: catchAsync(getCvMonthly),
   getCvDistribution: catchAsync(getCvDistribution),
-  getCvConversion: catchAsync(getCvConversion)
+  getCvConversion: catchAsync(getCvConversion),
+  auditWorkersStats: catchAsync(auditWorkersStats),
+  getWorkersPyramid     : catchAsync(getWorkersPyramid),
+  getWorkersPie         : catchAsync(getWorkersPie),
+  getWorkersHiredEnded  : catchAsync(getWorkersHiredEnded),
+  getWorkersWorkShift   : catchAsync(getWorkersWorkShift),
+  getWorkersTenure      : catchAsync(getWorkersTenure)
+
 };

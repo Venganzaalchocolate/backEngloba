@@ -1571,9 +1571,6 @@ const findUsersWithDispositiveNowAsObjectId = async () => {
 
 
 
-
-
-
 module.exports = {
   //gestiono los errores con catchAsync
   postCreateUser: catchAsync(postCreateUser),
