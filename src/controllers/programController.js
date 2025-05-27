@@ -601,8 +601,6 @@ const handleResponsibles = async (req, res) => {
  */
 const listsResponsiblesAndCoordinators = async (req, res) => {
   const { responsibles, coordinators, resAndCorr } = req.body;
-
-  /* ---------- 1. Validación ---------------------------------------- */
   if (!responsibles && !coordinators && !resAndCorr) {
     throw new ClientError(
       "Debes indicar 'responsibles', 'coordinators' o 'resAndCorr'.",
@@ -612,8 +610,7 @@ const listsResponsiblesAndCoordinators = async (req, res) => {
   const wantResponsibles = responsibles || resAndCorr;
   const wantCoordinators = coordinators || resAndCorr;
 
-  /* ---------- 2. Índice provincia / sub-provincia ------------------ */
-  /*    Mapa:  _id (string) → "provincia"   /   "provincia – sub"      */
+  // --- índice de provincias (igual que antes) ---
   const provinceMap = new Map();
   const provinces = await Provinces.find({}).lean();
   provinces.forEach(p => {
@@ -623,76 +620,96 @@ const listsResponsiblesAndCoordinators = async (req, res) => {
     );
   });
 
-  /* ---------- 3. Obtener programas con usuarios -------------------- */
+  // --- traemos programas con populates que incluyen phoneJob.number y extension ---
   const programs = await Program.find({})
-    .populate({ path: 'responsible',          select: 'firstName lastName email phone' })
-    .populate({ path: 'devices.responsible',  select: 'firstName lastName email phone' })
-    .populate({ path: 'devices.coordinators', select: 'firstName lastName email phone' })
-    // NO populamos province: solo necesitamos el _id
+    .populate({
+      path: 'responsible',
+      select: 'firstName lastName email phone phoneJob.number phoneJob.extension'
+    })
+    .populate({
+      path: 'devices.responsible',
+      select: 'firstName lastName email phone phoneJob.number phoneJob.extension'
+    })
+    .populate({
+      path: 'devices.coordinators',
+      select: 'firstName lastName email phone phoneJob.number phoneJob.extension'
+    })
     .lean();
 
-  /* ---------- 4. Construir listado --------------------------------- */
   const list = [];
 
   programs.forEach(program => {
     const programName = program.name ?? '';
 
-    /* Responsables de programa */
+    // — Responsables de programa —
     if (wantResponsibles && Array.isArray(program.responsible)) {
       program.responsible.forEach(u => {
         list.push({
-          program   : programName,
-          device    : null,
-          province  : null,                       // a este nivel no aplica
-          role      : 'responsible-program',
-          firstName : u?.firstName ?? '',
-          lastName  : u?.lastName  ?? '',
-          email     : u?.email     ?? '',
-          phone     : u?.phone     ?? ''
+          program:   programName,
+          device:    null,
+          province:  null,
+          role:      'responsible-program',
+          firstName: u?.firstName  ?? '',
+          lastName:  u?.lastName   ?? '',
+          email:     u?.email      ?? '',
+          phone:     u?.phone      ?? '',
+          // ← aquí, corregido:
+          phoneJob: {
+            number:    u?.phoneJob?.number    ?? '',
+            extension: u?.phoneJob?.extension ?? ''
+          }
         });
       });
     }
 
-    /* Responsables / coordinadores de dispositivos */
+    // — Responsables y coordinadores de dispositivos —
     (program.devices || []).forEach(device => {
-      const deviceName   = device?.name ?? '';
+      const deviceName   = device?.name     ?? '';
       const provinceName = provinceMap.get(String(device.province)) || null;
 
       if (wantResponsibles && Array.isArray(device.responsible)) {
-        device.responsible.forEach(u =>
+        device.responsible.forEach(u => {
           list.push({
-            program   : programName,
-            device    : deviceName,
-            province  : provinceName,
-            role      : 'responsible',
-            firstName : u?.firstName ?? '',
-            lastName  : u?.lastName  ?? '',
-            email     : u?.email     ?? '',
-            phone     : u?.phone     ?? ''
-          })
-        );
+            program:   programName,
+            device:    deviceName,
+            province:  provinceName,
+            role:      'responsible',
+            firstName: u?.firstName  ?? '',
+            lastName:  u?.lastName   ?? '',
+            email:     u?.email      ?? '',
+            phone:     u?.phone      ?? '',
+            phoneJob: {
+              number:    u?.phoneJob?.number    ?? '',
+              extension: u?.phoneJob?.extension ?? ''
+            }
+          });
+        });
       }
 
       if (wantCoordinators && Array.isArray(device.coordinators)) {
-        device.coordinators.forEach(u =>
+        device.coordinators.forEach(u => {
           list.push({
-            program   : programName,
-            device    : deviceName,
-            province  : provinceName,
-            role      : 'coordinator',
-            firstName : u?.firstName ?? '',
-            lastName  : u?.lastName  ?? '',
-            email     : u?.email     ?? '',
-            phone     : u?.phone     ?? ''
-          })
-        );
+            program:   programName,
+            device:    deviceName,
+            province:  provinceName,
+            role:      'coordinator',
+            firstName: u?.firstName  ?? '',
+            lastName:  u?.lastName   ?? '',
+            email:     u?.email      ?? '',
+            phone:     u?.phone      ?? '',
+            phoneJob: {
+              number:    u?.phoneJob?.number    ?? '',
+              extension: u?.phoneJob?.extension ?? ''
+            }
+          });
+        });
       }
     });
   });
 
-  /* ---------- 5. Respuesta ----------------------------------------- */
   return response(res, 200, list);
 };
+
 
 
 

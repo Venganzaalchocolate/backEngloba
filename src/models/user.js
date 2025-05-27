@@ -221,6 +221,14 @@ const UserSchema = new Schema({
         required: true,
         unique: true
     },
+    phoneJob:{
+        number:{
+           type: String, 
+        },
+        extension:{
+            type: String, 
+        }
+    },
 
     // Estado laboral del empleado
     employmentStatus: {

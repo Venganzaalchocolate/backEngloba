@@ -92,6 +92,8 @@ const postCreateUser = async (req, res) => {
     apafa,
     studies,
     birthday,
+    phoneJobNumber,
+    phoneJobExtension
   } = req.body;
 
   validateRequiredFields(req.body, requiredFields);
@@ -196,6 +198,13 @@ const postCreateUser = async (req, res) => {
   if (req.body.studies) {
     userData.studies = parseField(req.body.studies, 'studies').map((s) => new mongoose.Types.ObjectId(s));
   }
+
+  if (phoneJobNumber || phoneJobExtension) {
+  userData.phoneJob = {};
+  if (phoneJobNumber) userData.phoneJob.number = phoneJobNumber;
+  if (phoneJobExtension) userData.phoneJob.extension = phoneJobExtension;
+}
+
 
   try {
     // Intentar crear el usuario
@@ -782,6 +791,15 @@ const userPut = async (req, res) => {
   if (req.body.studies) {
     updateFields.studies = parseField(req.body.studies, 'studies').map((s) => new mongoose.Types.ObjectId(s));
   }
+
+
+
+  if (req.body.phoneJobNumber || req.body.phoneJobExtension) {
+  updateFields.phoneJob = {};
+  if (req.body.phoneJobNumber) updateFields.phoneJob.number = req.body.phoneJobNumber;
+  if (req.body.phoneJobExtension) updateFields.phoneJob.extension = req.body.phoneJobExtension;
+}
+
 
   const folderId = process.env.GOOGLE_DRIVE_APPFILE;
 

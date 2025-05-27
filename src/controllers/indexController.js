@@ -13,7 +13,7 @@ const {main}=require("./controladordepruebas");
 const { getDocumentation } = require("./documentationController");
 const { confirmSignature, requestSignature } = require("./pdfSignController");
 const { auditMissingFieldsInfoUser, auditMissingFieldsProgram, auditMissingFieldsDevice,auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram, auditMissingFieldsDocumentationDevice, auditMissingFieldsContractAndLeave } = require("./auditorController");
-const { getCvOverview, getCvMonthly, getCvDistribution, getCvConversion, auditWorkersStats, getWorkersTenure, getWorkersWorkShift, getWorkersHiredEnded, getWorkersPie, getWorkersPyramid, } = require("./statisticsController");
+const { getCvOverview, getCvMonthly, getCvDistribution, getCvConversion, auditWorkersStats, getWorkersStats, prueba} = require("./statisticsController");
 
 
 
@@ -34,7 +34,7 @@ module.exports = {
     getDocumentation,
     requestSignature,confirmSignature,
     auditMissingFieldsInfoUser,auditMissingFieldsProgram,auditMissingFieldsDevice,auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram,auditMissingFieldsDocumentationDevice,auditMissingFieldsContractAndLeave,
-    getCvOverview,getCvMonthly,getCvDistribution, getCvConversion,auditWorkersStats,getWorkersPyramid,getWorkersPie,getWorkersHiredEnded,getWorkersWorkShift,getWorkersTenure,   
+    getCvOverview,getCvMonthly,getCvDistribution, getCvConversion,auditWorkersStats, getWorkersStats, prueba,
 
     main
 

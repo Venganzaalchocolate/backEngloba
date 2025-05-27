@@ -4,7 +4,6 @@ const router = express.Router();
 
 const {
     getPrograms,
-    getProgramID,
     postCreateProgram,
     ProgramPut,
     ProgramDeleteId,
