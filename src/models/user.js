@@ -213,9 +213,12 @@ const UserSchema = new Schema({
     // Correo electrónico del empleado
     email: {
         type: String,
+    },
+    email_personal: {
+        type: String,
         unique: true
     },
-    // Teléfono del empleado
+    // Teléfono del empleado privado
     phone: {
         type: String,
         required: true,

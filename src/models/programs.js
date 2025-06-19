@@ -42,6 +42,14 @@ const deviceSchema = new Schema({
         type:[Schema.Types.ObjectId],
         ref: 'Filedrive'
     },
+    groupWorkspace:{
+        type:String
+    },
+    
+    subGroupWorkspace:{
+        type:[String],
+        default:[]
+    }
 });
 
 const cronologySchema=new Schema({
@@ -108,7 +116,21 @@ const programSchema = new Schema({
         profile: { 
             type: String
         }
-      }
+      },
+    resindencial:{
+        type:Boolean,
+        default: false,
+    },    
+    
+    groupWorkspace:{
+        type:String
+    },
+
+    subGroupWorkspace:{
+        type:[String],
+        default:[]
+    }
+
 });
 
 module.exports = mongoose.model('Program', programSchema);

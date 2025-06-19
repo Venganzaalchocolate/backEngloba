@@ -28,15 +28,25 @@ const credentials = JSON.parse(
 // 2. Extraemos client_email y private_key del JSON
 const { client_email, private_key } = credentials;
 
+const SCOPES = [
+  'https://www.googleapis.com/auth/drive',                       // Drive
+  'https://www.googleapis.com/auth/admin.directory.orgunit',     // OUs (R/W)
+  'https://www.googleapis.com/auth/admin.directory.user',        // Users (R/W)
+  'https://www.googleapis.com/auth/admin.directory.group',       // Groups (R/W)
+  'https://www.googleapis.com/auth/admin.directory.group.member', // Group members (R/W)
+  'https://www.googleapis.com/auth/admin.directory.user.security'
+];
 // 3. Creamos la autenticación JWT con el 'subject'
+//ss
 const auth = new google.auth.JWT({
   email: client_email,
   key: private_key,
-  scopes: ['https://www.googleapis.com/auth/drive'],
+  scopes: SCOPES,
   subject: 'archi@engloba.org.es',  // aquí se “impersona” a este usuario
 });
 const drive = google.drive({ version: 'v3', auth });
 //hjbg
+const directory = google.admin({ version: 'directory_v1', auth });
 
 
 const deleteFileById = async (fileId) => {
@@ -1417,8 +1427,923 @@ function scheduleBackups() {
 
 
 
+const normalizeString = str =>
+  (str || '')
+    .toString()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // eliminar tildes
+    .replace(/\s+/g, '')             // eliminar espacios
+    .replace(/[^a-z0-9]/g, '');      // sólo letras y números
+
+    function buildUserEmail(user) {
+  const first = (user.firstName || '').trim().toLowerCase();
+  const last  = (user.lastName  || '').trim().toLowerCase();
+  // Normalizar sin tildes ni espacios
+  const normalizedFirst = first
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '');
+  const normalizedLast = last
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '');
+  return `${normalizedFirst}.${normalizedLast}@${DOMAIN}`;
+}
+
+const DOMAIN = 'engloba.org.es';
 
 
+
+async function emailExiste(email) {
+  try {
+    const result=await directory.users.get({ userKey: email });
+    // Si no lanza, es porque existe
+    return true;
+  } catch (err) {
+    if (err.code === 404) {
+      return false;
+    }
+    // Si es otro error, lo mostramos y lanzamos para que se note
+    console.error(`Error al comprobar existencia de ${email}:`, err.errors || err);
+    throw err;
+  }
+}
+
+
+
+
+
+// ————————————————————————————————————————————————————————————————————————
+// 3) Crear grupos de programa y anidar el subgrupo de directores
+// ————————————————————————————————————————————————————————————————————————
+async function crearGruposProgramasSinSubgrupos() {
+  const programs = await Program.find({ active: true }).lean();
+  console.log('--- Creación de grupos de programas (solo grupos principales) ---');
+
+  // Helper “get or insert”: devuelve siempre el objeto group
+  async function getOrCreateGroup(email, name, description) {
+    try {
+      const { data } = await directory.groups.get({ groupKey: email });
+      console.log(`ℹ️  Ya existía: ${email} (id ${data.id})`);
+      return data;
+    } catch (err) {
+      if (err.code === 404) {
+        const { data } = await directory.groups.insert({
+          requestBody: { email, name, description }
+        });
+        console.log(`✅ Creado: ${email} (id ${data.id})`);
+        return data;
+      }
+      throw err;
+    }
+  }
+
+  for (const prog of programs) {
+    const acro      = normalizeString(prog.acronym);
+    const email     = `${acro}@${DOMAIN}`;
+    const name      = `Programa: ${prog.acronym}`;
+    const desc      = `Grupo para el programa "${prog.acronym}"`;
+
+    // Crear o recuperar el grupo principal
+    const mainGroup = await getOrCreateGroup(email, name, desc);
+
+    // Guardar el id en groupWorkspace
+    await Program.findByIdAndUpdate(
+      prog._id,
+      { groupWorkspace: mainGroup.id },
+      { new: true }
+    );
+    console.log(`   → Document Program ${prog._id} actualizado con groupWorkspace: ${mainGroup.id}`);
+    console.log('--------------------------------------------------');
+  }
+
+  console.log('--- Fin creación programas (sin subgrupos) ---\n');
+}
+/**
+ * Reintenta crear/anidar únicamente los subgrupos de dirección
+ * para aquellos Program que no tengan aún ningún ID en subGroupWorkspace.
+ */
+
+/**
+ * Reintenta crear/anidar únicamente los subgrupos de dirección
+ * para aquellos Program que no tengan aún ningún ID en subGroupWorkspace,
+ * generando los nombres en minúsculas.
+ */
+/**
+ * Reintenta crear/anidar únicamente los subgrupos de dirección
+ * para aquellos Program que no tengan aún ningún ID en subGroupWorkspace,
+ * usando nombres sanitizados que eliminen los dos puntos y otros caracteres
+ * inválidos según los requisitos de la API (solo letras, números, espacios y guiones).
+ */
+async function crearSubgruposProgramasFallidos() {
+  console.log('--- Reintentar creación de subgrupos fallidos (nombres sanitizados) ---');
+
+  // 1) Solo programas activos sin subGroupWorkspace o con array vacío
+  const programs = await Program.find({
+    active: true,
+    $or: [
+      { subGroupWorkspace: { $exists: false } },
+      { subGroupWorkspace: { $size: 0 } }
+    ]
+  }).lean();
+
+  if (!programs.length) {
+    console.log('✅ No hay programas pendientes de subgrupo.');
+    return;
+  }
+
+  console.log(`ℹ️  Se procesarán ${programs.length} programas: ` +
+              programs.map(p => p.acronym).join(', '));
+
+  /**
+   * Sanitiza el displayName del grupo:
+   * - Quita acentos
+   * - Elimina todo excepto letras, números, espacios y guiones
+   * - Pasa a minúsculas
+   * - Recorta a maxLen (75) caracteres
+   */
+  function sanitizeGroupName(input, maxLen = 75) {
+    let s = input
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');       // quita diacríticos
+    s = s.replace(/[^0-9A-Za-z \-]/g, '');     // solo letras, dígitos, espacios y guiones
+    s = s.trim().toLowerCase();
+    if (s.length > maxLen) s = s.slice(0, maxLen).trim();
+    return s;
+  }
+
+  // Helper “get or insert” usando el name sanitizado
+  async function getOrCreateGroup(email, rawName, description) {
+    const name = sanitizeGroupName(rawName);
+    try {
+      const { data } = await directory.groups.get({ groupKey: email });
+      console.log(`ℹ️  Ya existía: ${email} (id ${data.id}, name="${name}")`);
+      return data;
+    } catch (err) {
+      if (err.code === 404) {
+        const { data } = await directory.groups.insert({
+          requestBody: { email, name, description }
+        });
+        console.log(`✅ Creado: ${email} (id ${data.id}, name="${name}")`);
+        return data;
+      }
+      throw err;
+    }
+  }
+
+  for (const prog of programs) {
+    const acro      = normalizeString(prog.acronym).toLowerCase();
+    const mainEmail = `${acro}@${DOMAIN}`;
+    const dirEmail  = `${acro}.dir@${DOMAIN}`;
+    const rawDirName = `Dirección ${prog.acronym}`;   // quitamos los dos puntos del raw
+    const dirDesc   = `Grupo de dirección para el programa "${prog.name}"`;
+
+
+    let dirGroup;
+    try {
+      console.log(rawDirName)
+      // 2) Crear o recuperar el subgrupo fallido
+      dirGroup = await getOrCreateGroup(dirEmail, rawDirName, dirDesc);
+    } catch (err) {
+      console.error(`❌ Error creando/verificando subgrupo ${dirEmail}:`, err.message);
+      continue;
+    }
+
+    // 3) Guardar el id del subgrupo (machacando) en subGroupWorkspace
+    try {
+      await Program.findByIdAndUpdate(
+        prog._id,
+        { $set: { subGroupWorkspace: [dirGroup.id] } },
+        { new: true }
+      );
+      console.log(`   → Program ${prog.acronym} actualizado subGroupWorkspace: [${dirGroup.id}]`);
+    } catch (err) {
+      console.error(`❌ Error guardando subGroupWorkspace para ${prog._id}:`, err.message);
+    }
+
+    // 4) Anidar el subgrupo en el grupo principal
+    try {
+      await directory.members.insert({
+        groupKey: mainEmail,
+        requestBody: { email: dirEmail, role: 'MEMBER', type: 'GROUP' }
+      });
+      console.log(`   → Anidado: ${dirEmail} en ${mainEmail}`);
+    } catch (err) {
+      if (err.code === 409) {
+        console.log(`   → Ya estaba anidado: ${dirEmail}`);
+      } else {
+        console.warn(`   ⚠️ Error anidando ${dirEmail} en ${mainEmail}:`, err.message);
+      }
+    }
+
+    console.log('--------------------------------------------------');
+  }
+
+  console.log('--- Fin reintento de subgrupos fallidos ---\n');
+}
+
+
+
+
+// ————————————————————————————————————————————————————————————————————————
+// 4) Crear grupos de dispositivos y subgrupos de dirección
+// ————————————————————————————————————————————————————————————————————————
+
+/**
+ * Crea en Workspace un grupo para cada dispositivo activo dentro de cada programa,
+ * y guarda su ID en el campo `devices.$.groupWorkspace` de cada subdocumento.
+ */
+async function crearGruposDispositivos() {
+  console.log('--- Creación de grupos para dispositivos de programas ---');
+
+  // 1) Busca todos los programas activos (sin lean para poder hacer updateOne)
+  const programs = await Program.find().lean();
+
+  // Sanitiza el displayName del grupo:
+  function sanitizeGroupName(input, maxLen = 75) {
+    let s = input
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')    // quita acentos
+      .replace(/[^0-9A-Za-z \-]/g, '')    // solo letras, dígitos, espacios y guiones
+      .trim();
+    if (s.length > maxLen) s = s.slice(0, maxLen).trim();
+    return s;
+  }
+
+  // Helper “get or insert”: devuelve siempre el objeto group
+  async function getOrCreateGroup(email, rawName, description) {
+    const name = sanitizeGroupName(rawName);
+    try {
+      const { data } = await directory.groups.get({ groupKey: email });
+      console.log(`ℹ️  Ya existía: ${email} (id ${data.id})`);
+      return data;
+    } catch (err) {
+      if (err.code === 404) {
+        const { data } = await directory.groups.insert({
+          requestBody: { email, name, description }
+        });
+        console.log(`✅ Creado: ${email} (id ${data.id}, name="${name}")`);
+        return data;
+      }
+      throw err;
+    }
+  }
+
+  for (const prog of programs) {
+    const progAcronym = normalizeString(prog.acronym).toLowerCase();
+    const progName    = prog.name;
+
+    // 2) Para cada dispositivo activo en el programa
+    for (const dev of prog.devices || []) {
+
+      // Determina email y displayName
+      const devSlug     = normalizeString(dev.name).toLowerCase().replace(/ /g, '-');
+      const email       = `${devSlug}@${DOMAIN}`;
+      const rawName     = `Dispositivo: ${dev.name}`;
+      const description = `Grupo para el dispositivo "${dev.name}" del programa "${progName}"`;
+
+      let group;
+      try {
+        // 3) Crear o recuperar el grupo en Workspace
+        group = await getOrCreateGroup(email, rawName, description);
+      } catch (err) {
+        console.error(`❌ Error creando/verificando grupo ${email}: ${err.message}`);
+        continue;
+      }
+
+      // 4) Guardar el ID en devices.$.groupWorkspace
+      try {
+        await Program.updateOne(
+          { _id: prog._id, "devices._id": dev._id },
+          { $set: { "devices.$.groupWorkspace": group.id } }
+        );
+        console.log(`   → Program ${prog.acronym}, dispositivo "${dev.name}" actualizado groupWorkspace: ${group.id}`);
+      } catch (err) {
+        console.error(`❌ Error guardando groupWorkspace para dispositivo ${dev.name}: ${err.message}`);
+      }
+    }
+
+    console.log('--------------------------------------------------');
+  }
+
+  console.log('--- Fin creación de grupos de dispositivos ---\n');
+}
+
+// Ejecutar la función cuando quieras:
+// crearGruposDispositivos().catch(err => console.error(err));
+
+
+
+
+async function listarTodosLosGrupos() {
+  const emails = new Set();
+  let pageToken = null;
+  do {
+    const res = await directory.groups.list({
+      customer: 'my_customer',
+      maxResults: 200,
+      pageToken,
+      orderBy: 'email'
+    });
+    const grupos = res.data.groups || [];
+    grupos.forEach(g => {
+      if (g.email) emails.add(g.email.toLowerCase());
+    });
+    pageToken = res.data.nextPageToken;
+  } while (pageToken);
+  return emails;
+}
+
+
+
+// ————————————————————————————————————————————————————————————————————————
+// 1) Lista de acrónimos de los programas que nos interesan
+// ————————————————————————————————————————————————————————————————————————
+
+const targetAcronyms = [
+  'CAI',
+  'CRB',
+  'DE',
+  'ISL',
+  '+18 JEM',
+  'COILS',
+  'PAI FSE',
+  'POISL',
+  'PAI LANZADERA',
+  'PAI CONCIERTO SOCIAL',
+  'CS',
+  'CAR',
+  'DAJMA',
+  'CMD',
+  'CAIP',
+  'PAIMAS'
+];
+
+// ————————————————————————————————————————————————————————————————————————
+// 2) Función principal: conectar a Mongo, localizar devices y traer usuarios
+// ————————————————————————————————————————————————————————————————————————
+const targetPositionId =new mongoose.Types.ObjectId('66a7653546af20840262d0f9');
+
+async function getUsersByProgramsAndAddToGroups() {
+  try {
+    // 5.1) Inicializar Admin SDK
+   
+
+    // 5.3) Buscar todos los programas activos cuyos acrónimos estén en la lista
+    const programas = await Program.find({
+      active: true,
+      acronym: { $in: targetAcronyms }
+    }).lean();
+
+    if (!programas.length) {
+      console.log('No se encontraron programas activos con esos acrónimos.');
+      process.exit(0);
+    }
+
+    // 5.4) Extraer los ObjectId de todos los devices de esos programas
+    const deviceIds = [];
+    const deviceIdToName = new Map(); // mapa deviceId → normalizedDeviceName
+    programas.forEach(prog => {
+      if (Array.isArray(prog.devices)) {
+        prog.devices.forEach(dev => {
+          if (dev._id && dev.name) {
+            deviceIds.push(dev._id);
+            deviceIdToName.set(dev._id.toString(), normalizeString(dev.name));
+          }
+        });
+      }
+    });
+
+    if (!deviceIds.length) {
+      console.log('Los programas encontrados no tienen dispositivos asociados.');
+      process.exit(0);
+    }
+
+    // 5.5) Buscar usuarios cuyo dispositiveNow contenga un elemento que cumpla:
+    //      - device ∈ deviceIds
+    //      - position == targetPositionId
+    const usuarios = await User.find({
+      dispositiveNow: {
+        $elemMatch: {
+          device: { $in: deviceIds },
+          position: targetPositionId
+        }
+      }
+    })
+      .select('firstName lastName email dispositiveNow') // necesitamos email y dispositiveNow
+      .lean();
+
+    if (!usuarios.length) {
+      console.log('No se encontraron trabajadores con esos dispositivos y posición dada.');
+      process.exit(0);
+    }
+
+    console.log(`✅ Se encontraron ${usuarios.length} trabajadores a procesar:\n`);
+
+    // 5.6) Para cada usuario, añadirlo a su grupo de dispositivo correspondiente
+    for (const user of usuarios) {
+      const fullName = `${user.firstName} ${user.lastName || ''}`.trim();
+      const firstNameNormalized=normalizeString(user.firstName)
+      const lastNameNormalized=normalizeString(user.lastName)
+      const userEmail = `${firstNameNormalized}.${lastNameNormalized}@${DOMAIN}`;
+      if (!userEmail) {
+        console.warn(`⚠️ Usuario "${fullName}" no tiene email; se omite.`);
+        continue;
+      }
+
+      // Filtrar los periodos que cumplan device ∈ deviceIds y position == targetPositionId
+      const matchingPeriods = (user.dispositiveNow || []).filter(
+        p =>
+          p.device &&
+          deviceIds.some(id => id.equals(p.device)) &&
+          p.position &&
+          p.position.equals(targetPositionId)
+      );
+
+      if (!matchingPeriods.length) {
+        continue;
+      }
+
+      // Por cada periodo coincidente, determinar el grupo y añadir al usuario
+      for (const period of matchingPeriods) {
+        const deviceIdStr = period.device.toString();
+        const normalizedDeviceName = deviceIdToName.get(deviceIdStr);
+        const groupEmail = `${normalizedDeviceName}@${DOMAIN}`;
+
+        console.log(`→ Añadiendo "${userEmail}" al grupo "${groupEmail}" ...`);
+        try {
+          await directory.members.insert({
+            groupKey: groupEmail,
+            requestBody: {
+              email: userEmail,
+              role: 'MEMBER',
+              type: 'USER'
+            }
+          });
+          console.log(`   ✅ "${userEmail}" añadido a "${groupEmail}".`);
+        } catch (err) {
+          const reason = err.errors?.[0]?.reason || err.code;
+          if (reason === 'duplicate') {
+            console.warn(`   ⚠️ "${userEmail}" ya es miembro de "${groupEmail}".`);
+          } else {
+            console.error(
+              `   ❌ Error añadiendo "${userEmail}" a "${groupEmail}":`,
+              JSON.stringify(err.errors || err, null, 2)
+            );
+          }
+        }
+      }
+
+      console.log('---');
+    }
+
+    console.log('\n✅ Todos los usuarios han sido procesados.');
+    process.exit(0);
+  } catch (err) {
+    console.error('❌ Error en getUsersByProgramsAndAddToGroups():', err);
+    process.exit(1);
+  }
+}
+
+// getUsersByProgramsAndAddToGroups();
+
+async function checkAllUsersInDeviceGroups() {
+  try {
+   
+    // 4.3) Obtener todos los programas activos con acrónimo en targetAcronyms
+    const programas = await Program.find({
+      active: true,
+      acronym: { $in: targetAcronyms }
+    }).lean();
+
+    if (!programas.length) {
+      console.log('No se encontraron programas activos con esos acrónimos.');
+      process.exit(0);
+    }
+
+    // 4.4) Construir mapa deviceId → groupEmail
+    const deviceIdToGroup = new Map();
+    programas.forEach(prog => {
+      if (Array.isArray(prog.devices)) {
+        prog.devices.forEach(dev => {
+          if (dev._id && dev.name) {
+            const normalized = normalizeString(dev.name);
+            const groupEmail = `${normalized}@${DOMAIN}`;
+            deviceIdToGroup.set(dev._id.toString(), groupEmail);
+          }
+        });
+      }
+    });
+
+    if (!deviceIdToGroup.size) {
+      console.log('Los programas no contienen dispositivos.');
+      process.exit(0);
+    }
+
+    // 4.5) Buscar usuarios cuyo dispositiveNow tenga:
+    //      - device ∈ deviceIds
+    //      - position == targetPositionId
+    const deviceIds = Array.from(deviceIdToGroup.keys()).map(id =>
+      new mongoose.Types.ObjectId(id)
+    );
+    const usuarios = await User.find({
+      dispositiveNow: {
+        $elemMatch: {
+          device: { $in: deviceIds },
+          position: targetPositionId
+        }
+      }
+    })
+      .select('firstName lastName email dispositiveNow')
+      .lean();
+
+    if (!usuarios.length) {
+      console.log('No se encontraron trabajadores con esos dispositivos y posición dada.');
+      process.exit(0);
+    }
+
+    // 4.6) Construir lista de usuarios esperados por cada grupo de dispositivo
+    //    Map: groupEmail → Set of userEmails
+    const expectedMap = new Map();
+    usuarios.forEach(u => {
+      const firstNameNormalized=normalizeString(u.firstName)
+      const lastNameNormalized=normalizeString(u.lastName)
+      const userEmail = `${firstNameNormalized}.${lastNameNormalized}@${DOMAIN}`;
+      const email = userEmail;
+      if (!email) return;
+      (u.dispositiveNow || []).forEach(p => {
+        const devId = p.device?.toString();
+        if (
+          devId &&
+          deviceIdToGroup.has(devId) &&
+          p.position?.equals(targetPositionId)
+        ) {
+          const groupEmail = deviceIdToGroup.get(devId);
+          if (!expectedMap.has(groupEmail)) {
+            expectedMap.set(groupEmail, new Set());
+          }
+          expectedMap.get(groupEmail).add(email.toLowerCase());
+        }
+      });
+    });
+
+    // 4.7) Para cada grupoEmail en expectedMap, obtener miembros reales de ese grupo
+    console.log('--- Comprobando usuarios faltantes en cada grupo de dispositivo ---');
+    for (const [groupEmail, expectedSet] of expectedMap) {
+      // Obtener miembros actuales (solo emails)
+      const actualSet = new Set();
+      let pageToken = null;
+      do {
+        const res = await directory.members.list({
+          groupKey: groupEmail,
+          maxResults: 200,
+          pageToken
+        });
+        const members = res.data.members || [];
+        members.forEach(m => {
+          if (m.email) actualSet.add(m.email.toLowerCase());
+        });
+        pageToken = res.data.nextPageToken;
+      } while (pageToken);
+
+      // Comparar expected vs actual: faltantes = expected – actual
+      const missing = [];
+      expectedSet.forEach(email => {
+        if (!actualSet.has(email)) {
+          missing.push(email);
+        }
+      });
+
+      // Imprimir resultados para este grupo
+      if (!missing.length) {
+        console.log(`✅ ${groupEmail}: están todos los usuarios.`);
+      } else {
+        console.log(`❌ ${groupEmail}: faltan ${missing.length} usuarios:`);
+        missing.forEach(e => console.log(`   • ${e}`));
+      }
+    }
+
+    console.log('--- Fin de la comprobación ---');
+    process.exit(0);
+  } catch (err) {
+    console.error('❌ Error en checkAllUsersInDeviceGroups():', err);
+    process.exit(1);
+  }
+}
+
+// ————————————————————————————————————————————————————————————————————————
+// 5) Ejecutar la función
+// ————————————————————————————————————————————————————————————————————————
+
+// checkAllUsersInDeviceGroups();
+async function addResponsiblesToDirGroups() {
+  try {
+    
+
+    // 4.3) Cargar todos los programas activos, populando responsables y responsables de device
+    //       (responsible y devices.responsible son arrays de ObjectId referenciando a User)
+    const programas = await Program.find({ active: true })
+      .populate('responsible', 'firstName lastName')
+      .populate({
+        path: 'devices.responsible',
+        select: 'firstName lastName',
+        model: 'User'
+      })
+      .lean();
+
+    if (!programas.length) {
+      console.log('No se encontraron programas activos.');
+      process.exit(0);
+    }
+
+    // 4.4) Procesar cada programa
+    for (const prog of programas) {
+      const acronym = prog.acronym;
+      const normalizedAcronym = normalizeString(acronym);
+      const progDirGroup = `${normalizedAcronym}.dir@${DOMAIN}`;
+
+      // 4.4.1) Responsables del programa → agregarlos a progDirGroup
+      if (Array.isArray(prog.responsible) && prog.responsible.length) {
+        for (const user of prog.responsible) {
+          if (!user.firstName || !user.lastName) continue;
+          const userEmail = buildUserEmail(user);
+          console.log(`→ Añadiendo responsable de programa "${userEmail}" a "${progDirGroup}"`);
+          try {
+            await directory.members.insert({
+              groupKey: progDirGroup,
+              requestBody: {
+                email: userEmail,
+                role: 'MEMBER',
+                type: 'USER'
+              }
+            });
+            console.log(`   ✅ ${userEmail} añadido a ${progDirGroup}`);
+          } catch (err) {
+            const reason = err.errors?.[0]?.reason || err.code;
+            if (reason === 'duplicate') {
+              console.warn(`   ⚠️ ${userEmail} ya es miembro de ${progDirGroup}`);
+            } else {
+              console.error(`   ❌ Error al añadir ${userEmail} a ${progDirGroup}:`, JSON.stringify(err.errors || err, null, 2));
+            }
+          }
+        }
+      } else {
+        console.log(`ℹ️ Programa "${acronym}" no tiene responsables definidos.`);
+      }
+
+      // 4.4.2) Responsables de cada dispositivo del programa → a <normalizedDevice>.dir@DOMAIN
+      if (Array.isArray(prog.devices) && prog.devices.length) {
+        for (const dev of prog.devices) {
+          if (!dev.name) continue;
+          const normalizedDevice = normalizeString(dev.name);
+          const devDirGroup = `${normalizedDevice}.dir@${DOMAIN}`;
+
+          if (Array.isArray(dev.responsible) && dev.responsible.length) {
+            for (const user of dev.responsible) {
+              if (!user.firstName || !user.lastName) continue;
+              const userEmail = buildUserEmail(user);
+              console.log(`→ Añadiendo responsable de dispositivo "${userEmail}" a "${devDirGroup}"`);
+              try {
+                await directory.members.insert({
+                  groupKey: devDirGroup,
+                  requestBody: {
+                    email: userEmail,
+                    role: 'MEMBER',
+                    type: 'USER'
+                  }
+                });
+                console.log(`   ✅ ${userEmail} añadido a ${devDirGroup}`);
+              } catch (err) {
+                const reason = err.errors?.[0]?.reason || err.code;
+                if (reason === 'duplicate') {
+                  console.warn(`   ⚠️ ${userEmail} ya es miembro de ${devDirGroup}`);
+                } else {
+                  console.error(`   ❌ Error al añadir ${userEmail} a ${devDirGroup}:`, JSON.stringify(err.errors || err, null, 2));
+                }
+              }
+            }
+          } else {
+            console.log(`ℹ️ Dispositivo "${dev.name}" no tiene responsables definidos.`);
+          }
+        }
+      }
+
+      console.log('--------------------------------------------------');
+    }
+
+    console.log('✅ Todos los responsables procesados.');
+    process.exit(0);
+  } catch (err) {
+    console.error('❌ Error en addResponsiblesToDirGroups():', err);
+    process.exit(1);
+  }
+}
+
+// 5) Ejecutar la función
+// addResponsiblesToDirGroups();
+
+
+async function deleteAndRecreateResidencialAmanaNorte() {
+
+
+  // 5) Anidar el subgrupo dentro del grupo principal
+  try {
+    await directory.members.insert({
+      groupKey: 'residencialamanaalmerianorte@engloba.org.es',
+      requestBody: {
+        email: 'residencialamanaalmerianorte.dir@engloba.org.es',
+        role: 'MEMBER',
+        type: 'GROUP'
+      }
+    });
+    
+  } catch (err) {
+    if (err.errors?.[0]?.reason === 'duplicate') {
+    
+    } else {
+      
+    }
+  }
+
+  console.log('✅ Operación completada: grupos borrados y recreados con la nomenclatura correcta.');
+}
+
+// Ejecutar la función
+// // deleteAndRecreateResidencialAmanaNorte();
+// Helper global — ahora lo ven todos
+function sanitizeGroupName(str, maxLen = 75) {
+  return (str || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')   // quita tildes
+    .replace(/[^0-9A-Za-z \-]/g, '')                    // solo letras-dígitos-espacios-guiones
+    .trim()
+    .slice(0, maxLen)
+    .toLowerCase();
+}
+
+const { Types: { ObjectId } } = require('mongoose');
+/* ─── 1. Mapa posición → correo de grupo ─────────────────────────── */
+const POSITION_TO_GROUP = {
+  '66a7653546af20840262d0f9': 'englobaasociacion.psico@engloba.org.es',
+  '66a7652046af20840262d0dc': 'englobaasociacion.trab@engloba.org.es',
+  '66a7650f46af20840262d0c1': 'englobaasociacion.edu@engloba.org.es',
+};
+
+
+const posIds   = Object.keys(POSITION_TO_GROUP).map(id => new ObjectId(id));
+
+function buildUserEmail(user) {
+  const first = normalizeString(user.firstName);
+  const last  = normalizeString(user.lastName);
+  return `${first}.${last}@${DOMAIN}`;   // ← SIEMPRE esta forma
+}
+
+/* ─── 2. Función principal ───────────────────────────────────────── */
+async function syncGenericAssociationGroups() {
+  try {
+    console.log('\n┏━━━━━━━━ Sincronizando grupos genéricos de asociación ━━━━━━━━');
+
+    /* 2.1  traer usuarios con alguna de las posiciones */
+    const users = await User.find({
+      dispositiveNow: {
+        $elemMatch: { position: { $in: posIds } }
+      }
+    }).select('firstName lastName email dispositiveNow').lean();
+
+    if (!users.length) {
+      console.log('No hay usuarios para procesar. Fin.');
+      return;
+    }
+
+    /* 2.2  construir mapa group → Set<email> esperados */
+    const expected = new Map();                              // groupEmail → Set
+    for (const user of users) {
+      const uMail = buildUserEmail(user);
+      if (!uMail.includes('@')) continue;                    // descarta sin email
+      for (const hp of user.dispositiveNow) {
+        const posId = hp.position?.toString();
+        const gMail = POSITION_TO_GROUP[posId];
+        if (!gMail) continue;
+        if (!expected.has(gMail)) expected.set(gMail, new Set());
+        expected.get(gMail).add(uMail);
+      }
+    }
+
+    /* 2.3  procesar cada grupo */
+    for (const [groupEmail, wantSet] of expected) {
+      console.log(`\nGrupo: ${groupEmail}`);
+
+      /* miembros actuales */
+      const haveSet = new Set();
+      let page = null;
+      do {
+        const { data } = await directory.members.list({
+          groupKey: groupEmail,
+          maxResults: 200,
+          pageToken: page
+        });
+        (data.members || []).forEach(m => haveSet.add(m.email.toLowerCase()));
+        page = data.nextPageToken;
+      } while (page);
+
+      /* diferencias */
+      const missing = [...wantSet].filter(e => !haveSet.has(e));
+      if (!missing.length) {
+        console.log('  ✓ Todos los usuarios ya están.');
+        continue;
+      }
+
+      /* añadir los que faltan */
+      for (const email of missing) {
+        try {
+          await directory.members.insert({
+            groupKey: groupEmail,
+            requestBody: { email, role: 'MEMBER', type: 'USER' }
+          });
+          console.log(`  + Añadido: ${email}`);
+        } catch (err) {
+          const dup = err.errors?.[0]?.reason === 'duplicate';
+          if (dup) console.log(`  · Ya estaba: ${email}`);
+          else console.error(`  ! Error con ${email}: ${err.message}`);
+        }
+      }
+    }
+
+    console.log('\n✓ Sincronización completada.\n');
+  } catch (err) {
+    console.error('✖︎ Falló la sincronización:', err);
+  }
+}
+
+
+async function findDevicesWithoutWorkspaceGroup() {
+  console.log('\n┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('┃ AUDITORÍA: Dispositivos sin grupo raíz');
+  console.log('┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+  // 1) Recuperar solo lo necesario de todos los Program activos
+  const programs = await Program.find()
+    .select('acronym devices.name devices.active devices.groupWorkspace devices._id')
+    .lean();
+
+  const missing = [];     // dispositivos sin groupWorkspace
+  const broken  = [];     // groupWorkspace inválido
+
+  // 2) Revisar programa por programa
+  for (const prog of programs) {
+    console.log('\n✓ programa\n');
+    const acr = prog.acronym;
+
+    for (const dev of prog.devices || []) {               // saltar dispositivos inactivos
+
+      if (!dev.groupWorkspace) {                // Caso 1: sin grupo
+        missing.push({
+          progId : prog._id,
+          program: acr,
+          devId  : dev._id,
+          device : dev.name,
+        });
+        continue;
+      }
+
+      // Caso 2: existe valor → comprobar si el grupo sigue vivo
+      try {
+        await directory.groups.get({ groupKey: dev.groupWorkspace });
+      } catch (err) {
+        const reason = err?.errors?.[0]?.reason;
+        if (reason === 'notFound' || err.code === 404 || err.code === 403) {
+          broken.push({
+            progId : prog._id,
+            program: acr,
+            devId  : dev._id,
+            device : dev.name,
+            saved  : dev.groupWorkspace
+          });
+        } else {
+          // otro error inesperado → propagar
+          throw err;
+        }
+      }
+    }
+  }
+
+  // 3) Informe resumen
+  console.log(`\n• Dispositivos SIN grupo asignado: ${missing.length}`);
+  missing.forEach(d => console.log(`   – ${d.program} › ${d.device}`));
+
+  console.log(`\n• Dispositivos con grupo ROTO:     ${broken.length}`);
+  broken.forEach(d =>
+    console.log(`   – ${d.program} › ${d.device}  → ${d.saved}`)
+  );
+
+  console.log('\n✓ Auditoría completada.\n');
+  return { missing, broken };
+}
+
+// findDevicesWithoutWorkspaceGroup();
+
+const normalize = s =>
+  (s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '')
+    .replace(/[^a-z0-9]/g, '');
 
 
 

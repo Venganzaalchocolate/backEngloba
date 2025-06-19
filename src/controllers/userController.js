@@ -4,6 +4,8 @@ const mongoose = require('mongoose');
 const { validateRequiredFields, createAccentInsensitiveRegex } = require('../utils/utils');
 const { uploadFileToDrive, getFileById, deleteFileById, gestionAutomaticaNominas, obtenerCarpetaContenedora } = require('./googleController');
 const { getFileCv } = require('./ovhController');
+const { createUserWS, deleteUserByEmailWS } = require('./workspaceController');
+
 
 
 // Capitaliza cada palabra de un string
@@ -155,7 +157,7 @@ const postCreateUser = async (req, res) => {
     role,
     firstName: toTitleCase(firstName), // Capitalizar
     lastName: toTitleCase(lastName),   // Capitalizar
-    email: email.toLowerCase(),       // Convertir a minúsculas
+    email_personal: email.toLowerCase(),       // Convertir a minúsculas
     phone,
     hiringPeriods: newHiring,
     dispositiveNow: newHiring,
@@ -208,8 +210,13 @@ const postCreateUser = async (req, res) => {
 
   try {
     // Intentar crear el usuario
-    const newUser = await User.create(userData)
+    let newUser = await User.create(userData)
 
+    const userWorkspace=await createUserWS(newUser._id)
+    if(userWorkspace?.email){
+    newUser.email = userWorkspace?.email;
+    await newUser.save()
+    }
     // Responder con el usuario guardado
     response(res, 200, newUser);
 
@@ -223,6 +230,7 @@ const postCreateUser = async (req, res) => {
         400
       );
     }
+    console.log(error)
     // Cualquier otro error
     throw new ClientError('Error al crear el usuario', 500);
   }
@@ -689,12 +697,15 @@ const UserDeleteId = async (req, res) => {
       }
     }
 
+    const deleteUserWorkspace=await deleteUserByEmailWS(userToDelete.email)
+    if(deleteUserWorkspace.deleted){
+      const messageDelete = await User.deleteOne({ _id: id });
+      response(res, 200, messageDelete);
+    } else {
+      throw new ClientError(res, 400, 'No se ha podido borrar al usuario en workspace por lo tanto no se ha borrado al empleado')
+    }
     // 4. Si todos los archivos se borraron correctamente,
     //    ahora sí procedemos a eliminar el usuario en la BD
-    const messageDelete = await User.deleteOne({ _id: id });
-
-    // 5. Retornar respuesta
-    response(res, 200, messageDelete);
 
   } catch (error) {
 
@@ -1444,149 +1455,26 @@ const hirings = async (req, res) => {
 
 };
 
-
-
-const delPayroll = async (idUser, idPayroll) => {
+const syncEmailPersonal = async () => {
   try {
-
-    const result = await User.findByIdAndUpdate(
-      idUser,
-      { $pull: { payrolls: { _id: idPayroll } } },
-      { new: true }
-    )
-    return result;
-
-
-
-
-  } catch (error) {
-    return false;
-  }
-}
-
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-
-/**
- * Exporta un CSV compatible con Excel en español (UTF-8 con BOM y separador ;)
- * @param {Array} users - Lista de usuarios a exportar
- * @param {string} filename - Nombre del archivo (por defecto: usuarios.csv)
- */
-const exportUsersToCSV = (users, filename = 'usuarios.csv') => {
-  const headers = ['Nombre', 'Apellidos', 'DNI', 'Apafa', 'Tipos de Excedencia'];
-
-  const rows = users.map(user => {
-    const leaveTypes = (user.leaveTypeNames || []).join(' | ');
-    return [
-      user.firstName,
-      user.lastName,
-      user.dni,
-      user.apafa ? 'Sí' : 'No',
-      leaveTypes
-    ].join(';');
-  });
-
-  const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\n'); // BOM + CSV
-
-  const desktopPath = path.join(os.homedir(), 'Desktop', filename);
-  fs.writeFileSync(desktopPath, csvContent, { encoding: 'utf8' });
-
-  console.log(`✅ CSV exportado correctamente en: ${desktopPath}`);
-};
-
-const findUsersWithoutPayrollAndGroupByLeavePeriods = async (month, year) => {
-  if (!Number.isInteger(month) || month < 1 || month > 12) {
-    throw new Error('Mes no válido (1‑12)');
-  }
-  if (!Number.isInteger(year) || year < 2000) {
-    throw new Error('Año no válido');
-  }
-
-  const users = await User.find({
-    employmentStatus: 'activo',
-    apafa: false,
-    payrolls: {
-      $not: {
-        $elemMatch: {
-          payrollMonth: month,
-          payrollYear: year
+    const result = await User.updateMany(
+      { email: { $exists: true, $ne: null } },
+      [
+        {
+          $set: {
+            email_personal: "$email"
+          }
         }
-      }
-    },
-    dispositiveNow: { $exists: true, $not: { $size: 0 } }
-  })
-    .select('firstName lastName dni dispositiveNow apafa')
-    .populate('dispositiveNow.leavePeriods.leaveType')
-    .lean();
-
-  const withoutLeavePeriods = [];
-  const withLeavePeriods = [];
-
-  for (const user of users) {
-    const dispositives = user.dispositiveNow || [];
-
-    // Extraemos todos los nombres de leaveType si existen
-    const leaveTypeNames = dispositives.flatMap(p =>
-      (p.leavePeriods || [])
-        .map(lp => lp.leaveType?.name)
-        .filter(Boolean) // solo si existe
+      ]
     );
 
-    const userSummary = {
-      firstName: user.firstName,
-      lastName: user.lastName,
-      dni: user.dni,
-      apafa: user.apafa,
-      leaveTypeNames,
-    };
-
-    if (leaveTypeNames.length > 0) {
-      withLeavePeriods.push(userSummary);
-    } else {
-      withoutLeavePeriods.push(userSummary);
-    }
+   console.log( {
+      message: `Actualizados ${result.modifiedCount} usuarios`,
+    });
+  } catch (error) {
+    throw new ClientError('Error al actualizar los emails personales', 500);
   }
-  console.table(withoutLeavePeriods)
-  console.table(withLeavePeriods)
-  return {
-    withoutLeavePeriods,
-    withLeavePeriods,
-  };
 };
-
-
-
-const findUsersWithoutDispositiveNow = async () => {
-
-  const usersWithoutDevice = await User.aggregate([
-    {
-      $match: {
-        $expr: {
-          $eq: [
-            { $size: { $ifNull: ['$dispositiveNow', []] } },
-            0
-          ]
-        }
-      }
-    },
-    { $project: { firstName: 1, lastName: 1, dni: 1, dispositiveNow: 1 } }
-  ]);
-  return usersWithoutDevice
-};
-
-const findUsersWithDispositiveNowAsObjectId = async () => {
-  const users=await User.find({
-    dispositiveNow: {
-      $elemMatch: { $type: 'objectId' } // ← al menos un ObjectId puro
-    }
-  })
-  .select('firstName lastName dni dispositiveNow')
-  .lean();
-
-};
-
-
 
 
 module.exports = {
