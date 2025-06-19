@@ -13,6 +13,7 @@ const enumsRoutes = require('./routes/enumsRoutes');
 const documentationRoutes=require('./routes/documentationRoutes')
 const auditRoutes=require('./routes/auditRoutes')
 const statisticsRoutes=require('./routes/statisticsRoutes')
+const workspaceRoutes=require('./routes/workspaceRoutes')
 const { connectToDatabase } = require('./database/connect');
 require('./controllers/cronScheduleController');
 
@@ -55,6 +56,7 @@ app.use('/api', enumsRoutes);
 app.use('/api', documentationRoutes)
 app.use('/api', auditRoutes)
 app.use('/api', statisticsRoutes);
+app.use('/api', workspaceRoutes);
 
 // Middleware para manejar rutas no encontradas (404)
 app.use((req, res) => {

@@ -1,8 +1,17 @@
 const nodemailer = require('nodemailer');
+const { google } = require('googleapis');
 
 const user=process.env.EMAIL
 const pass=process.env.EMAIL_PASS
 const host=process.env.EMAIL_HOST
+
+// El mismo JSON que ya usas para Drive/Admin SDK
+const credentials = JSON.parse(
+  Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString('utf-8')
+);
+const { client_email, private_key } = credentials;
+
+
 
 /**
  * Genera una plantilla HTML básica para correos.
@@ -131,6 +140,9 @@ async function sendEmail(to, subject, text, html) {
 
 // // Ejemplo de uso
 //sendEmail('comunicacion@engloba.org.es', 'prueba', 'Cambio de contraseña', '<div>pepe</div>');
+
+
+
 
 
 module.exports = {

@@ -10,7 +10,6 @@
     "express-rate-limit": "^7.4.0",
     "fs": "^0.0.1-security",
     "gauge": "^5.0.2",
-    "glob": "^11.0.2",
     "googleapis": "^148.0.0",
     "inflight": "^1.0.6",
     "isomorphic-fetch": "^3.0.0",
