@@ -4,6 +4,8 @@ const mongoose = require('mongoose');
 const { validateRequiredFields, createAccentInsensitiveRegex } = require('../utils/utils');
 const { uploadFileToDrive, getFileById, deleteFileById, gestionAutomaticaNominas, obtenerCarpetaContenedora } = require('./googleController');
 const { getFileCv } = require('./ovhController');
+const { createUserWS, deleteUserByEmailWS } = require('./workspaceController');
+
 
 
 // Capitaliza cada palabra de un string
@@ -155,7 +157,7 @@ const postCreateUser = async (req, res) => {
     role,
     firstName: toTitleCase(firstName), // Capitalizar
     lastName: toTitleCase(lastName),   // Capitalizar
-    email: email.toLowerCase(),       // Convertir a minúsculas
+    email_personal: email.toLowerCase(),       // Convertir a minúsculas
     phone,
     hiringPeriods: newHiring,
     dispositiveNow: newHiring,
@@ -208,8 +210,13 @@ const postCreateUser = async (req, res) => {
 
   try {
     // Intentar crear el usuario
-    const newUser = await User.create(userData)
+    let newUser = await User.create(userData)
 
+    const userWorkspace=await createUserWS(newUser._id)
+    if(userWorkspace?.email){
+    newUser.email = userWorkspace?.email;
+    await newUser.save()
+    }
     // Responder con el usuario guardado
     response(res, 200, newUser);
 
@@ -223,6 +230,7 @@ const postCreateUser = async (req, res) => {
         400
       );
     }
+    console.log(error)
     // Cualquier otro error
     throw new ClientError('Error al crear el usuario', 500);
   }
@@ -689,12 +697,15 @@ const UserDeleteId = async (req, res) => {
       }
     }
 
+    const deleteUserWorkspace=await deleteUserByEmailWS(userToDelete.email)
+    if(deleteUserWorkspace.deleted){
+      const messageDelete = await User.deleteOne({ _id: id });
+      response(res, 200, messageDelete);
+    } else {
+      throw new ClientError(res, 400, 'No se ha podido borrar al usuario en workspace por lo tanto no se ha borrado al empleado')
+    }
     // 4. Si todos los archivos se borraron correctamente,
     //    ahora sí procedemos a eliminar el usuario en la BD
-    const messageDelete = await User.deleteOne({ _id: id });
-
-    // 5. Retornar respuesta
-    response(res, 200, messageDelete);
 
   } catch (error) {
 
@@ -1444,7 +1455,26 @@ const hirings = async (req, res) => {
 
 };
 
+const syncEmailPersonal = async () => {
+  try {
+    const result = await User.updateMany(
+      { email: { $exists: true, $ne: null } },
+      [
+        {
+          $set: {
+            email_personal: "$email"
+          }
+        }
+      ]
+    );
 
+   console.log( {
+      message: `Actualizados ${result.modifiedCount} usuarios`,
+    });
+  } catch (error) {
+    throw new ClientError('Error al actualizar los emails personales', 500);
+  }
+};
 
 
 module.exports = {
