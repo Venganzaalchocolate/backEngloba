@@ -144,14 +144,18 @@ function buildUserEmail(user) {
 
 
 //------------------USUARIOS---------------------
-const createUserWS = async (userId) => {
+const createUserWS = async (userId, contador=0) => {
 
   if (!userId) throw new ClientError('Falta el ID del usuario', 400);
 
   const user = await User.findById(userId).lean();
   if (!user) throw new ClientError('Usuario no encontrado', 404);
 
-  const userEmail = buildUserEmail(user);
+  let userEmail = buildUserEmail(user);
+  if (contador > 0) {
+    const [local, domain] = userEmail.split('@');
+    userEmail = `${local}${contador}@${domain}`; // Ej: juan.perez1@dominio.com
+  }
   const givenName = (user.firstName || '').trim();
   const familyName = (user.lastName || '').trim();
 
@@ -168,15 +172,16 @@ const createUserWS = async (userId) => {
       }
     });
 
-    response(res, 201, {
+    return {
       id: data.id,
       email: data.primaryEmail,
       name: data.name.fullName,
-    });
+    };
   } catch (err) {
     const reason = err?.errors?.[0]?.reason;
     if (reason === 'duplicate') {
-      throw new ClientError('Ya existe un usuario con ese email en Workspace', 409);
+      // Llamada recursiva, importante usar return
+      return await createUserWS(userId, contador + 1);
     }
     throw err;
   }
@@ -202,6 +207,29 @@ const deleteUserWS = async (req, res) => {
   });
 
   response(res, 200, { email: userEmail, deleted: true });
+};
+  
+const deleteUserByEmailWS = async (email) => {
+
+
+  if (!email || typeof email !== 'string') {
+    throw new ClientError('Email requerido y debe ser válido', 400);
+  }
+
+  await directory.users.delete({
+    userKey: email
+  }).catch(err => {
+    const reason = err?.errors?.[0]?.reason;
+
+    if (reason === 'notFound') {
+      throw new ClientError('Usuario no encontrado en Workspace', 404);
+    }
+
+    // Otros errores se propagan
+    throw err;
+  });
+
+  return { email, deleted: true };
 };
 
 const updateUserWS = async (req, res) => {
@@ -697,4 +725,5 @@ module.exports = {
   createGroupWS: catchAsync(createGroupWS),
   deleteMemberGroupWS: catchAsync(deleteMemberGroupWS),
   deleteGroupWS: catchAsync(deleteGroupWS),
+
 };
