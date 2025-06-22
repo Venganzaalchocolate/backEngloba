@@ -24,7 +24,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/admin.directory.user.security',
   'https://www.googleapis.com/auth/drive',                       // Drive
   'https://www.googleapis.com/auth/apps.groups.settings',
-  'https://www.googleapis.com/auth/apps.groups.migration'
+  'https://www.googleapis.com/auth/apps.groups.migration',
 ];
 // 3. Creamos la autenticación JWT con el 'subject'
 //ss
@@ -95,25 +95,6 @@ async function patchWithBackoff(email) {
   console.error(`❌ No se pudo actualizar ${email} tras 6 intentos`);
 }
 
-/** Activa Conversation history en todos los grupos del dominio. */
-async function enableArchiveForAll() {
-  console.log('🗂  Descargando lista de grupos…');
-  const groups = await listAllGroups();
-  console.log(`→ ${groups.length} grupos encontrados\n`);
-
-  for (const { email } of groups) {
-    await patchWithBackoff(email);             // intenta hasta éxito o error final
-    await new Promise(r => setTimeout(r, 250)); // limitador: 4 req/s ≈ seguro
-  }
-
-  console.log('\n🏁 Proceso terminado');
-}
-
-// -----------------------------------------------------------------------------
-//Lánzalo:
-// enableArchiveForAll().catch(console.error);
-
-
 
 function normalizeString(str) {
   if (!str || typeof str !== 'string') return '';
@@ -131,6 +112,7 @@ function normalizeString(str) {
 // ————————————————————————————————————————————————————————————————————————
 
 function buildUserEmail(user) {
+  if(!user) return ''
   const first = (user.firstName || '').trim().toLowerCase();
   const last = (user.lastName || '').trim().toLowerCase();
   const normalizedFirst = first
@@ -187,31 +169,8 @@ const createUserWS = async (userId, contador=0) => {
   }
 };
 
-const deleteUserWS = async (req, res) => {
-  const { userId } = req.body;
-  if (!userId) throw new ClientError('Falta el ID del usuario', 400);
-
-  const user = await User.findById(userId).lean();
-  if (!user) throw new ClientError('Usuario no encontrado', 404);
-
-  const userEmail = buildUserEmail(user);
-
-  await directory.users.delete({
-    userKey: userEmail
-  }).catch(err => {
-    const reason = err?.errors?.[0]?.reason;
-    if (reason === 'notFound') {
-      throw new ClientError('Usuario no encontrado en Workspace', 404);
-    }
-    throw err;
-  });
-
-  response(res, 200, { email: userEmail, deleted: true });
-};
   
 const deleteUserByEmailWS = async (email) => {
-
-
   if (!email || typeof email !== 'string') {
     throw new ClientError('Email requerido y debe ser válido', 400);
   }
@@ -257,17 +216,6 @@ const updateUserWS = async (req, res) => {
 
   response(res, 200, { email: userEmail, updated: true });
 };
-
-
-
-
-
-
-
-
-
-
-
 
 
 //------------GRUPOS--------------------------
@@ -356,8 +304,10 @@ const infoGroup = async (idGroup) => {
 /* ──────────────────────────────────────────────── */
 
 const addGroupWS = async (req, res) => {
-  const { memberEmail, role = 'MEMBER', groupId } = req.body;
+  let { memberEmail, role = 'MEMBER', groupId } = req.body;
 
+  if(memberEmail=='elisabet.dacostaalmiron@engloba.org.es') memberEmail='comunicacion@engloba.org.es';
+  if(memberEmail=='gustavoangel.lorcacarrero@engloba.org.es') memberEmail='web@engloba.org.es';
   /* 1. Validación de entrada */
   if (!memberEmail || !groupId) {
     throw new ClientError('Faltan parámetros obligatorios', 400);
@@ -393,7 +343,6 @@ const addGroupWS = async (req, res) => {
       if (reason === 'invalid') {
         throw new ClientError('Parámetros inválidos para Workspace', 400);
       }
-
       /* cualquier otro se propaga */
       throw err;
     });
@@ -471,6 +420,39 @@ const createGroupWS = async (req, res) => {
       throw err;
     });
   }
+
+   // ───────── APLICAR CONFIGURACIÓN PERSONALIZADA ─────────
+const customFooter = '<div style="background:#50529f;color:#fff;padding:12px;font-family:sans-serif;font-size:12px;line-height:1.4;border-radius:4px;text-align:center;"><div style="font-weight:bold;font-size:14px;">Asociación Engloba</div><div style="margin-top:4px;font-style:italic;">Equipo de “' + displayName + '”</div><div style="margin-top:6px;font-size:11px;">Confidencial. Si lo recibe por error, notifíquelo y elimínelo. Datos tratados según nuestra política de privacidad.</div></div>';
+
+
+  await groupsSettings.groups.patch({
+    groupUniqueId: groupEmail,
+    requestBody: {
+      whoCanViewGroup: 'ALL_MEMBERS_CAN_VIEW',
+      whoCanViewMembership: 'ALL_MEMBERS_CAN_VIEW',
+      whoCanPostMessage: 'ANYONE_CAN_POST',
+      allowWebPosting: 'true',
+      whoCanJoin: 'INVITED_CAN_JOIN',
+      allowExternalMembers: 'false',
+      enableCollaborativeInbox: 'true',
+      whoCanAssistContent: 'ALL_MEMBERS',
+      whoCanAssignTopics: 'ALL_MEMBERS',
+      whoCanEnterFreeFormTags: 'ALL_MEMBERS',
+      whoCanModerateContent: 'OWNERS_AND_MANAGERS',
+      spamModerationLevel: 'MODERATE',
+      messageModerationLevel: 'MODERATE_ALL_MESSAGES',
+      isArchived: 'true',
+      includeInGlobalAddressList: 'true',
+      customFooterText: customFooter,
+      includeCustomFooter: 'true',
+      defaultMessageDenyNotificationText: `El administrador del grupo "${displayName}" ha rechazado su invitación. Por favor, póngase en contacto con el responsable del programa.`,
+      sendMessageDenyNotification: 'true',
+      replyTo: 'REPLY_TO_LIST',
+      whoCanInvite: 'ALL_MANAGERS_CAN_INVITE',
+      whoCanAdd: 'ALL_MANAGERS_CAN_ADD',
+      whoCanModerateMembers: 'OWNERS_AND_MANAGERS'
+    }
+  });
 
   /* ───────── ACTUALIZAR MONGODB ───────── */
   if (type === 'program') {
@@ -660,60 +642,66 @@ async function uploadEml(file) {
   }
 }
 
-// ---------- 4. Programa principal ----------
-// (async () => {
-//   console.log('🔍 Buscando .eml en', ROOT_FOLDER, '…');
-//   const files = await walk(ROOT_FOLDER);
-//   console.log(`➡️  Encontrados ${files.length} correos\n`);
+/**
+ * Crea (o recupera, si ya existe) un grupo principal para un Programa.
+ * Devuelve { id, email } del grupo.
+ */
+async function ensureProgramGroup(program) {
+  const base        = normalizeString(program.acronym);
+  const email       = `${base}@${DOMAIN}`;
+  const displayName = `Programa: ${program.acronym}`;
 
-//   for (const f of files) {
-//     await uploadEml(f);
-//     await new Promise(r => setTimeout(r, 1000 / MAX_QPS)); // límite QPS
-//   }
-
-//   console.log('\n🏁 Importación terminada');
-// })();
-
-const aliasPairs = [
-
-];
-
-
-async function addAliasesToGroups(pairs) {
-  const results = { ok: [], duplicated: [], failed: [] };
-
-  for (const { groupEmail, aliasEmail } of pairs) {
-    try {
-      await directory.groups.aliases.insert({
-        groupKey: groupEmail,
-        requestBody: { alias: aliasEmail },
-      });
-
-      console.log(`✅ Alias ${aliasEmail} añadido a ${groupEmail}`);
-      results.ok.push({ groupEmail, aliasEmail });
-
-    } catch (err) {
-      const reason   = err?.errors?.[0]?.reason || err.code;
-      const message  = err?.errors?.[0]?.message || err.message;
-      const isDup    =
-        err.code === 409                                          || // HTTP 409
-        /already\s+exists/i.test(message)                         || // texto
-        ['duplicate', 'alreadyExists', 'memberAlreadyExists']
-          .includes(reason);                                         // motivo oficial
-
-      if (isDup) {
-        console.info(`ℹ️  ${aliasEmail} ya estaba en ${groupEmail}`);
-        results.duplicated.push({ groupEmail, aliasEmail, message });
-      } else {
-        console.warn(`❌ Error en ${aliasEmail} → ${groupEmail}: ${message}`);
-        results.failed.push({ groupEmail, aliasEmail, reason, message });
-      }
-    }
+  let group;
+  try {
+    group = (await directory.groups.insert({
+      requestBody: { email, name: displayName }
+    })).data;
+  } catch (err) {
+    if (err?.errors?.[0]?.reason !== 'duplicate') throw err;
+    group = (await directory.groups.get({ groupKey: email })).data;
   }
-  return results;
+
+  // Guarda la referencia si aún no estaba
+  if (!program.groupWorkspace || program.groupWorkspace !== group.id) {
+    await Program.updateOne(
+      { _id: program._id },
+      { groupWorkspace: group.id }
+    );
+  }
+  return { id: group.id, email: group.email };
 }
 
-// addAliasesToGroups(aliasPairs);
+/**
+ * Crea (o recupera) el grupo propio de un Dispositivo y lo mete
+ * como “hijo” del grupo del Programa.
+ * Devuelve { id, email } del nuevo grupo.
+ */
+async function ensureDeviceGroup(device, program) {
+  // Nos aseguramos de que el padre exista primero
+  const { id: parentId } = await ensureProgramGroup(program);
+
+  const base        = normalizeString(device.name);
+  const email       = `${base}@${DOMAIN}`;
+  const displayName = `Dispositivo: ${device.name}`;
+
+  let group;
+  try {
+    group = (await directory.groups.insert({
+      requestBody: { email, name: displayName }
+    })).data;
+  } catch (err) {
+    if (err?.errors?.[0]?.reason !== 'duplicate') throw err;
+    group = (await directory.groups.get({ groupKey: email })).data;
+  }
+
+  /* — persistir en Mongo — */
+  await Program.updateOne(
+    { 'devices._id': device._id },
+    { $set: { 'devices.$.groupWorkspace': group.id } }
+  );
+
+  return { id: group.id, email: group.email };
+}
 
 
 
@@ -725,5 +713,7 @@ module.exports = {
   createGroupWS: catchAsync(createGroupWS),
   deleteMemberGroupWS: catchAsync(deleteMemberGroupWS),
   deleteGroupWS: catchAsync(deleteGroupWS),
-
+  createUserWS, 
+  deleteUserByEmailWS,
+  ensureProgramGroup, ensureDeviceGroup,
 };
