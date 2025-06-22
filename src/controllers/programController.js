@@ -2,7 +2,8 @@ const { Program, User, Provinces } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { validateRequiredFields } = require('../utils/utils');
-const { generateEmailHTML, sendEmail } = require('./emailController');
+const { generateEmailHTML, sendEmail } = require('./emailControllerGoogle');
+const { ensureProgramGroup, ensureDeviceGroup } = require('./workspaceController');
 
 
 const postCreateProgram = async (req, res) => {
@@ -30,6 +31,7 @@ const postCreateProgram = async (req, res) => {
 
 
   const savedProgram = await newProgram.save();
+  await ensureProgramGroup(savedProgram);
   // 5. Enviar el email al usuario con el código
   const asunto = "Creación de un nuevo programa";
   const textoPlano = `Area: ${savedProgram.area}
@@ -171,6 +173,8 @@ const addDispositive = async (req, res) => {
 
   program.devices.push(newDevice);
   const savedProgram = await program.save();
+  const createdDevice = savedProgram.devices.at(-1);       // el que acabamos de meter
+  await ensureDeviceGroup(createdDevice, savedProgram);
 
   const asunto = "Creación de un nuevo dispositivo";
   const textoPlano = `Programa padre: ${savedProgram.name}

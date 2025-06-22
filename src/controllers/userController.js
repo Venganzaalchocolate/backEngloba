@@ -1,10 +1,11 @@
-const { User, Program} = require('../models/indexModels');
+const { User, Program } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { validateRequiredFields, createAccentInsensitiveRegex } = require('../utils/utils');
 const { uploadFileToDrive, getFileById, deleteFileById, gestionAutomaticaNominas, obtenerCarpetaContenedora } = require('./googleController');
 const { getFileCv } = require('./ovhController');
 const { createUserWS, deleteUserByEmailWS } = require('./workspaceController');
+
 
 
 
@@ -109,33 +110,33 @@ const postCreateUser = async (req, res) => {
     const replacementUser = await User.findOne({
       dni: { $regex: `^${newHiring.reason.dni.trim()}$`, $options: 'i' }
     });
-  
+
     if (!replacementUser) {
       throw new ClientError("El trabajador al que sustituye no existe", 400);
     }
-  
+
     let cause = undefined;
     let startLeaveDate = undefined;
     let expectedEndLeaveDate = undefined;
-  
+
     // Buscar el hiringPeriod activo con leavePeriods
     const activeHiringPeriod = replacementUser.hiringPeriods.find(period =>
       period.active &&
       period.leavePeriods &&
       period.leavePeriods.length > 0
     );
-  
+
     if (activeHiringPeriod) {
       // Buscar el leavePeriod activo dentro del hiringPeriod
       const activeLeavePeriod = activeHiringPeriod.leavePeriods.find(lp => lp.active);
-  
+
       if (activeLeavePeriod) {
         cause = activeLeavePeriod.leaveType;
         startLeaveDate = activeLeavePeriod.startLeaveDate;
         expectedEndLeaveDate = activeLeavePeriod.expectedEndLeaveDate;
       }
     }
-  
+
     // Ahora construimos siempre el reason completo, con o sin leave info
     newHiring.reason = {
       replacement: true,
@@ -149,11 +150,11 @@ const postCreateUser = async (req, res) => {
       }
     };
   }
-  
+
 
   // Construir objeto userData
   const userData = {
-    dni:dni.replace(/\s+/g, "").trim().toUpperCase(),
+    dni: dni.replace(/\s+/g, "").trim().toUpperCase(),
     role,
     firstName: toTitleCase(firstName), // Capitalizar
     lastName: toTitleCase(lastName),   // Capitalizar
@@ -202,23 +203,18 @@ const postCreateUser = async (req, res) => {
   }
 
   if (phoneJobNumber || phoneJobExtension) {
-  userData.phoneJob = {};
-  if (phoneJobNumber) userData.phoneJob.number = phoneJobNumber;
-  if (phoneJobExtension) userData.phoneJob.extension = phoneJobExtension;
-}
+    userData.phoneJob = {};
+    if (phoneJobNumber) userData.phoneJob.number = phoneJobNumber;
+    if (phoneJobExtension) userData.phoneJob.extension = phoneJobExtension;
+  }
 
-
+  let newUser = {}
   try {
     // Intentar crear el usuario
-    let newUser = await User.create(userData)
+    newUser = await User.create(userData)
 
-    const userWorkspace=await createUserWS(newUser._id)
-    if(userWorkspace?.email){
-    newUser.email = userWorkspace?.email;
-    await newUser.save()
-    }
+
     // Responder con el usuario guardado
-    response(res, 200, newUser);
 
   } catch (error) {
     // Si se produce un error de índice duplicado (por campo único)
@@ -234,7 +230,19 @@ const postCreateUser = async (req, res) => {
     // Cualquier otro error
     throw new ClientError('Error al crear el usuario', 500);
   }
+
+  try {
+    const userWorkspace = await createUserWS(newUser._id)
+    if (userWorkspace?.email) {
+      newUser.email = userWorkspace?.email;
+      await newUser.save()
+    }
+  } catch (error) {
+    console.error(error)
+  }
+  response(res, 200, newUser);
 };
+
 
 const getUsers = async (req, res) => {
   if (!req.body.page || !req.body.limit) throw new ClientError("Faltan datos no son correctos", 400);
@@ -271,83 +279,83 @@ const getUsers = async (req, res) => {
     }
   }
 
-//----------
-// (1) Función para intersectar dos arrays de strings rápidamente
-function intersectArrays(arr1, arr2) {
-  if (!arr1 || !arr2) return [];
-  const set1 = new Set(arr1);
-  return arr2.filter(id => set1.has(id));
-}
+  //----------
+  // (1) Función para intersectar dos arrays de strings rápidamente
+  function intersectArrays(arr1, arr2) {
+    if (!arr1 || !arr2) return [];
+    const set1 = new Set(arr1);
+    return arr2.filter(id => set1.has(id));
+  }
 
-// Imaginemos que ya cargaste 'programs' de la BD:
-// const programs = await Program.find().select('name _id devices.name devices._id devices.province');
+  // Imaginemos que ya cargaste 'programs' de la BD:
+  // const programs = await Program.find().select('name _id devices.name devices._id devices.province');
 
-let deviceIdsFromProvinces = null;
-let deviceIdsFromProgram = null;
-// Filtrar por 'provinces'
-if (req.body.provinces && mongoose.Types.ObjectId.isValid(req.body.provinces)) {
-  deviceIdsFromProvinces = [];
-  programs.forEach(program => {
-    program.devices.forEach(device => {
-      // Convertimos a string para comparar con mayor seguridad
-      if (String(device.province) === String(req.body.provinces)) {
-        deviceIdsFromProvinces.push(String(device._id));
-      }
+  let deviceIdsFromProvinces = null;
+  let deviceIdsFromProgram = null;
+  // Filtrar por 'provinces'
+  if (req.body.provinces && mongoose.Types.ObjectId.isValid(req.body.provinces)) {
+    deviceIdsFromProvinces = [];
+    programs.forEach(program => {
+      program.devices.forEach(device => {
+        // Convertimos a string para comparar con mayor seguridad
+        if (String(device.province) === String(req.body.provinces)) {
+          deviceIdsFromProvinces.push(String(device._id));
+        }
+      });
     });
-  });
-}
+  }
 
-// Filtrar por 'programId'
-if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
-  const program = programs.find(pr => String(pr._id) === String(req.body.programId));
-  if (!program) throw new ClientError("Programa no encontrado", 404);
+  // Filtrar por 'programId'
+  if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
+    const program = programs.find(pr => String(pr._id) === String(req.body.programId));
+    if (!program) throw new ClientError("Programa no encontrado", 404);
 
-  deviceIdsFromProgram = program.devices.map(device => String(device._id));
-}
+    deviceIdsFromProgram = program.devices.map(device => String(device._id));
+  }
 
-// (2) Calculamos la intersección para que sea un AND
-//     - Si ambas listas existen -> intersect
-//     - Si solo una existe -> esa
-//     - Si ninguna existe -> no filtramos por device
-let finalDeviceIds = null;
+  // (2) Calculamos la intersección para que sea un AND
+  //     - Si ambas listas existen -> intersect
+  //     - Si solo una existe -> esa
+  //     - Si ninguna existe -> no filtramos por device
+  let finalDeviceIds = null;
 
-if (deviceIdsFromProvinces && deviceIdsFromProgram) {
-  finalDeviceIds = intersectArrays(deviceIdsFromProvinces, deviceIdsFromProgram);
-} else if (deviceIdsFromProvinces) {
-  finalDeviceIds = deviceIdsFromProvinces;
-} else if (deviceIdsFromProgram) {
-  finalDeviceIds = deviceIdsFromProgram;
-}
+  if (deviceIdsFromProvinces && deviceIdsFromProgram) {
+    finalDeviceIds = intersectArrays(deviceIdsFromProvinces, deviceIdsFromProgram);
+  } else if (deviceIdsFromProvinces) {
+    finalDeviceIds = deviceIdsFromProvinces;
+  } else if (deviceIdsFromProgram) {
+    finalDeviceIds = deviceIdsFromProgram;
+  }
 
-// (3) Filtrar por 'position' (si existe)
-//     También es un ObjectId en tu PeriodSchema, así que lo convertimos
-let positionId = null;
-if (req.body.position && mongoose.Types.ObjectId.isValid(req.body.position)) {
-  positionId = req.body.position; // Podrías transformarla con new ObjectId(...)
-}
+  // (3) Filtrar por 'position' (si existe)
+  //     También es un ObjectId en tu PeriodSchema, así que lo convertimos
+  let positionId = null;
+  if (req.body.position && mongoose.Types.ObjectId.isValid(req.body.position)) {
+    positionId = req.body.position; // Podrías transformarla con new ObjectId(...)
+  }
 
 
-// - Caso 1: Filtramos por device Y position en el mismo subdocumento
-if (finalDeviceIds && positionId) {
-  filters.dispositiveNow = {
-    $elemMatch: {
-      device: { $in: finalDeviceIds.map(id => new mongoose.Types.ObjectId(id)) },
-      position: new mongoose.Types.ObjectId(positionId)
-    }
-  };
+  // - Caso 1: Filtramos por device Y position en el mismo subdocumento
+  if (finalDeviceIds && positionId) {
+    filters.dispositiveNow = {
+      $elemMatch: {
+        device: { $in: finalDeviceIds.map(id => new mongoose.Types.ObjectId(id)) },
+        position: new mongoose.Types.ObjectId(positionId)
+      }
+    };
 
-// - Caso 2: Solo device
-} else if (finalDeviceIds) {
-  // Para que sea en cualquier subdocumento de 'dispositiveNow', basta con:
-  filters["dispositiveNow.device"] = {
-    $in: finalDeviceIds.map(id => new mongoose.Types.ObjectId(id))
-  };
+    // - Caso 2: Solo device
+  } else if (finalDeviceIds) {
+    // Para que sea en cualquier subdocumento de 'dispositiveNow', basta con:
+    filters["dispositiveNow.device"] = {
+      $in: finalDeviceIds.map(id => new mongoose.Types.ObjectId(id))
+    };
 
-// - Caso 3: Solo position
-} else if (positionId) {
-  filters["dispositiveNow.position"] = new mongoose.Types.ObjectId(positionId);
-}
-//-----
+    // - Caso 3: Solo position
+  } else if (positionId) {
+    filters["dispositiveNow.position"] = new mongoose.Types.ObjectId(positionId);
+  }
+  //-----
 
   if (req.body.dispositive && mongoose.Types.ObjectId.isValid(req.body.dispositive)) {
     filters["dispositiveNow.device"] = new mongoose.Types.ObjectId(req.body.dispositive);
@@ -468,83 +476,83 @@ const getAllUsersWithOpenPeriods = async (req, res) => {
 
 
 
-//----------
-// (1) Función para intersectar dos arrays de strings rápidamente
-function intersectArrays(arr1, arr2) {
-  if (!arr1 || !arr2) return [];
-  const set1 = new Set(arr1);
-  return arr2.filter(id => set1.has(id));
-}
+  //----------
+  // (1) Función para intersectar dos arrays de strings rápidamente
+  function intersectArrays(arr1, arr2) {
+    if (!arr1 || !arr2) return [];
+    const set1 = new Set(arr1);
+    return arr2.filter(id => set1.has(id));
+  }
 
-// Imaginemos que ya cargaste 'programs' de la BD:
-// const programs = await Program.find().select('name _id devices.name devices._id devices.province');
+  // Imaginemos que ya cargaste 'programs' de la BD:
+  // const programs = await Program.find().select('name _id devices.name devices._id devices.province');
 
-let deviceIdsFromProvinces = null;
-let deviceIdsFromProgram = null;
-// Filtrar por 'provinces'
-if (req.body.provinces && mongoose.Types.ObjectId.isValid(req.body.provinces)) {
-  deviceIdsFromProvinces = [];
-  programs.forEach(program => {
-    program.devices.forEach(device => {
-      // Convertimos a string para comparar con mayor seguridad
-      if (String(device.province) === String(req.body.provinces)) {
-        deviceIdsFromProvinces.push(String(device._id));
-      }
+  let deviceIdsFromProvinces = null;
+  let deviceIdsFromProgram = null;
+  // Filtrar por 'provinces'
+  if (req.body.provinces && mongoose.Types.ObjectId.isValid(req.body.provinces)) {
+    deviceIdsFromProvinces = [];
+    programs.forEach(program => {
+      program.devices.forEach(device => {
+        // Convertimos a string para comparar con mayor seguridad
+        if (String(device.province) === String(req.body.provinces)) {
+          deviceIdsFromProvinces.push(String(device._id));
+        }
+      });
     });
-  });
-}
+  }
 
-// Filtrar por 'programId'
-if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
-  const program = programs.find(pr => String(pr._id) === String(req.body.programId));
-  if (!program) throw new ClientError("Programa no encontrado", 404);
+  // Filtrar por 'programId'
+  if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
+    const program = programs.find(pr => String(pr._id) === String(req.body.programId));
+    if (!program) throw new ClientError("Programa no encontrado", 404);
 
-  deviceIdsFromProgram = program.devices.map(device => String(device._id));
-}
+    deviceIdsFromProgram = program.devices.map(device => String(device._id));
+  }
 
-// (2) Calculamos la intersección para que sea un AND
-//     - Si ambas listas existen -> intersect
-//     - Si solo una existe -> esa
-//     - Si ninguna existe -> no filtramos por device
-let finalDeviceIds = null;
+  // (2) Calculamos la intersección para que sea un AND
+  //     - Si ambas listas existen -> intersect
+  //     - Si solo una existe -> esa
+  //     - Si ninguna existe -> no filtramos por device
+  let finalDeviceIds = null;
 
-if (deviceIdsFromProvinces && deviceIdsFromProgram) {
-  finalDeviceIds = intersectArrays(deviceIdsFromProvinces, deviceIdsFromProgram);
-} else if (deviceIdsFromProvinces) {
-  finalDeviceIds = deviceIdsFromProvinces;
-} else if (deviceIdsFromProgram) {
-  finalDeviceIds = deviceIdsFromProgram;
-}
+  if (deviceIdsFromProvinces && deviceIdsFromProgram) {
+    finalDeviceIds = intersectArrays(deviceIdsFromProvinces, deviceIdsFromProgram);
+  } else if (deviceIdsFromProvinces) {
+    finalDeviceIds = deviceIdsFromProvinces;
+  } else if (deviceIdsFromProgram) {
+    finalDeviceIds = deviceIdsFromProgram;
+  }
 
-// (3) Filtrar por 'position' (si existe)
-//     También es un ObjectId en tu PeriodSchema, así que lo convertimos
-let positionId = null;
-if (req.body.position && mongoose.Types.ObjectId.isValid(req.body.position)) {
-  positionId = req.body.position; // Podrías transformarla con new ObjectId(...)
-}
+  // (3) Filtrar por 'position' (si existe)
+  //     También es un ObjectId en tu PeriodSchema, así que lo convertimos
+  let positionId = null;
+  if (req.body.position && mongoose.Types.ObjectId.isValid(req.body.position)) {
+    positionId = req.body.position; // Podrías transformarla con new ObjectId(...)
+  }
 
 
-// - Caso 1: Filtramos por device Y position en el mismo subdocumento
-if (finalDeviceIds && positionId) {
-  filters.dispositiveNow = {
-    $elemMatch: {
-      device: { $in: finalDeviceIds.map(id => new mongoose.Types.ObjectId(id)) },
-      position: new mongoose.Types.ObjectId(positionId)
-    }
-  };
+  // - Caso 1: Filtramos por device Y position en el mismo subdocumento
+  if (finalDeviceIds && positionId) {
+    filters.dispositiveNow = {
+      $elemMatch: {
+        device: { $in: finalDeviceIds.map(id => new mongoose.Types.ObjectId(id)) },
+        position: new mongoose.Types.ObjectId(positionId)
+      }
+    };
 
-// - Caso 2: Solo device
-} else if (finalDeviceIds) {
-  // Para que sea en cualquier subdocumento de 'dispositiveNow', basta con:
-  filters["dispositiveNow.device"] = {
-    $in: finalDeviceIds.map(id => new mongoose.Types.ObjectId(id))
-  };
+    // - Caso 2: Solo device
+  } else if (finalDeviceIds) {
+    // Para que sea en cualquier subdocumento de 'dispositiveNow', basta con:
+    filters["dispositiveNow.device"] = {
+      $in: finalDeviceIds.map(id => new mongoose.Types.ObjectId(id))
+    };
 
-// - Caso 3: Solo position
-} else if (positionId) {
-  filters["dispositiveNow.position"] = new mongoose.Types.ObjectId(positionId);
-}
-//-----
+    // - Caso 3: Solo position
+  } else if (positionId) {
+    filters["dispositiveNow.position"] = new mongoose.Types.ObjectId(positionId);
+  }
+  //-----
 
   if (req.body.dispositive && mongoose.Types.ObjectId.isValid(req.body.dispositive)) {
     filters["dispositiveNow.device"] = new mongoose.Types.ObjectId(req.body.dispositive);
@@ -697,8 +705,8 @@ const UserDeleteId = async (req, res) => {
       }
     }
 
-    const deleteUserWorkspace=await deleteUserByEmailWS(userToDelete.email)
-    if(deleteUserWorkspace.deleted){
+    const deleteUserWorkspace = await deleteUserByEmailWS(userToDelete.email)
+    if (deleteUserWorkspace.deleted) {
       const messageDelete = await User.deleteOne({ _id: id });
       response(res, 200, messageDelete);
     } else {
@@ -806,10 +814,10 @@ const userPut = async (req, res) => {
 
 
   if (req.body.phoneJobNumber || req.body.phoneJobExtension) {
-  updateFields.phoneJob = {};
-  if (req.body.phoneJobNumber) updateFields.phoneJob.number = req.body.phoneJobNumber;
-  if (req.body.phoneJobExtension) updateFields.phoneJob.extension = req.body.phoneJobExtension;
-}
+    updateFields.phoneJob = {};
+    if (req.body.phoneJobNumber) updateFields.phoneJob.number = req.body.phoneJobNumber;
+    if (req.body.phoneJobExtension) updateFields.phoneJob.extension = req.body.phoneJobExtension;
+  }
 
 
   const folderId = process.env.GOOGLE_DRIVE_APPFILE;
@@ -902,10 +910,10 @@ const deletePayroll = async (userId, payrollId) => {
       return false;
     }
 
-   if(user.payrolls[0].sign){
-    await deleteFileById(user.payrolls[0].sign);
-   }
-  const deleteResponse = await deleteFileById(user.payrolls[0].pdf)
+    if (user.payrolls[0].sign) {
+      await deleteFileById(user.payrolls[0].sign);
+    }
+    const deleteResponse = await deleteFileById(user.payrolls[0].pdf)
     if (deleteResponse.success) {
       const result = await User.findByIdAndUpdate(
         userId,
@@ -915,12 +923,12 @@ const deletePayroll = async (userId, payrollId) => {
         path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
         model: 'Filedrive',       // Nombre del modelo de Filedrive
       });
-      
+
       return result;
     } else {
       return false
     }
-   
+
 
 
   } catch (error) {
@@ -931,7 +939,7 @@ const deletePayroll = async (userId, payrollId) => {
 
 
 
-const  createPayroll = async (idUser, file, payrollYear, payrollMonth) => {
+const createPayroll = async (idUser, file, payrollYear, payrollMonth) => {
   try {
     const userAux = await User.findById(idUser);
     if (!userAux) {
@@ -945,14 +953,14 @@ const  createPayroll = async (idUser, file, payrollYear, payrollMonth) => {
     const fileAux = await uploadFileToDrive(file, folderId, fileNameAux, true);
 
     if (fileAux) {
-      const gestionado=await gestionAutomaticaNominas();
-      if(gestionado){
-      return  await User.findById(idUser).populate({
-        path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
-        model: 'Filedrive',       // Nombre del modelo de Filedrive
-      });  
+      const gestionado = await gestionAutomaticaNominas();
+      if (gestionado) {
+        return await User.findById(idUser).populate({
+          path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
+          model: 'Filedrive',       // Nombre del modelo de Filedrive
+        });
       }
-      
+
     } else {
       throw new Error('Error al subir el archivo a Google Drive');
     }
@@ -978,11 +986,11 @@ const signPayroll = async (idUser, file, payrollYear, payrollMonth, idPayroll) =
     };
     // Formatear el nombre del archivo
     const fileNameAux = `${result.dni}_${payrollMonth}_${payrollYear}_signed.pdf`;
-    
+
     const folderId = await obtenerCarpetaContenedora(result.pdf);
     //
     const fileAux = await uploadFileToDrive(file, folderId, fileNameAux, true);
-    
+
     if (fileAux) {
       // modificar una payroll existente añadiendo el campo firma de payrolls del usuario
       return await User.findOneAndUpdate(
@@ -1007,7 +1015,7 @@ const signPayroll = async (idUser, file, payrollYear, payrollMonth, idPayroll) =
       throw new Error('Error al subir el archivo a Google Drive');
     }
   } catch (error) {
-    
+
     return null;
   }
 };
@@ -1082,7 +1090,7 @@ const payroll = async (req, res) => {
 
       throw new ClientError('No se ha podido subir la nómina', 400);
     } else {
-     
+
       return response(res, 200, signResult);
     }
   }
@@ -1153,31 +1161,31 @@ const hirings = async (req, res) => {
           const replacementUser = await User.findOne({
             dni: { $regex: `^${period.reason.dni.trim()}$`, $options: 'i' }
           });
-    
+
           if (!replacementUser) {
             throw new ClientError("El trabajador al que sustituye no existe", 400);
           }
-    
+
           let cause = undefined;
           let startLeaveDate = undefined;
           let expectedEndLeaveDate = undefined;
-    
+
           const activeHiringPeriod = replacementUser.hiringPeriods.find(period =>
             period.active &&
             period.leavePeriods &&
             period.leavePeriods.length > 0
           );
-    
+
           if (activeHiringPeriod) {
             const activeLeavePeriod = activeHiringPeriod.leavePeriods.find(lp => lp.active);
-    
+
             if (activeLeavePeriod) {
               cause = activeLeavePeriod.leaveType;
               startLeaveDate = activeLeavePeriod.startLeaveDate;
               expectedEndLeaveDate = activeLeavePeriod.expectedEndLeaveDate;
             }
           }
-    
+
           // Construir correctamente el reason actualizado
           return {
             ...period,
@@ -1240,33 +1248,33 @@ const hirings = async (req, res) => {
       const replacementUser = await User.findOne({
         dni: { $regex: `^${newHiring.reason.dni.trim()}$`, $options: 'i' }
       });
-    
+
       if (!replacementUser) {
         throw new ClientError("El trabajador al que sustituye no existe", 400);
       }
-    
+
       let cause = undefined;
       let startLeaveDate = undefined;
       let expectedEndLeaveDate = undefined;
-    
+
       // Buscar el hiringPeriod activo con leavePeriods
       const activeHiringPeriod = replacementUser.hiringPeriods.find(period =>
         period.active &&
         period.leavePeriods &&
         period.leavePeriods.length > 0
       );
-    
+
       if (activeHiringPeriod) {
         // Buscar el leavePeriod activo dentro del hiringPeriod
         const activeLeavePeriod = activeHiringPeriod.leavePeriods.find(lp => lp.active);
-    
+
         if (activeLeavePeriod) {
           cause = activeLeavePeriod.leaveType;
           startLeaveDate = activeLeavePeriod.startLeaveDate;
           expectedEndLeaveDate = activeLeavePeriod.expectedEndLeaveDate;
         }
       }
-    
+
       // Ahora construimos siempre el reason completo, con o sin leave info
       newHiring.reason = {
         replacement: true,
@@ -1280,7 +1288,7 @@ const hirings = async (req, res) => {
         }
       };
     }
-    
+
 
     const userDoc = await User.findById(req.body.userId);
     if (!userDoc) throw new ClientError("Usuario no encontrado", 400);
@@ -1383,7 +1391,7 @@ const hirings = async (req, res) => {
     // Validar que vengan los datos necesarios:
     if (!req.body.leaveUpdated)
       throw new ClientError("Faltan datos del leaveUpdated", 400);
-  
+
     // Extrae info del leave que queremos actualizar
     const {
       _id, // ID del leavePeriod a actualizar
@@ -1392,12 +1400,12 @@ const hirings = async (req, res) => {
       actualEndLeaveDate,
       leaveType
     } = req.body.leaveUpdated;
-  
+
     // Asegúrate que vengan "hiringId" o "hirindId" 
     // (según tu front; en tu createLeave usas "hirindId")
     if (!req.body.hirindId)
       throw new ClientError("Falta el id del periodo de contratación (hirindId)", 400);
-  
+
     // 1) Verifica que exista el usuario y el hiringPeriod
     const userDoc = await User.findOne({
       _id: new mongoose.Types.ObjectId(req.body.userId),
@@ -1405,24 +1413,24 @@ const hirings = async (req, res) => {
     });
     if (!userDoc)
       throw new ClientError("Usuario o periodo de contratación no encontrado", 404);
-  
+
     // 2) Prepara un update con arrayFilters para actualizar la leavePeriods
     //    Buscamos la leave con _id = _id
     if (!_id)
       throw new ClientError("Falta el _id del leavePeriod", 400);
-  
+
     // (Opcional) Más validaciones, por ejemplo: 
     //  - Si hay otra baja abierta
     //  - Overlaps
     //  - etc.
-  
+
     const updateObj = {
       "hiringPeriods.$[hp].leavePeriods.$[lp].startLeaveDate": startLeaveDate ? new Date(startLeaveDate) : null,
       "hiringPeriods.$[hp].leavePeriods.$[lp].expectedEndLeaveDate": expectedEndLeaveDate ? new Date(expectedEndLeaveDate) : null,
       "hiringPeriods.$[hp].leavePeriods.$[lp].actualEndLeaveDate": actualEndLeaveDate ? new Date(actualEndLeaveDate) : null,
       "hiringPeriods.$[hp].leavePeriods.$[lp].leaveType": leaveType ? new mongoose.Types.ObjectId(leaveType) : null
     };
-  
+
     // 3) Realiza la operación findOneAndUpdate con arrayFilters
     data = await User.findOneAndUpdate(
       {
@@ -1440,12 +1448,12 @@ const hirings = async (req, res) => {
     ).catch((err) => {
       throw new ClientError("No se pudo actualizar la baja/excedencia", 400);
     });
-  
-    if (!data) 
+
+    if (!data)
       throw new ClientError("No se pudo actualizar la baja/excedencia", 400);
-  
-  // (Al final del if block)
-  }   else {
+
+    // (Al final del if block)
+  } else {
     throw new ClientError("Tipo inválido contacte con comunicacion@engloba.org.es", 400);
   }
 
@@ -1468,7 +1476,7 @@ const syncEmailPersonal = async () => {
       ]
     );
 
-   console.log( {
+    console.log({
       message: `Actualizados ${result.modifiedCount} usuarios`,
     });
   } catch (error) {

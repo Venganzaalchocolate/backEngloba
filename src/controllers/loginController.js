@@ -2,7 +2,7 @@ const { User, Filedrive } = require('../models/indexModels');
 const OneTimeCode = require('../models/OneTimeCode');
 const { catchAsync, response, ClientError, comprobarPass, generarToken, verifyToken, generarHashpass } = require('../utils/indexUtils')
 const jwt = require('jsonwebtoken');
-const { sendEmail, generateEmailHTML } = require('./emailController');
+const { sendEmail, generateEmailHTML } = require('./emailControllerGoogle');
 
 
 // Función para generar un código de 6 dígitos
