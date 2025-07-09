@@ -11,6 +11,15 @@ const mongoose = require('mongoose');
 const { PassThrough } = require('stream');
 
 
+function normalizeString(str) {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // elimina tildes
+    .replace(/\s+/g, '')             // elimina espacios y guiones
+    .replace(/[^a-z0-9]/g, '');      // solo alfanuméricos
+}
 
 
 // const sourceFolderId = '1WmnFU8jv6ZY3BW0iSB1xXTpQoMbesU09'; // ID de la carpeta de datos actuales
@@ -18,6 +27,7 @@ const sourceFolderId = process.env.GOOGLE_DRIVE_PARENTFOLDER; // ID de la carpet
 const backup12hFolderId = '1cnQ_4ANsSr_R-HJ-uf15WNfc5w_4dTRG';
 const backup3dFolderId = '1kxH3Su19Yz6WWCSCmfUSewmqymsDlL4l';
 const emails = ['web@engloba.org.es', 'comunicacion@engloba.org.es'];
+const DOMAIN='engloba.org.es'
 
 
 // 1. Decodificamos las credenciales
@@ -35,7 +45,11 @@ const SCOPES = [
   'https://www.googleapis.com/auth/admin.directory.group',       // Groups (R/W)
   'https://www.googleapis.com/auth/admin.directory.group.member', // Group members (R/W)
   'https://www.googleapis.com/auth/admin.directory.user.security',
-  'https://www.googleapis.com/auth/gmail.send'
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/gmail.modify',
+  'https://www.googleapis.com/auth/gmail.settings.basic',
+  'https://www.googleapis.com/auth/gmail.settings.sharing',
+
 ];
 // 3. Creamos la autenticación JWT con el 'subject'
 //ss
@@ -347,11 +361,11 @@ async function gestionAutomaticaNominas() {
   return true;
 }
 
-const prueba=async ()=>{
-await gestionAutomaticaNominas();
-}
+// const prueba=async ()=>{
+// await gestionAutomaticaNominas();
+// }
 
-prueba();
+// prueba();
 //
 
 // FUNCION RECURSIVA: LISTA ARCHIVOS (Y SUBCARPETAS)
@@ -1470,7 +1484,415 @@ const normalize = s =>
     .replace(/\s+/g, '')
     .replace(/[^a-z0-9]/g, '');
 
+// ──────────────────────────────────────────────────────────────────────────────
+// 1) AÑADE estos scopes a tu array SCOPES (arriba del archivo):
+// 'https://www.googleapis.com/auth/gmail.settings.basic',
+// 'https://www.googleapis.com/auth/gmail.settings.sharing'
+// ──────────────────────────────────────────────────────────────────────────────
 
+
+// /* ─── 2) Plantilla de firma HTML ───────────────────────────────────────────── */
+// function buildSignatureHTML({ firstName, lastName, email }) {
+//   return `
+//   <div style="background-color:#50529f;color:#ffffff;padding:15px;border-radius:5px;max-width:100%;font-family:'Gill Sans','Gill Sans MT',Calibri,'Trebuchet MS',sans-serif">
+//   <table style="width:100%;border-collapse:collapse">
+//     <tr>
+//       <td style="width:200px;padding-right:3rem;vertical-align:top">
+//         <img src="https://app.engloba.org.es/graphic/logotipo_blanco.png" alt="Logo de la Asociación Engloba" style="width:100%;height:auto">
+//       </td>
+//       <td style="vertical-align:top">
+//         <h2 style="margin:0 0 5px;font-size:18px;font-weight:bold;color:#ffffff">${firstName} ${lastName}</h2>
+
+//         <p style="margin:5px 0;font-size:14px;color:#ffffff">
+//           <a href="mailto:${email}" style="color:inherit;text-decoration:none;font-size:14px">${email}</a>
+//         </p>
+//       </td>
+//     </tr>
+//   </table>
+
+//   <!-- ======== AVISO LEGAL (NO TOCAR) ======== -->
+//   <div style="margin-top:16px;font-size:12px;line-height:1.2;font-family:'Courier New',Courier,monospace;color:#ffffff">
+//     <p><strong>ADVERTENCIA LEGAL</strong></p>
+//     <p>Este mensaje y sus adjuntos contienen información confidencial y reservada dirigida exclusivamente a su
+//        destinatario. Si ha recibido este mensaje por error, se ruega lo notifique inmediatamente por esta misma
+//        vía y borre el mensaje de su sistema. Notese que el correo electrónico vía Internet no permite asegurar
+//        ni la confidencialidad de los mensajes que se transmiten ni la correcta recepción de los mismos. En
+//        cumplimiento de la normativa vigente en materia de Protección de Datos de Carácter Personal, le
+//        informamos que los datos derivados de su correspondencia serán tratados por ASOCIACIÓN ENGLOBA,
+//        INTEGRACIÓN LABORAL, SOCIAL Y EDUCACION con la finalidad de gestionar las comunicaciones que pudiera
+//        mantener con el personal de la entidad. Los datos personales proporcionados se conservarán, mientras no
+//        se solicite su supresión por el interesado o se mantenga la relación con esta empresa. La legitimación
+//        para el tratamiento de datos se basa en la relación que mantiene con esta empresa. Para darse de baja o
+//        ejercer sus derechos de acceso, rectificación, supresión, limitación de tratamiento, oposición,
+//        portabilidad, derecho a no ser objeto de decisiones individualizadas, así como la revocación del
+//        consentimiento prestado, puede realizarlo dirigiéndose por escrito a la dirección Asociación Engloba,
+//        Integración Laboral, Educativa y Social en C/ Paraje La Solana, Dip. Contador, 04825 Chirivel (Almería)
+//        o por mail a <a href="mailto:elcontador@engloba.org.es" style="color:#ffffff;text-decoration:underline">elcontador@engloba.org.es</a>.</p>
+
+//     <p>This message and its attachments contain confidential and restricted information directed exclusively to
+//        your recipient. If you received this message by mistake, please notify us immediately by this same means
+//        and delete the message from your system. Please note that email via the Internet does not ensure either
+//        the confidentiality of the messages that are transmitted or their correct reception. In compliance with
+//        the regulations in force regarding the protection of personal data, we inform you that the data derived
+//        from your correspondence will be processed by ASOCIACIÓN ENGLOBA, INTEGRACIÓN LABORAL, SOCIAL Y
+//        EDUCACION in order to manage the communications you may maintain with the staff of the entity. The
+//        personal data provided will be retained until the deletion is requested by the data subject or the
+//        relationship with this company is maintained. Legitimation for data processing is based on the
+//        relationship it maintains with this company. To unsubscribe or exercise your rights of access,
+//        rectification, deletion, restriction of processing, opposition, portability, the right not to be subject
+//        to individual decisions, as well as the revocation of the consent given, you can contact Asociación
+//        Engloba, Integración Laboral, Educativa y Social at C/ Paraje La Solana, Dip. Contador, 04825 Chirivel
+//        (Almería) or by mail <a href="mailto:elcontador@engloba.org.es" style="color:#ffffff;text-decoration:underline">elcontador@engloba.org.es</a>.</p>
+
+//     <img src="https://engloba.org.es/wp-content/uploads/2017/02/iso9001_400.png" alt="Certificado ISO 9001" style="width:200px;height:auto;margin-top:10px">
+//   </div>
+// </div>
+
+// `;
+// }
+
+// const SCOPES_SIG = [
+//   'https://www.googleapis.com/auth/gmail.settings.basic',
+//   'https://www.googleapis.com/auth/gmail.settings.sharing',
+// ];
+
+// // ─── función de firma corregida ──────────────────────────────────────────────
+// async function updateSignatureForUser(userDoc) {
+//   const userEmail = userDoc.email=='web@engloba.org.es'?'web@engloba.org.es':buildUserEmail(userDoc)         // ya viene del find()
+
+//   /* 1. auth impersonalizado para ESE usuario */
+//   const userAuth = new google.auth.JWT({
+//     email: client_email,          // <- los tuyos, ya definidos arriba
+//     key: private_key,
+//     scopes: SCOPES_SIG,
+//     subject: userEmail,           // <- ¡impersonación!
+//   });
+
+//   /* 2. Gmail API */
+//   const gmail = google.gmail({ version: 'v1', auth: userAuth });
+
+//   /* 3. Alias primario */
+//   const { data } = await gmail.users.settings.sendAs.list({ userId: 'me' });
+//   const primary = data.sendAs.find(a => a.isPrimary);
+//   if (!primary) throw new Error('No alias primario');
+
+//   /* 4. Construir firma */
+//   const signature = buildSignatureHTML({
+//     firstName : userDoc.firstName,
+//     lastName  : userDoc.lastName,
+//     email     : userEmail,
+//   });
+
+//   /* 5. Parchear */
+//   await gmail.users.settings.sendAs.patch({
+//     userId: 'me',
+//     sendAsEmail: primary.sendAsEmail,
+//     requestBody: { signature },
+//   });
+
+//   console.log(`✔ Firma actualizada para ${userEmail}`);
+// }
+
+// async function removePhonesForUser(user) {
+//   const userEmail=buildUserEmail(user)
+//   try {
+//     const us=await directory.users.update({
+//       userKey: userEmail,
+//       requestBody: { phones: null }
+//     });
+//     console.log(us)
+//     console.log(`   ✔ Teléfonos eliminados de ${userEmail}`);
+//   } catch (err) {
+//     console.error(`   ✖︎ Error borrando teléfonos de ${userEmail}:`, err.message);
+//   }
+// }
+
+// /* ─── 4) Recorre TODOS los usuarios y actualiza ────────────────────────────── */
+// async function updateSignaturesForAllUsers() {
+//   // Trae tus usuarios desde Mongo (o Directory API si prefieres)
+//   const users = await User.find({email: 'web@engloba.org.es' }).select('firstName lastName email')
+//                           .lean();
+
+//                           console.log(users)
+//   for (const u of users) {
+//     try {
+//       await updateSignatureForUser(u)
+//       // quieor una funcion para eliminar su telefono
+//     } catch (err) {
+//       console.error(`✖︎ Error con ${u.firstName} ${u.lastName}:`, err.message);
+//     }
+//   }
+//   console.log('✓ Sincronización de firmas completada\n');
+// }
+
+// // // Llama a la función cuando necesites:
+// // updateSignaturesForAllUsers().catch(console.error);
+
+
+/* --------------------------------------------------------------------
+   Firmas de correo para ASOCIACIÓN ENGLOBA
+   --------------------------------------------------------------------
+   - Soporta 6 áreas + la firma general.
+   - Cada área tiene su color corporativo, un logo adicional y un texto
+     identificativo que se muestran debajo del logotipo principal.
+   - Las funciones expuestas permiten generar la firma HTML y parchearla
+     en la cuenta G‑Mail del trabajador mediante impersonación.
+   - Para cambiar de firma basta con llamar a `switchMySignature('area')`
+     ó pasar el parámetro `area` al actualizar.
+   ------------------------------------------------------------------*/
+
+// 🎨  Paleta corporativa y recursos gráficos por área
+// ──────────────────────────────────────────────────────────────────
+const AREA_SETTINGS = {
+  general: {
+    color: '#50529f', // Azul corporativo
+    extraLogo: '',
+    extraText: '',
+  },
+  desarrollo: {
+    color: '#F0843A',
+    extraLogo: 'https://engloba.org.es/wp-content/uploads/2024/12/logo_desarrollo-comunitario_blanco.png',
+    extraText: 'Área de Desarrollo Comunitario',
+  },
+  igualdad: {
+    color: '#2D3272',
+    extraLogo: 'https://engloba.org.es/wp-content/uploads/2024/12/logo_igualdad_blanco.png',
+    extraText: 'Área de Igualdad',
+  },
+  infanciaJuventud: {
+    color: '#7881C1',
+    extraLogo: 'https://engloba.org.es/wp-content/uploads/2024/12/logo_infancia_juventud_blanco.png',
+    extraText: 'Área de Infancia y Juventud',
+  },
+  lgtbiq: {
+    color: '#C9839A',
+    extraLogo: 'https://engloba.org.es/wp-content/uploads/2024/12/logo_lgtbi_blanco.png',
+    extraText: 'Área LGTBIQ+',
+  },
+  mayores: {
+    color: '#94AA51',
+    extraLogo: 'https://engloba.org.es/wp-content/uploads/2024/12/logo_mayores_blanco.png',
+    extraText: 'Área de Mayores',
+  },
+  inclusionLaboral: {
+    color: '#D4556A', // Propuesta para la 6ª área – cámbialo si procede
+    extraLogo: 'https://engloba.org.es/wp-content/uploads/2024/12/logo_empleo_blanco.png',
+    extraText: 'Área de Inclusión Laboral',
+  },
+};
+// 🖊️  Constructor de firma HTML parametrizada
+// ──────────────────────────────────────────────────────────────────
+function buildSignatureHTML({
+  firstName,
+  lastName,
+  email,
+  area = 'general',
+}) {
+  const { color, extraLogo, extraText } = AREA_SETTINGS[area] || AREA_SETTINGS.general;
+
+  const extraLogoImg = extraLogo
+    ? `<img src="${extraLogo}" alt="${extraText}" style="width:100%;height:auto;max-width:150px">`
+    : '';
+
+
+  const extraTextBlock = extraText
+    ? `<p style="margin:0;font-size:12px;font-weight:bold;color:#ffffff">${extraText}</p>`
+    : '';
+
+  return `
+  <div style="background-color:${color};color:#ffffff;padding:15px;border-radius:5px;max-width:100%;font-family:'Gill Sans','Gill Sans MT',Calibri,'Trebuchet MS',sans-serif">
+    <table style="width:100%;border-collapse:collapse">
+      <tr>
+        <td style="width:200px;padding-right:3rem;vertical-align:top">
+          <img src="https://app.engloba.org.es/graphic/logotipo_blanco.png" alt="Logo de la Asociación Engloba" style="width:100%;height:auto;margin-bottom:10px">
+          ${extraLogoImg}
+        </td>
+        <td style="vertical-align:top">
+          <h2 style="margin:0 0 5px;font-size:18px;font-weight:bold;color:#ffffff">${firstName} ${lastName}</h2>
+          ${extraTextBlock}
+          <p style="margin:5px 0;font-size:14px;color:#ffffff">
+            <a href="mailto:${email}" style="color:inherit;text-decoration:none;font-size:14px">${email}</a><br>
+          </p>
+        </td>
+      </tr>
+    </table>
+
+    <!-- ======== AVISO LEGAL (NO TOCAR) ======== -->
+    <div style="margin-top:16px;font-size:12px;line-height:1.2;font-family:'Courier New',Courier,monospace;color:#ffffff">
+      <p><strong>ADVERTENCIA LEGAL</strong></p>
+      <p>Este mensaje y sus adjuntos contienen información confidencial y reservada dirigida exclusivamente a su destinatario. Si ha recibido este mensaje por error, se ruega lo notifique inmediatamente por esta misma vía y borre el mensaje de su sistema. Notese que el correo electrónico vía Internet no permite asegurar ni la confidencialidad de los mensajes que se transmiten ni la correcta recepción de los mismos. En cumplimiento de la normativa vigente en materia de Protección de Datos de Carácter Personal, le informamos que los datos derivados de su correspondencia serán tratados por ASOCIACIÓN ENGLOBA, INTEGRACIÓN LABORAL, SOCIAL Y EDUCACION con la finalidad de gestionar las comunicaciones que pudiera mantener con el personal de la entidad. Los datos personales proporcionados se conservarán, mientras no se solicite su supresión por el interesado o se mantenga la relación con esta empresa. La legitimación para el tratamiento de datos se basa en la relación que mantiene con esta empresa. Para darse de baja o ejercer sus derechos de acceso, rectificación, supresión, limitación de tratamiento, oposición, portabilidad, derecho a no ser objeto de decisiones individualizadas, así como la revocación del consentimiento prestado, puede realizarlo dirigiéndose por escrito a la dirección Asociación Engloba, Integración Laboral, Educativa y Social en C/ Paraje La Solana, Dip. Contador, 04825 Chirivel (Almería) o por mail a <a href="mailto:elcontador@engloba.org.es" style="color:#ffffff;text-decoration:underline">elcontador@engloba.org.es</a>.</p>
+      <p>This message and its attachments contain confidential and restricted information directed exclusively to your recipient. If you received this message by mistake, please notify us immediately by this same means and delete the message from your system. Please note that email via the Internet does not ensure either the confidentiality of the messages that are transmitted or their correct reception. In compliance with the regulations in force regarding the protection of personal data, we inform you that the data derived from your correspondence will be processed by ASOCIACIÓN ENGLOBA, INTEGRACIÓN LABORAL, SOCIAL Y EDUCACION in order to manage the communications you may maintain with the staff of the entity. The personal data provided will be retained until the deletion is requested by the data subject or the relationship with this company is maintained. Legitimation for data processing is based on the relationship it maintains with this company. To unsubscribe or exercise your rights of access, rectification, deletion, restriction of processing, opposition, portability, the right not to be subject to individual decisions, as well as the revocation of the consent given, you can contact Asociación Engloba, Integración Laboral, Educativa y Social at C/ Paraje La Solana, Dip. Contador, 04825 Chirivel (Almería) or by mail <a href="mailto:elcontador@engloba.org.es" style="color:#ffffff;text-decoration:underline">elcontador@engloba.org.es</a>.</p>
+      <img src="https://engloba.org.es/wp-content/uploads/2017/02/iso9001_400.png" alt="Certificado ISO 9001" style="width:200px;height:auto;margin-top:10px">
+    </div>
+  </div>`;
+}
+
+// 🔧 Utilidades internas
+function base64UrlEncode(str) {
+  return Buffer.from(str, 'utf8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+// 🔄  Google Workspace: actualización de firma por usuario (opción 1)
+// ──────────────────────────────────────────────────────────────────
+const SCOPES_SIG = [
+  'https://www.googleapis.com/auth/gmail.settings.basic',
+  'https://www.googleapis.com/auth/gmail.settings.sharing',
+];
+
+async function updateSignatureForUser(userDoc, area = 'general') {
+
+  const userAuth = new google.auth.JWT({
+    email: client_email,
+    key: private_key,
+    scopes: SCOPES,
+    subject: userDoc.email,
+  });
+
+  const gmail = google.gmail({ version: 'v1', auth: userAuth });
+
+  const { data } = await gmail.users.settings.sendAs.list({ userId: 'me' });
+  const primary = data.sendAs.find((a) => a.isPrimary);
+  if (!primary) throw new Error('No alias primario');
+
+  const signature = buildSignatureHTML({
+    firstName: userDoc.firstName,
+    lastName: userDoc.lastName,
+    email: userDoc.email,
+    position: userDoc.position,
+    program: userDoc.program,
+    phone: userDoc.phone,
+    area,
+  });
+
+  await gmail.users.settings.sendAs.patch({
+    userId: 'me',
+    sendAsEmail: primary.sendAsEmail,
+    requestBody: { signature },
+  });
+
+  console.log(`✔ Firma (${area}) actualizada para ${userDoc.email}`);
+}
+
+// 🌟 Opción 2: crear plantillas-borrador con las 7 firmas
+// ──────────────────────────────────────────────────────────────────
+const SCOPES_TEMPLATES = ['https://www.googleapis.com/auth/gmail.modify'];
+
+/**
+ * Crea un borrador por cada área para el usuario. Aparecerá en el menú
+ * Gmail → Insertar → Plantillas.
+ */
+async function createSignatureTemplatesForUser(userDoc) {
+
+  const userAuth = new google.auth.JWT({
+    email: client_email,
+    key: private_key,
+    scopes: SCOPES,
+    subject: userDoc.email,
+  });
+
+  const gmail = google.gmail({ version: 'v1', auth: userAuth });
+
+  // Primero limpia borradores antiguos con asunto "Firma "
+  const draftList = await gmail.users.drafts.list({ userId: 'me' });
+  for (const d of draftList.data.drafts || []) {
+    if (d.message && d.message.snippet && /^Firma /.test(d.message.snippet)) {
+      await gmail.users.drafts.delete({ userId: 'me', id: d.id });
+    }
+  }
+
+  // Ahora crea uno por área
+  for (const area of Object.keys(AREA_SETTINGS)) {
+    const html = buildSignatureHTML({
+      ...userDoc,
+      email: userDoc.email,
+      area,
+    });
+
+    const draftBody = {
+      userId: 'me',
+      requestBody: {
+        message: {
+          payload: {
+            mimeType: 'text/html',
+            headers: [{ name: 'Subject', value: `Firma ${area}` }],
+            body: { data: base64UrlEncode(html) },
+          },
+        },
+      },
+    };
+
+    await gmail.users.drafts.create(draftBody);
+    console.log(`• Plantilla creada: Firma ${area}`);
+  }
+
+  console.log(`✓ Plantillas de firmas listas para ${userDoc.email}`);
+}
+
+/**
+ * Recorre todos los usuarios y crea sus plantillas.
+ */
+
+/**
+ * Devuelve el mensaje RFC-822 en base64url listo para Gmail.
+ */
+function buildRawDraft(subject, html) {
+  const rfc822 =
+    `Subject: ${subject}\r\n` +      // cabeceras
+    'To:\r\n' +                      // vacío → plantilla genérica
+    'Content-Type: text/html; charset="UTF-8"\r\n' +
+    '\r\n' +                         // línea en blanco -> comienza el cuerpo
+    html;
+
+  return Buffer.from(rfc822)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');             // base64 **URL-safe** - obligatorio
+}
+
+async function createSignatureTemplatesForUser(userDoc) {
+  const userEmail = userDoc.email;
+  const userAuth  = new google.auth.JWT({
+  email: client_email,
+  key: private_key,
+  scopes: SCOPES,
+  subject: userEmail,  // aquí se “impersona” a este usuario
+});
+  const gmail = google.gmail({ version: 'v1', auth: userAuth });
+
+  for (const area of Object.keys(AREA_SETTINGS)) {
+    const html = buildSignatureHTML({ ...userDoc, area });
+    const raw  = buildRawDraft(`Firma ${area}`, html);
+
+    await gmail.users.drafts.create({
+      userId: 'me',
+      requestBody: { message: { raw } }
+    });
+
+    console.log(`✓ Borrador “Firma ${area}” creado para ${userEmail}`);
+    await new Promise(r => setTimeout(r, 250));   // evita 429 si haces muchos
+  }
+}
+
+async function createTemplatesForAllUsers() {
+  // const users = await User.find().select('firstName lastName email position program phone').lean();
+  // for (const u of users) {
+  //   try {
+  //     await createSignatureTemplatesForUser(u);
+  //   } catch (err) {
+  //     console.error(`✖︎ Error plantillas ${u.email}:`, err.message);
+  //   }
+  // }
+  const user = await User.findOne({ email: 'comunicacion@engloba.org.es' }).lean();
+  await createSignatureTemplatesForUser(user);
+  console.log('✓ Plantillas creadas para toda la plantilla ENGLOBA');
+}
+
+createTemplatesForAllUsers()
 
 module.exports = {
   uploadFileToDrive,
