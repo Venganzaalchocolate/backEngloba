@@ -15,6 +15,7 @@ const { confirmSignature, requestSignature } = require("./pdfSignController");
 const { auditMissingFieldsInfoUser, auditMissingFieldsProgram, auditMissingFieldsDevice,auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram, auditMissingFieldsDocumentationDevice, auditMissingFieldsContractAndLeave } = require("./auditorController");
 const { getCvOverview, getCvMonthly, getCvDistribution, getCvConversion, auditWorkersStats, getWorkersStats, prueba} = require("./statisticsController");
 const {deleteGroupWS, deleteMemberGroupWS,addGroupWS, createGroupWS, infoGroupWS,addUserToGroup, createUserWS, deleteUserByEmailWS } = require("./workspaceController");
+const { ejecutarBackup } = require("./backupEmails");
 
 
 
@@ -36,7 +37,8 @@ module.exports = {
     requestSignature,confirmSignature,
     auditMissingFieldsInfoUser,auditMissingFieldsProgram,auditMissingFieldsDevice,auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram,auditMissingFieldsDocumentationDevice,auditMissingFieldsContractAndLeave,
     getCvOverview,getCvMonthly,getCvDistribution, getCvConversion,auditWorkersStats, getWorkersStats, prueba,
-    deleteGroupWS, deleteMemberGroupWS,addGroupWS, createGroupWS, infoGroupWS, addUserToGroup,createUserWS, deleteUserByEmailWS
+    deleteGroupWS, deleteMemberGroupWS,addGroupWS, createGroupWS, infoGroupWS, addUserToGroup,createUserWS, deleteUserByEmailWS,
+    ejecutarBackup
     ,main
 
 }

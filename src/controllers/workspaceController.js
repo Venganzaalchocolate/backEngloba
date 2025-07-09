@@ -1,6 +1,6 @@
 
 const { google } = require('googleapis');
-const { User, Program } = require('../models/indexModels');
+const { User, Program, Provinces } = require('../models/indexModels');
 const mongoose = require('mongoose');
 const { catchAsync } = require('../utils/catchAsync');
 const { response } = require('../utils/response');
@@ -421,38 +421,43 @@ const createGroupWS = async (req, res) => {
     });
   }
 
-   // ───────── APLICAR CONFIGURACIÓN PERSONALIZADA ─────────
-const customFooter = '<div style="background:#50529f;color:#fff;padding:12px;font-family:sans-serif;font-size:12px;line-height:1.4;border-radius:4px;text-align:center;"><div style="font-weight:bold;font-size:14px;">Asociación Engloba</div><div style="margin-top:4px;font-style:italic;">Equipo de “' + displayName + '”</div><div style="margin-top:6px;font-size:11px;">Confidencial. Si lo recibe por error, notifíquelo y elimínelo. Datos tratados según nuestra política de privacidad.</div></div>';
-
 
   await groupsSettings.groups.patch({
     groupUniqueId: groupEmail,
     requestBody: {
-      whoCanViewGroup: 'ALL_MEMBERS_CAN_VIEW',
-      whoCanViewMembership: 'ALL_MEMBERS_CAN_VIEW',
-      whoCanPostMessage: 'ANYONE_CAN_POST',
-      allowWebPosting: 'true',
-      whoCanJoin: 'INVITED_CAN_JOIN',
-      allowExternalMembers: 'false',
-      enableCollaborativeInbox: 'true',
-      whoCanAssistContent: 'ALL_MEMBERS',
-      whoCanAssignTopics: 'ALL_MEMBERS',
-      whoCanEnterFreeFormTags: 'ALL_MEMBERS',
-      whoCanModerateContent: 'OWNERS_AND_MANAGERS',
-      spamModerationLevel: 'MODERATE',
-      messageModerationLevel: 'MODERATE_ALL_MESSAGES',
-      isArchived: 'true',
-      includeInGlobalAddressList: 'true',
-      customFooterText: customFooter,
-      includeCustomFooter: 'true',
-      defaultMessageDenyNotificationText: `El administrador del grupo "${displayName}" ha rechazado su invitación. Por favor, póngase en contacto con el responsable del programa.`,
-      sendMessageDenyNotification: 'true',
-      replyTo: 'REPLY_TO_LIST',
-      whoCanInvite: 'ALL_MANAGERS_CAN_INVITE',
-      whoCanAdd: 'ALL_MANAGERS_CAN_ADD',
-      whoCanModerateMembers: 'OWNERS_AND_MANAGERS'
-    }
-  });
+  // 1) Permitir miembros externos
+  allowExternalMembers:         'false',                   // entry/apps:allowExternalMembers :contentReference[oaicite:0]{index=0}
+
+  // 2) Control de acceso
+  whoCanViewGroup:              'ALL_MEMBERS_CAN_VIEW',   // entry/apps:whoCanViewGroup :contentReference[oaicite:1]{index=1}
+  whoCanViewMembership:         'ALL_MEMBERS_CAN_VIEW',   // entry/apps:whoCanViewMembership :contentReference[oaicite:2]{index=2}
+  whoCanJoin:                   'CAN_REQUEST_TO_JOIN',    // entry/apps:whoCanJoin :contentReference[oaicite:3]{index=3}
+
+  // 3) Publicación
+  whoCanPostMessage:            'ANYONE_CAN_POST',        // entry/apps:whoCanPostMessage :contentReference[oaicite:4]{index=4}
+  allowWebPosting:              'true',                   // entry/apps:allowWebPosting :contentReference[oaicite:5]{index=5}
+
+  // 4) Historial (archivo, pero no readonly)
+  archiveOnly:                  'false',                  // entry/apps:archiveOnly :contentReference[oaicite:6]{index=6}
+  isArchived:                   'true',                   // entry/apps:isArchived :contentReference[oaicite:7]{index=7}
+
+  // 5) Moderación de contenido
+  messageModerationLevel:       'MODERATE_NONE',   // entry/apps:messageModerationLevel :contentReference[oaicite:8]{index=8}
+  spamModerationLevel:          'SILENTLY_MODERATE',      // entry/apps:spamModerationLevel :contentReference[oaicite:9]{index=9}
+
+  // 6) Moderación de miembros
+  whoCanModerateMembers:        'ALL_MEMBERS',            // entry/apps:whoCanModerateMembers :contentReference[oaicite:10]{index=10}
+
+  // 7) Buzón colaborativo y etiquetas
+  enableCollaborativeInbox:     'true',                   // entry/apps:enableCollaborativeInbox :contentReference[oaicite:11]{index=11}
+  whoCanEnterFreeFormTags:      'ALL_MEMBERS',            // entry/apps:whoCanEnterFreeFormTags :contentReference[oaicite:12]{index=12}
+  whoCanModifyTagsAndCategories:'ALL_MEMBERS',            // entry/apps:whoCanModifyTagsAndCategories :contentReference[oaicite:13]{index=13}
+
+  // 8) Publicar “como grupo” y respuestas
+  membersCanPostAsTheGroup:     'true',                   // entry/apps:membersCanPostAsTheGroup :contentReference[oaicite:14]{index=14}
+  replyTo: 'REPLY_TO_IGNORE',          // entry/apps:replyTo :contentReference[oaicite:15]{index=15}
+  defaultSender:                'GROUP'                   // (UI: Remitente predeterminado)
+ } });
 
   /* ───────── ACTUALIZAR MONGODB ───────── */
   if (type === 'program') {
@@ -703,6 +708,127 @@ async function ensureDeviceGroup(device, program) {
   return { id: group.id, email: group.email };
 }
 
+
+async function patchWithBackoff(groupEmail, requestBody) {
+  let delay = 400;
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    try {
+      await groupsSettings.groups.patch({
+        groupUniqueId: groupEmail,
+        requestBody
+      });
+      console.log(`✔ Ajustes aplicados en ${groupEmail}`);
+      return;
+    } catch (err) {
+      const apiErr = err?.errors?.[0] || {};
+      const retryable =
+        ['rateLimitExceeded', 'userRateLimitExceeded', 'backendError'].includes(apiErr.reason) ||
+        [429, 503].includes(err.code);
+      if (!retryable) {
+        console.error(`❌ Error no recuperable en ${groupEmail}:`, apiErr.message || err.message);
+        return;
+      }
+      console.warn(`↻ Reintento ${attempt} en ${groupEmail} (${apiErr.reason || err.code})`);
+      await new Promise(r => setTimeout(r, delay + Math.random() * 200));
+      delay *= 2;
+    }
+  }
+  console.error(`❌ Agotados reintentos en ${groupEmail}`);
+}
+
+/**
+ * Recorre todos los grupos del dominio y les aplica el mismo conjunto de ajustes.
+ */
+async function updateAllGroupsSettings() {
+  // const groups = await listAllGroups();
+  // console.log(`🔍 Encontrados ${groups.length} grupos.`);
+
+  const commonSettings = {
+  // 1) Permitir miembros externos
+  allowExternalMembers:         'false',                   // entry/apps:allowExternalMembers :contentReference[oaicite:0]{index=0}
+
+  // 2) Control de acceso
+  whoCanViewGroup:              'ALL_MEMBERS_CAN_VIEW',   // entry/apps:whoCanViewGroup :contentReference[oaicite:1]{index=1}
+  whoCanViewMembership:         'ALL_MEMBERS_CAN_VIEW',   // entry/apps:whoCanViewMembership :contentReference[oaicite:2]{index=2}
+  whoCanJoin:                   'CAN_REQUEST_TO_JOIN',    // entry/apps:whoCanJoin :contentReference[oaicite:3]{index=3}
+
+  // 3) Publicación
+  whoCanPostMessage:            'ANYONE_CAN_POST',        // entry/apps:whoCanPostMessage :contentReference[oaicite:4]{index=4}
+  allowWebPosting:              'true',                   // entry/apps:allowWebPosting :contentReference[oaicite:5]{index=5}
+
+  // 4) Historial (archivo, pero no readonly)
+  archiveOnly:                  'false',                  // entry/apps:archiveOnly :contentReference[oaicite:6]{index=6}
+  isArchived:                   'true',                   // entry/apps:isArchived :contentReference[oaicite:7]{index=7}
+
+  // 5) Moderación de contenido
+  messageModerationLevel:       'MODERATE_NONE',   // entry/apps:messageModerationLevel :contentReference[oaicite:8]{index=8}
+  spamModerationLevel:          'SILENTLY_MODERATE',      // entry/apps:spamModerationLevel :contentReference[oaicite:9]{index=9}
+
+  // 6) Moderación de miembros
+  whoCanModerateMembers:        'ALL_MEMBERS',            // entry/apps:whoCanModerateMembers :contentReference[oaicite:10]{index=10}
+
+  // 7) Buzón colaborativo y etiquetas
+  enableCollaborativeInbox:     'true',                   // entry/apps:enableCollaborativeInbox :contentReference[oaicite:11]{index=11}
+  whoCanEnterFreeFormTags:      'ALL_MEMBERS',            // entry/apps:whoCanEnterFreeFormTags :contentReference[oaicite:12]{index=12}
+  whoCanModifyTagsAndCategories:'ALL_MEMBERS',            // entry/apps:whoCanModifyTagsAndCategories :contentReference[oaicite:13]{index=13}
+
+  // 8) Publicar “como grupo” y respuestas
+  membersCanPostAsTheGroup:     'true',                   // entry/apps:membersCanPostAsTheGroup :contentReference[oaicite:14]{index=14}
+  replyTo: 'REPLY_TO_IGNORE',          // entry/apps:replyTo :contentReference[oaicite:15]{index=15}
+  defaultSender:                'GROUP'                   // (UI: Remitente predeterminado)
+};
+
+  // for (const g of groups) {
+  //   await patchWithBackoff(g.email, commonSettings);
+  // }
+  await patchWithBackoff('realnoventa.edu@engloba.org.es', commonSettings);
+  console.log('✅ Todos los grupos actualizados.');
+}
+
+// updateAllGroupsSettings()
+// // // // Ejecuta la tarea:
+// updateAllGroupsSettings().catch(console.error);
+
+// Pequeña utilidad de concurrencia (idéntica a p-limit)
+const makeLimit = max => {
+  let active = 0;
+  const queue = [];
+  const next = () => {
+    if (active >= max || queue.length === 0) return;
+    active++;
+    const { fn, resolve, reject } = queue.shift();
+    fn()
+      .then(resolve)
+      .catch(reject)
+      .finally(() => {
+        active--;
+        next();
+      });
+  };
+  return fn =>
+    new Promise((resolve, reject) => {
+      queue.push({ fn, resolve, reject });
+      next();
+    });
+};
+
+
+async function getGroupIdWS(groupEmail) {
+  if (!groupEmail || typeof groupEmail !== 'string') {
+    throw new ClientError('Email del grupo requerido', 400);
+  }
+
+  try {
+    const { data } = await directory.groups.get({ groupKey: groupEmail });
+    return data.id;                       // ← ID del grupo
+  } catch (err) {
+    const reason = err?.errors?.[0]?.reason;
+    if (reason === 'notFound') {
+      throw new ClientError('Grupo no encontrado en Workspace', 404);
+    }
+    throw err;                            // cualquier otro error → 500
+  }
+}
 
 
 

@@ -773,9 +773,8 @@ if (!stats.length || wanted.has('hiredEnded')) {
   response(res, 200, responseData);
 };
 
-const prueba= async (req, res) => {
-  response(res, 200, {funciona:'ok'});
-}
+//borrar
+
 
 
 //------------------------------------------------------------------
@@ -786,6 +785,5 @@ module.exports = {
   getCvConversion: catchAsync(getCvConversion),
   auditWorkersStats: catchAsync(auditWorkersStats),
   getWorkersStats: catchAsync(getWorkersStats),
-  prueba:catchAsync(prueba)
 
 };

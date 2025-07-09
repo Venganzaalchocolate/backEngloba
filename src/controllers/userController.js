@@ -1463,26 +1463,7 @@ const hirings = async (req, res) => {
 
 };
 
-const syncEmailPersonal = async () => {
-  try {
-    const result = await User.updateMany(
-      { email: { $exists: true, $ne: null } },
-      [
-        {
-          $set: {
-            email_personal: "$email"
-          }
-        }
-      ]
-    );
 
-    console.log({
-      message: `Actualizados ${result.modifiedCount} usuarios`,
-    });
-  } catch (error) {
-    throw new ClientError('Error al actualizar los emails personales', 500);
-  }
-};
 
 
 module.exports = {
