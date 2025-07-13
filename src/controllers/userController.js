@@ -26,6 +26,7 @@ const convertIds = (hirings) => {
       throw new ClientError('El campo position._id es requerido', 400);
     }
     hiring.position = new mongoose.Types.ObjectId(hiring.position);
+    if(!!hirings.selectionProcess)hiring.selectionProcess=new mongoose.Types.ObjectId(hiring.selectionProcess);
 
     // Validar y convertir device.id
     if (!hiring.device) {
@@ -213,7 +214,7 @@ const postCreateUser = async (req, res) => {
     // Intentar crear el usuario
     newUser = await User.create(userData)
 
-
+ 
     // Responder con el usuario guardado
 
   } catch (error) {
@@ -265,7 +266,6 @@ const getUsers = async (req, res) => {
   if (req.body.email) filters["email"] = { $regex: req.body.email, $options: 'i' };
   if (req.body.phone) filters["phone"] = { $regex: req.body.phone, $options: 'i' };
   if (req.body.dni) filters["dni"] = { $regex: req.body.dni, $options: 'i' };
-  if (req.body.status) filters["employmentStatus"] = req.body.status;
   if (req.body.gender) filters["gender"] = req.body.gender;
   if (req.body.fostered === "si") filters["fostered"] = true;
   if (req.body.fostered === "no") filters["fostered"] = false;
@@ -278,6 +278,20 @@ const getUsers = async (req, res) => {
       filters["disability.percentage"] = 0;
     }
   }
+
+  /* ─────────── FILTRO POR ESTADO ─────────── */
+if (req.body.status) {
+  if (req.body.status === 'total') {
+    // «total» = activo  ∪  en proceso de contratación
+    filters.employmentStatus = { 
+      $in: ['activo', 'en proceso de contratación'] 
+    };
+  } else {
+    // cualquier otro valor se filtra tal cual
+    filters.employmentStatus = req.body.status;
+  }
+}
+
 
   //----------
   // (1) Función para intersectar dos arrays de strings rápidamente
