@@ -1,5 +1,6 @@
+require('dotenv').config();
 const express = require('express');
-const { limiter, corsOptions, verifyOriginAndReferer, verifyGoogleRequest } = require('./middleware/securityMiddleware');
+const { limiter, corsOptions, verifyOriginAndReferer} = require('./middleware/securityMiddleware');
 const cors = require('cors');
 const userRoutes = require("./routes/userRoutes");
 const loginRoutes = require("./routes/loginRoutes");
@@ -17,7 +18,7 @@ const workspaceRoutes=require('./routes/workspaceRoutes')
 const { connectToDatabase } = require('./database/connect');
 require('./controllers/cronScheduleController');
 
-require('dotenv').config();
+
 const port = process.env.PORT || 10000;
 
 // Crear la aplicación Express

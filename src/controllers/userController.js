@@ -477,6 +477,7 @@ const buildFilters = (req, programs) => {
 
 
 const getAllUsersWithOpenPeriods = async (req, res) => {
+  
   const filters = {};
   const programs = await Program.find().select('name _id devices.name devices._id');
 
@@ -484,6 +485,8 @@ const getAllUsersWithOpenPeriods = async (req, res) => {
     const nameRegex = createAccentInsensitiveRegex(req.body.firstName);
     filters["firstName"] = { $regex: nameRegex };
   }
+
+  
   if (req.body.lastName) {
     const nameRegex = createAccentInsensitiveRegex(req.body.lastName);
     filters["lastName"] = { $regex: nameRegex };
@@ -493,7 +496,7 @@ const getAllUsersWithOpenPeriods = async (req, res) => {
   if (req.body.email) filters["email"] = { $regex: req.body.email, $options: 'i' };
   if (req.body.phone) filters["phone"] = { $regex: req.body.phone, $options: 'i' };
   if (req.body.dni) filters["dni"] = { $regex: req.body.dni, $options: 'i' };
-  if (req.body.status) filters["employmentStatus"] = req.body.status;
+  
   if (req.body.gender) filters["gender"] = req.body.gender;
   if (req.body.fostered === "si") filters["fostered"] = true;
   if (req.body.fostered === "no") filters["fostered"] = false;
@@ -507,7 +510,13 @@ const getAllUsersWithOpenPeriods = async (req, res) => {
     }
   }
 
-
+if (req.body.status) {
+  if (req.body.status === 'total') {
+    filters.employmentStatus = { $in: ['activo', 'en proceso de contratacion'] };
+  } else {
+    filters.employmentStatus = req.body.status;
+  }
+}
 
   //----------
   // (1) Función para intersectar dos arrays de strings rápidamente
@@ -592,8 +601,9 @@ const getAllUsersWithOpenPeriods = async (req, res) => {
   }
 
 
-  const users = await User.find(filters)
-    .sort({ createdAt: -1 })
+ 
+  const users = await User.find(filters).sort({ createdAt: -1 })
+
   const processedUsers = users.map(user => {
     // Si user es un documento de Mongoose, conviene convertirlo a objeto JS plano:
     // const plainUser = user.toObject();

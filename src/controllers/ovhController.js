@@ -1,7 +1,6 @@
 
 const Minio = require('minio');
 const { Readable } = require('stream');
-require('dotenv').config();
 
 // Configuración de variables de entorno para el cliente de Minio
 const containerName = process.env.ARSYS_CONTAINERNAME;
