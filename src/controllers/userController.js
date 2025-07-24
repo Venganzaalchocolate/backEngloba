@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const { validateRequiredFields, createAccentInsensitiveRegex } = require('../utils/utils');
 const { uploadFileToDrive, getFileById, deleteFileById, gestionAutomaticaNominas, obtenerCarpetaContenedora } = require('./googleController');
 const { getFileCv } = require('./ovhController');
-const { createUserWS, deleteUserByEmailWS } = require('./workspaceController');
+const { createUserWS, deleteUserByEmailWS, addUserToGroup, deleteMemeberAllGroups } = require('./workspaceController');
 
 
 
@@ -26,7 +26,7 @@ const convertIds = (hirings) => {
       throw new ClientError('El campo position._id es requerido', 400);
     }
     hiring.position = new mongoose.Types.ObjectId(hiring.position);
-    if(!!hirings.selectionProcess)hiring.selectionProcess=new mongoose.Types.ObjectId(hiring.selectionProcess);
+    if (!!hirings.selectionProcess) hiring.selectionProcess = new mongoose.Types.ObjectId(hiring.selectionProcess);
 
     // Validar y convertir device.id
     if (!hiring.device) {
@@ -165,7 +165,7 @@ const postCreateUser = async (req, res) => {
     dispositiveNow: newHiring,
     employmentStatus,
     notes,
-    gender,
+    gender
   };
 
 
@@ -200,7 +200,7 @@ const postCreateUser = async (req, res) => {
 
 
   if (req.body.studies) {
-    userData.studies = parseField(req.body.studies, 'studies').map((s) => new mongoose.Types.ObjectId(s));
+    userData.studies = parseField(studies, 'studies').map((s) => new mongoose.Types.ObjectId(s));
   }
 
   if (phoneJobNumber || phoneJobExtension) {
@@ -214,7 +214,7 @@ const postCreateUser = async (req, res) => {
     // Intentar crear el usuario
     newUser = await User.create(userData)
 
- 
+
     // Responder con el usuario guardado
 
   } catch (error) {
@@ -233,10 +233,29 @@ const postCreateUser = async (req, res) => {
   }
 
   try {
+    // crear usuario en workspace
     const userWorkspace = await createUserWS(newUser._id)
+
+
+
+
+
+    // guardar el email corporativo en el usuario
     if (userWorkspace?.email) {
+
+
+
       newUser.email = userWorkspace?.email;
-      await newUser.save()
+      const userNow = await newUser.save()
+      const deviceId = newHiring.device
+      const program = await Program
+        .findOne({ 'devices._id': deviceId }, { 'devices.$': 1, _id: 0 })
+        .lean();
+
+
+      const groupWorkspaceId = program?.devices?.[0]?.groupWorkspace; // <-- solo el id
+      const addGroupInW = addUserToGroup(userNow._id, groupWorkspaceId)
+
     }
   } catch (error) {
     console.error(error)
@@ -280,17 +299,17 @@ const getUsers = async (req, res) => {
   }
 
   /* ─────────── FILTRO POR ESTADO ─────────── */
-if (req.body.status) {
-  if (req.body.status === 'total') {
-    // «total» = activo  ∪  en proceso de contratación
-    filters.employmentStatus = { 
-      $in: ['activo', 'en proceso de contratación'] 
-    };
-  } else {
-    // cualquier otro valor se filtra tal cual
-    filters.employmentStatus = req.body.status;
+  if (req.body.status) {
+    if (req.body.status === 'total') {
+      // «total» = activo  ∪  en proceso de contratación
+      filters.employmentStatus = {
+        $in: ['activo', 'en proceso de contratación']
+      };
+    } else {
+      // cualquier otro valor se filtra tal cual
+      filters.employmentStatus = req.body.status;
+    }
   }
-}
 
 
   //----------
@@ -719,18 +738,10 @@ const UserDeleteId = async (req, res) => {
       }
     }
 
-    const deleteUserWorkspace = await deleteUserByEmailWS(userToDelete.email)
-    if (deleteUserWorkspace.deleted) {
-      const messageDelete = await User.deleteOne({ _id: id });
-      response(res, 200, messageDelete);
-    } else {
-      throw new ClientError(res, 400, 'No se ha podido borrar al usuario en workspace por lo tanto no se ha borrado al empleado')
-    }
-    // 4. Si todos los archivos se borraron correctamente,
-    //    ahora sí procedemos a eliminar el usuario en la BD
-
+    if(!!userToDelete.email) await deleteUserByEmailWS(userToDelete.email);
+    const messageDelete = await User.deleteOne({ _id: id });
+    response(res, 200, messageDelete);
   } catch (error) {
-
     response(res, 200, error.message);
   }
 
@@ -747,10 +758,27 @@ const userPut = async (req, res) => {
   if (!req.body._id) {
     throw new ClientError('El ID de usuario es requerido', 400);
   }
-
-
   // Inicializar el objeto de actualización
   let updateFields = {};
+
+   if (req.body.employmentStatus){
+    const userAux = await User
+    .findById(req.body._id)
+    .select({ firstName: 1, lastName: 1, email: 1, dispositiveNow: 1})
+    if(req.body.employmentStatus=='ya no trabaja con nosotros' && userAux.dispositiveNow.length>0) throw new ClientError(`Para cambiar el estado laboral a "Ya no trabaja con nosotros" se deben cerrar todos los periodos de contratación`, 400);
+    if(req.body.employmentStatus=='ya no trabaja con nosotros'){
+      await deleteUserByEmailWS(userAux.email)
+      updateFields.email=''
+    } else {
+      if (!userAux.email){
+        const created =await createUserWS(userAux._id)
+        updateFields.email = created.email;
+      }
+    }
+
+   }
+
+
 
 
   if (req.body.vacationDays) {
@@ -783,7 +811,6 @@ const userPut = async (req, res) => {
   if (req.body.employmentStatus) updateFields.employmentStatus = req.body.employmentStatus;
   if (req.body.socialSecurityNumber) updateFields.socialSecurityNumber = req.body.socialSecurityNumber;
   if (req.body.bankAccountNumber) updateFields.bankAccountNumber = req.body.bankAccountNumber;
-  if (req.body.role) updateFields.role = req.body.role;
 
   if (req.body.disPercentage) updateFields.disability = {
     percentage: req.body.disPercentage
@@ -834,13 +861,15 @@ const userPut = async (req, res) => {
   }
 
 
-  const folderId = process.env.GOOGLE_DRIVE_APPFILE;
+  
 
-  // Obtener los archivos existentes en la base de datos
+
+
+  if (files && files.length > 0) {  
+    const folderId = process.env.GOOGLE_DRIVE_APPFILE;
+    // Obtener los archivos existentes en la base de datos
   const user = await User.findById(req.body._id).select('files');
   const existingFiles = user.files || [];
-
-  if (files && files.length > 0) {
     const newFiles = []; // Array para almacenar los nuevos archivos procesados
 
     for (const file of files) {
@@ -1111,38 +1140,59 @@ const payroll = async (req, res) => {
 };
 
 const changeDispositiveNow = async (user) => {
-  // Verifica si existe el array hiringPeriods
-  if (!user.hiringPeriods || user.hiringPeriods.length === 0) {
-    return user; // se devuelve sin cambios
-  }
+  if (!user.hiringPeriods || user.hiringPeriods.length === 0) return user;
 
-  // Filtra únicamente los hiringPeriods activos y sin fecha de fin
   const activeHiringsWithoutEndDate = user.hiringPeriods.filter(
     (hp) => hp.active && !hp.endDate
   );
 
-  // Si no hay ningún hiringPeriod que cumpla la condición, se actualiza dispositiveNow a []
+  // Caso: no hay hirings activos -> limpiar y eliminar de todos los grupos
   if (activeHiringsWithoutEndDate.length === 0) {
     const updatedUser = await User.findOneAndUpdate(
       { _id: user._id },
       { $set: { dispositiveNow: [] } },
       { new: true }
     );
+
+    // fire & forget
+    if(!!user.email) deleteMemeberAllGroups(user.email).catch(console.error);
     return updatedUser;
   }
 
-  // // Extrae el device de cada hiringPeriod que cumple la condición
-  // const devices = activeHiringsWithoutEndDate.map((hp) => hp.device);
-
-  // Actualiza en la base de datos utilizando findOneAndUpdate
+  // Actualiza el campo en Mongo primero
   const updatedUser = await User.findOneAndUpdate(
     { _id: user._id },
     { $set: { dispositiveNow: activeHiringsWithoutEndDate } },
     { new: true }
   );
 
+  // Procesar grupos en background (no esperamos)
+  (async () => {
+    try {
+      // 1. Quitar de todos los grupos (una sola vez)
+       if(!!user.email) await deleteMemeberAllGroups(user.email);
+
+      // 2. Obtener los groupWorkspaceId de cada dispositivo y añadir
+      for (const h of activeHiringsWithoutEndDate) {
+        const program = await Program.findOne(
+          { active: true, 'devices._id': h.device },
+          { 'devices.$': 1, _id: 0 }
+        ).lean();
+
+        const groupWorkspaceId = program?.devices?.[0]?.groupWorkspace;
+        if (groupWorkspaceId) {
+          await addUserToGroup(user._id, groupWorkspaceId);
+        }
+      }
+    } catch (e) {
+      console.error('Error sincronizando grupos Workspace:', e);
+    }
+  })();
+
   return updatedUser;
 };
+
+
 
 
 // Ejemplo: hirings.js
@@ -1153,7 +1203,6 @@ const changeDispositiveNow = async (user) => {
 //  - convertIds (si convierte strings a ObjectId, etc.)
 //  - mongoose (si necesitas new mongoose.Types.ObjectId)
 const hirings = async (req, res) => {
-
 
 
   if (!req.body.userId)

@@ -12,6 +12,41 @@ const credentials = JSON.parse(
   Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString('utf-8')
 );
 
+const commonSettings = {
+  // 1) Permitir miembros externos
+  allowExternalMembers: 'false',                   // entry/apps:allowExternalMembers :contentReference[oaicite:0]{index=0}
+
+  // 2) Control de acceso
+  whoCanViewGroup: 'ALL_MEMBERS_CAN_VIEW',   // entry/apps:whoCanViewGroup :contentReference[oaicite:1]{index=1}
+  whoCanViewMembership: 'ALL_MEMBERS_CAN_VIEW',   // entry/apps:whoCanViewMembership :contentReference[oaicite:2]{index=2}
+  whoCanJoin: 'CAN_REQUEST_TO_JOIN',    // entry/apps:whoCanJoin :contentReference[oaicite:3]{index=3}
+
+  // 3) Publicación
+  whoCanPostMessage: 'ANYONE_CAN_POST',        // entry/apps:whoCanPostMessage :contentReference[oaicite:4]{index=4}
+  allowWebPosting: 'true',                   // entry/apps:allowWebPosting :contentReference[oaicite:5]{index=5}
+
+  // 4) Historial (archivo, pero no readonly)
+  archiveOnly: 'false',                  // entry/apps:archiveOnly :contentReference[oaicite:6]{index=6}
+  isArchived: 'true',                   // entry/apps:isArchived :contentReference[oaicite:7]{index=7}
+
+  // 5) Moderación de contenido
+  messageModerationLevel: 'MODERATE_NONE',   // entry/apps:messageModerationLevel :contentReference[oaicite:8]{index=8}
+  spamModerationLevel: 'SILENTLY_MODERATE',      // entry/apps:spamModerationLevel :contentReference[oaicite:9]{index=9}
+
+  // 6) Moderación de miembros
+  whoCanModerateMembers: 'ALL_MEMBERS',            // entry/apps:whoCanModerateMembers :contentReference[oaicite:10]{index=10}
+
+  // 7) Buzón colaborativo y etiquetas
+  enableCollaborativeInbox: 'true',                   // entry/apps:enableCollaborativeInbox :contentReference[oaicite:11]{index=11}
+  whoCanEnterFreeFormTags: 'ALL_MEMBERS',            // entry/apps:whoCanEnterFreeFormTags :contentReference[oaicite:12]{index=12}
+  whoCanModifyTagsAndCategories: 'ALL_MEMBERS',            // entry/apps:whoCanModifyTagsAndCategories :contentReference[oaicite:13]{index=13}
+
+  // 8) Publicar “como grupo” y respuestas
+  membersCanPostAsTheGroup: 'true',                   // entry/apps:membersCanPostAsTheGroup :contentReference[oaicite:14]{index=14}
+  replyTo: 'REPLY_TO_IGNORE',          // entry/apps:replyTo :contentReference[oaicite:15]{index=15}
+  defaultSender: 'GROUP'                   // (UI: Remitente predeterminado)
+};
+
 // 2. Extraemos client_email y private_key del JSON
 const { client_email, private_key } = credentials;
 
@@ -36,7 +71,7 @@ const auth = new google.auth.JWT({
 });
 //hjbg
 const directory = google.admin({ version: 'directory_v1', auth });
-const groupsSettings  = google.groupssettings({ version: 'v1', auth });
+const groupsSettings = google.groupssettings({ version: 'v1', auth });
 const groupsMigration = google.groupsmigration({ version: 'v1', auth });
 const DOMAIN = 'engloba.org.es';
 // ————————————————————————————————————————————————————————————————————————
@@ -82,7 +117,7 @@ async function patchWithBackoff(email) {
 
       if (!retryable) {                        // error permanente
         console.error(`❌ Error definitivo en ${email}:`,
-                      apiErr.message || err.message);
+          apiErr.message || err.message);
         return;
       }
 
@@ -112,7 +147,7 @@ function normalizeString(str) {
 // ————————————————————————————————————————————————————————————————————————
 
 function buildUserEmail(user) {
-  if(!user) return ''
+  if (!user) return ''
   const first = (user.firstName || '').trim().toLowerCase();
   const last = (user.lastName || '').trim().toLowerCase();
   const normalizedFirst = first
@@ -126,7 +161,7 @@ function buildUserEmail(user) {
 
 
 //------------------USUARIOS---------------------
-const createUserWS = async (userId, contador=0) => {
+const createUserWS = async (userId, contador = 0) => {
 
   if (!userId) throw new ClientError('Falta el ID del usuario', 400);
 
@@ -169,7 +204,7 @@ const createUserWS = async (userId, contador=0) => {
   }
 };
 
-  
+
 const deleteUserByEmailWS = async (email) => {
   if (!email || typeof email !== 'string') {
     throw new ClientError('Email requerido y debe ser válido', 400);
@@ -191,32 +226,6 @@ const deleteUserByEmailWS = async (email) => {
   return { email, deleted: true };
 };
 
-const updateUserWS = async (req, res) => {
-  const { userId, updates } = req.body;
-
-  if (!userId || !updates || typeof updates !== 'object') {
-    throw new ClientError('Parámetros inválidos', 400);
-  }
-
-  const user = await User.findById(userId).lean();
-  if (!user) throw new ClientError('Usuario no encontrado', 404);
-
-  const userEmail = buildUserEmail(user);
-
-  await directory.users.update({
-    userKey: userEmail,
-    requestBody: updates,
-  }).catch(err => {
-    const reason = err?.errors?.[0]?.reason;
-    if (reason === 'notFound') {
-      throw new ClientError('Usuario no encontrado en Workspace', 404);
-    }
-    throw err;
-  });
-
-  response(res, 200, { email: userEmail, updated: true });
-};
-
 
 //------------GRUPOS--------------------------
 
@@ -227,22 +236,74 @@ async function addUserToGroup(userId, groupEmail) {
     console.error(`No existe el usuario con ID ${userId}`);
     return;
   }
-  const userEmail = buildUserEmail(user);
 
-  try {
-    await directory.members.insert({
-      groupKey: groupEmail,
-      requestBody: { email: userEmail, role: 'MEMBER', type: 'USER' }
-    });
-    console.log(`✅ "${userEmail}" añadido a "${groupEmail}".`);
-  } catch (err) {
-    if (err.errors?.[0]?.reason === 'duplicate') {
-      console.warn(`⚠️ "${userEmail}" ya es miembro de "${groupEmail}".`);
-    } else {
-      console.error(`❌ Error añadiendo "${userEmail}" a "${groupEmail}":`, err);
+  if (!!user.email) {
+    const userEmail = user.email;
+
+    try {
+      await directory.members.insert({
+        groupKey: groupEmail,
+        requestBody: { email: userEmail, role: 'MEMBER', type: 'USER' }
+      });
+      console.log(`✅ "${userEmail}" añadido a "${groupEmail}".`);
+    } catch (err) {
+      if (err.errors?.[0]?.reason === 'duplicate') {
+        console.warn(`⚠️ "${userEmail}" ya es miembro de "${groupEmail}".`);
+      } else {
+        console.error(`❌ Error añadiendo "${userEmail}" a "${groupEmail}":`, err);
+      }
     }
   }
+
 }
+
+const EXCLUDED_GROUP = 'englobaasociacion@engloba.org.es';
+
+const deleteMemeberAllGroups = async (email) => {
+  if (!email || typeof email !== 'string') {
+    throw new ClientError('Email requerido y debe ser válido', 400);
+  }
+
+  const excluded = EXCLUDED_GROUP.toLowerCase();
+  const removed = [];
+  let pageToken;
+
+  do {
+    const { data } = await directory.groups.list({
+      userKey: email,         // grupos donde el usuario es miembro
+      maxResults: 200,
+      pageToken
+    });
+
+    const groups = data.groups || [];
+    for (const g of groups) {
+      // Saltar el grupo protegido
+      if (g.email && g.email.toLowerCase() === excluded) continue;
+
+      try {
+        await directory.members.delete({
+          groupKey: g.id,      // puedes usar g.email también
+          memberKey: email
+        });
+        removed.push({ id: g.id, email: g.email });
+      } catch (err) {
+        const reason = err?.errors?.[0]?.reason;
+        // Si el grupo/miembro ya no existe, lo ignoramos
+        if (reason !== 'notFound') {
+          console.warn(`No se pudo eliminar de ${g.email}:`, reason || err.message);
+        }
+      }
+    }
+
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return {
+    email,
+    removedCount: removed.length,
+    removedGroups: removed
+  };
+};
 
 const infoGroupWS = async (req, res) => {
   const { idGroup } = req.body
@@ -306,8 +367,6 @@ const infoGroup = async (idGroup) => {
 const addGroupWS = async (req, res) => {
   let { memberEmail, role = 'MEMBER', groupId } = req.body;
 
-  if(memberEmail=='elisabet.dacostaalmiron@engloba.org.es') memberEmail='comunicacion@engloba.org.es';
-  if(memberEmail=='gustavoangel.lorcacarrero@engloba.org.es') memberEmail='web@engloba.org.es';
   /* 1. Validación de entrada */
   if (!memberEmail || !groupId) {
     throw new ClientError('Faltan parámetros obligatorios', 400);
@@ -360,7 +419,7 @@ const createGroupWS = async (req, res) => {
   // type si es un Program o Device
   const { idGroupFather, typeGroup, id, type } = req.body;
 
-  const suffixMap = { coordination: 'coor', direction: 'dir', social: 'trab', psychology: 'psico', education: 'edu', tecnicos:'tec' };
+  const suffixMap = { coordination: 'coor', direction: 'dir', social: 'trab', psychology: 'psico', education: 'edu', tecnicos: 'tec' };
   const typeGroupOptions = [...Object.keys(suffixMap), 'blank'];
   const typeOptions = ['program', 'device'];
 
@@ -422,42 +481,12 @@ const createGroupWS = async (req, res) => {
   }
 
 
+
   await groupsSettings.groups.patch({
     groupUniqueId: groupEmail,
-    requestBody: {
-  // 1) Permitir miembros externos
-  allowExternalMembers:         'false',                   // entry/apps:allowExternalMembers :contentReference[oaicite:0]{index=0}
+    requestBody: commonSettings
+  });
 
-  // 2) Control de acceso
-  whoCanViewGroup:              'ALL_MEMBERS_CAN_VIEW',   // entry/apps:whoCanViewGroup :contentReference[oaicite:1]{index=1}
-  whoCanViewMembership:         'ALL_MEMBERS_CAN_VIEW',   // entry/apps:whoCanViewMembership :contentReference[oaicite:2]{index=2}
-  whoCanJoin:                   'CAN_REQUEST_TO_JOIN',    // entry/apps:whoCanJoin :contentReference[oaicite:3]{index=3}
-
-  // 3) Publicación
-  whoCanPostMessage:            'ANYONE_CAN_POST',        // entry/apps:whoCanPostMessage :contentReference[oaicite:4]{index=4}
-  allowWebPosting:              'true',                   // entry/apps:allowWebPosting :contentReference[oaicite:5]{index=5}
-
-  // 4) Historial (archivo, pero no readonly)
-  archiveOnly:                  'false',                  // entry/apps:archiveOnly :contentReference[oaicite:6]{index=6}
-  isArchived:                   'true',                   // entry/apps:isArchived :contentReference[oaicite:7]{index=7}
-
-  // 5) Moderación de contenido
-  messageModerationLevel:       'MODERATE_NONE',   // entry/apps:messageModerationLevel :contentReference[oaicite:8]{index=8}
-  spamModerationLevel:          'SILENTLY_MODERATE',      // entry/apps:spamModerationLevel :contentReference[oaicite:9]{index=9}
-
-  // 6) Moderación de miembros
-  whoCanModerateMembers:        'ALL_MEMBERS',            // entry/apps:whoCanModerateMembers :contentReference[oaicite:10]{index=10}
-
-  // 7) Buzón colaborativo y etiquetas
-  enableCollaborativeInbox:     'true',                   // entry/apps:enableCollaborativeInbox :contentReference[oaicite:11]{index=11}
-  whoCanEnterFreeFormTags:      'ALL_MEMBERS',            // entry/apps:whoCanEnterFreeFormTags :contentReference[oaicite:12]{index=12}
-  whoCanModifyTagsAndCategories:'ALL_MEMBERS',            // entry/apps:whoCanModifyTagsAndCategories :contentReference[oaicite:13]{index=13}
-
-  // 8) Publicar “como grupo” y respuestas
-  membersCanPostAsTheGroup:     'true',                   // entry/apps:membersCanPostAsTheGroup :contentReference[oaicite:14]{index=14}
-  replyTo: 'REPLY_TO_IGNORE',          // entry/apps:replyTo :contentReference[oaicite:15]{index=15}
-  defaultSender:                'GROUP'                   // (UI: Remitente predeterminado)
- } });
 
   /* ───────── ACTUALIZAR MONGODB ───────── */
   if (type === 'program') {
@@ -580,80 +609,13 @@ const deleteGroupWS = async (req, res) => {
 
 // auditarResponsablesUnificados()
 
-
-/* listShare_cjs.js  ─────────────────────────────────────────────
-   Recorre la unidad Z:\ (NAS) y genera un listado de todo
-   lo que encuentre.  Ajusta SHARE_PATH si tu letra es otra.
-----------------------------------------------------------------*/
-const fs   = require('fs');
-const fsp  = require('fs/promises');
-const path = require('path');
-
-/*─────────────── CONFIG ───────────────*/
-const ROOT_FOLDER = 'Z:\\comunicacion';          // tu carpeta en el NAS
-const GROUP_EMAIL = `pruebamigracion@engloba.org.es`;;  // grupo destino
-const MAX_QPS     = 5;                           // llamadas/seg (≤10)
-/*───────────────────────────────────────*/
-
-
-
-const migration = google.groupsmigration({ version: 'v1', auth });
-
-// ---------- 2. Recorrer carpetas ----------
-async function walk(dir, list = []) {
-  for (const ent of await fsp.readdir(dir, { withFileTypes: true })) {
-    const full = path.join(dir, ent.name);
-    if (ent.isDirectory()) {
-      await walk(full, list);
-    } else if (full.toLowerCase().endsWith('.eml')) {
-      list.push(full);
-    }
-  }
-  return list;
-}
-
-// ---------- 3. Subir un archivo (.eml) ----------
-async function uploadEml(file) {
-  const sz = fs.statSync(file).size;
-  if (sz > 25 * 1024 * 1024) {
-    console.warn('⚠️  Omitido (>25 MB):', path.basename(file));
-    return;
-  }
-
-  const media = {
-    mimeType: 'message/rfc822',
-    body: fs.createReadStream(file)
-  };
-
-  let delay = 400;                              // 0,4 s inicial
-  for (let attempt = 1; attempt <= 6; attempt++) {
-    try {
-      const { data } = await migration.archive.insert({
-        groupId: GROUP_EMAIL,
-        media
-      });
-      console.log('⬆', path.basename(file), '→', data.responseCode);
-      return;
-    } catch (e) {
-      if ([429, 503].includes(e.code)) {        // quota / backend
-        console.warn(`↻ Reintento ${attempt} (${e.code}) en ${path.basename(file)}`);
-        await new Promise(r => setTimeout(r, delay + Math.random() * 200));
-        delay *= 2;                             // back-off exponencial
-      } else {
-        console.error('❌', path.basename(file), e.errors?.[0]?.message || e.message);
-        return;
-      }
-    }
-  }
-}
-
 /**
  * Crea (o recupera, si ya existe) un grupo principal para un Programa.
  * Devuelve { id, email } del grupo.
  */
 async function ensureProgramGroup(program) {
-  const base        = normalizeString(program.acronym);
-  const email       = `${base}@${DOMAIN}`;
+  const base = normalizeString(program.acronym);
+  const email = `${base}@${DOMAIN}`;
   const displayName = `Programa: ${program.acronym}`;
 
   let group;
@@ -685,8 +647,8 @@ async function ensureDeviceGroup(device, program) {
   // Nos aseguramos de que el padre exista primero
   const { id: parentId } = await ensureProgramGroup(program);
 
-  const base        = normalizeString(device.name);
-  const email       = `${base}@${DOMAIN}`;
+  const base = normalizeString(device.name);
+  const email = `${base}@${DOMAIN}`;
   const displayName = `Dispositivo: ${device.name}`;
 
   let group;
@@ -743,103 +705,30 @@ async function updateAllGroupsSettings() {
   // const groups = await listAllGroups();
   // console.log(`🔍 Encontrados ${groups.length} grupos.`);
 
-  const commonSettings = {
-  // 1) Permitir miembros externos
-  allowExternalMembers:         'false',                   // entry/apps:allowExternalMembers :contentReference[oaicite:0]{index=0}
-
-  // 2) Control de acceso
-  whoCanViewGroup:              'ALL_MEMBERS_CAN_VIEW',   // entry/apps:whoCanViewGroup :contentReference[oaicite:1]{index=1}
-  whoCanViewMembership:         'ALL_MEMBERS_CAN_VIEW',   // entry/apps:whoCanViewMembership :contentReference[oaicite:2]{index=2}
-  whoCanJoin:                   'CAN_REQUEST_TO_JOIN',    // entry/apps:whoCanJoin :contentReference[oaicite:3]{index=3}
-
-  // 3) Publicación
-  whoCanPostMessage:            'ANYONE_CAN_POST',        // entry/apps:whoCanPostMessage :contentReference[oaicite:4]{index=4}
-  allowWebPosting:              'true',                   // entry/apps:allowWebPosting :contentReference[oaicite:5]{index=5}
-
-  // 4) Historial (archivo, pero no readonly)
-  archiveOnly:                  'false',                  // entry/apps:archiveOnly :contentReference[oaicite:6]{index=6}
-  isArchived:                   'true',                   // entry/apps:isArchived :contentReference[oaicite:7]{index=7}
-
-  // 5) Moderación de contenido
-  messageModerationLevel:       'MODERATE_NONE',   // entry/apps:messageModerationLevel :contentReference[oaicite:8]{index=8}
-  spamModerationLevel:          'SILENTLY_MODERATE',      // entry/apps:spamModerationLevel :contentReference[oaicite:9]{index=9}
-
-  // 6) Moderación de miembros
-  whoCanModerateMembers:        'ALL_MEMBERS',            // entry/apps:whoCanModerateMembers :contentReference[oaicite:10]{index=10}
-
-  // 7) Buzón colaborativo y etiquetas
-  enableCollaborativeInbox:     'true',                   // entry/apps:enableCollaborativeInbox :contentReference[oaicite:11]{index=11}
-  whoCanEnterFreeFormTags:      'ALL_MEMBERS',            // entry/apps:whoCanEnterFreeFormTags :contentReference[oaicite:12]{index=12}
-  whoCanModifyTagsAndCategories:'ALL_MEMBERS',            // entry/apps:whoCanModifyTagsAndCategories :contentReference[oaicite:13]{index=13}
-
-  // 8) Publicar “como grupo” y respuestas
-  membersCanPostAsTheGroup:     'true',                   // entry/apps:membersCanPostAsTheGroup :contentReference[oaicite:14]{index=14}
-  replyTo: 'REPLY_TO_IGNORE',          // entry/apps:replyTo :contentReference[oaicite:15]{index=15}
-  defaultSender:                'GROUP'                   // (UI: Remitente predeterminado)
-};
-
   // for (const g of groups) {
   //   await patchWithBackoff(g.email, commonSettings);
   // }
-  await patchWithBackoff('realnoventa.edu@engloba.org.es', commonSettings);
+  await patchWithBackoff('cvvgjaen@engloba.org.es', commonSettings);
   console.log('✅ Todos los grupos actualizados.');
 }
 
-// updateAllGroupsSettings()
+//updateAllGroupsSettings()
 // // // // Ejecuta la tarea:
 // updateAllGroupsSettings().catch(console.error);
 
-// Pequeña utilidad de concurrencia (idéntica a p-limit)
-const makeLimit = max => {
-  let active = 0;
-  const queue = [];
-  const next = () => {
-    if (active >= max || queue.length === 0) return;
-    active++;
-    const { fn, resolve, reject } = queue.shift();
-    fn()
-      .then(resolve)
-      .catch(reject)
-      .finally(() => {
-        active--;
-        next();
-      });
-  };
-  return fn =>
-    new Promise((resolve, reject) => {
-      queue.push({ fn, resolve, reject });
-      next();
-    });
-};
-
-
-async function getGroupIdWS(groupEmail) {
-  if (!groupEmail || typeof groupEmail !== 'string') {
-    throw new ClientError('Email del grupo requerido', 400);
-  }
-
-  try {
-    const { data } = await directory.groups.get({ groupKey: groupEmail });
-    return data.id;                       // ← ID del grupo
-  } catch (err) {
-    const reason = err?.errors?.[0]?.reason;
-    if (reason === 'notFound') {
-      throw new ClientError('Grupo no encontrado en Workspace', 404);
-    }
-    throw err;                            // cualquier otro error → 500
-  }
-}
+// añadir usuario a grupo con email de usuario y id de grupo
 
 
 
 module.exports = {
   addUserToGroup,
+  deleteMemeberAllGroups,
   infoGroupWS: catchAsync(infoGroupWS),
   addGroupWS: catchAsync(addGroupWS),
   createGroupWS: catchAsync(createGroupWS),
   deleteMemberGroupWS: catchAsync(deleteMemberGroupWS),
   deleteGroupWS: catchAsync(deleteGroupWS),
-  createUserWS, 
+  createUserWS,
   deleteUserByEmailWS,
   ensureProgramGroup, ensureDeviceGroup,
 };

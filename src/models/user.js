@@ -269,6 +269,7 @@ const UserSchema = new Schema({
         type:Boolean,
         default:true,
     },
+    //
     studies:{
         type:[Schema.Types.ObjectId],
         ref: 'Studies'
