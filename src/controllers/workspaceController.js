@@ -213,14 +213,7 @@ const deleteUserByEmailWS = async (email) => {
   await directory.users.delete({
     userKey: email
   }).catch(err => {
-    const reason = err?.errors?.[0]?.reason;
-
-    if (reason === 'notFound') {
-      throw new ClientError('Usuario no encontrado en Workspace', 404);
-    }
-
-    // Otros errores se propagan
-    throw err;
+    return { email, deleted: false };
   });
 
   return { email, deleted: true };

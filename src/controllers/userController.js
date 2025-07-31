@@ -227,7 +227,6 @@ const postCreateUser = async (req, res) => {
         400
       );
     }
-    console.log(error)
     // Cualquier otro error
     throw new ClientError('Error al crear el usuario', 500);
   }
@@ -236,15 +235,8 @@ const postCreateUser = async (req, res) => {
     // crear usuario en workspace
     const userWorkspace = await createUserWS(newUser._id)
 
-
-
-
-
     // guardar el email corporativo en el usuario
     if (userWorkspace?.email) {
-
-
-
       newUser.email = userWorkspace?.email;
       const userNow = await newUser.save()
       const deviceId = newHiring.device
@@ -255,7 +247,6 @@ const postCreateUser = async (req, res) => {
 
       const groupWorkspaceId = program?.devices?.[0]?.groupWorkspace; // <-- solo el id
       const addGroupInW = addUserToGroup(userNow._id, groupWorkspaceId)
-
     }
   } catch (error) {
     console.error(error)
