@@ -770,8 +770,10 @@ const userPut = async (req, res) => {
     if(req.body.employmentStatus=='ya no trabaja con nosotros'){
       await deleteUserByEmailWS(userAux.email)
       updateFields.email=''
+      updateFields.employmentStatus='ya no trabaja con nosotros'
     } else {
       if (!userAux.email){
+        updateFields.employmentStatus=req.body.employmentStatus
         const created =await createUserWS(userAux._id)
         updateFields.email = created.email;
       }
