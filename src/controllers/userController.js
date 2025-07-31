@@ -1535,7 +1535,427 @@ const hirings = async (req, res) => {
 
 
 };
+const listaDniSesame=  [
+  "26821581Q", "29055355F", "29549957V", "29611560A", "29759583K",
+  "44604636T", "49058174W", "60350181K", "75553136E", "12799125Q",
+  "47394787K", "51184696J", "53698424W", "74817811F", "74830480A",
+  "76884623Q", "77182943A", "77185481B", "77189189Q", "79362564Y",
+  "79391938D", "21016064K", "29055419W", "29629308H", "44220866P",
+  "44249280V", "49058811H", "49545975L", "75548506S", "76425423B",
+  "77361299V", "21003844Z", "25337122T", "25350582M", "44441983A",
+  "44588903E", "44697394E", "54234337S", "75899118S", "76435037B",
+  "77198292B", "44782488Q", "45081054L", "45097858X", "45097862Z",
+  "45099312S", "45100408F", "45108166Z", "45109629M", "45114725H",
+  "45115068Q", "45117213E", "45117538W", "45119688J", "45119883R",
+  "45121687B", "45151198J", "46399466W", "06273995D", "45093202T",
+  "45100377E", "45101489F", "45107720M", "45109897C", "45112399S",
+  "45115094L", "76734855R", "45604804J", "45606602V", "45606619B",
+  "45606642B", "45606657A", "45607744D", "45607747N", "45717123T",
+  "45921632Q", "52523247X", "77137222Y", "Y0072233G", "23229676K",
+  "20529429C",
+  "25344432L", "25349944B", "25606393X", "25611518Y", "25612842L",
+  "25620395M", "26302769S", "26303066J", "39949612S", "51181559G",
+  "54120068X", "76882556L", "77024599Z", "04742049R", "20500559S",
+  "25351783X", "25599716A", "25602934R", "25603105B", "25606260S",
+  "25614057S", "25628019Q", "25628531E", "27409852Q", "31735756B",
+  "47429583H", "49077039F", "74931838T", "74933546Y", "77194049T",
+  "77685981P", "X8208054K", "05441111R", "39416339C", "45091105L",
+  "45094722W", "45099788P", "45103369R", "45103915H", "45110558Z",
+  "45114023Y", "45114728K", "45115434Z", "45118227R", "45118895W",
+  "45119047Q", "45120774H", "45123944Z", "45124383Q", "46360025Y",
+  "48914475F", "76427300W", "15426808H", "21648709M", "23239532X",
+  "23272935V", "23308687G", "23330963Q", "23334651R", "44053505H",
+  "45597660E", "45900334Q", "45922940J", "76631550N", "78239443K",
+  "43187094V", "45713234K", "45713716C", "45714714Y", "45718851A",
+  "45718855F", "45868041S", "45869018A", "45920467R", "45921448Q",
+  "45921602D", "45922377W", "45924375E", "45924466K", "45925008B",
+  "49627842Y", "54833289R", "77141068B", "78686200A", "20623312V",
+  "25612325P", "25619117S", "26791901Y", "28636112P", "46072989X",
+  "74906606E", "74916129T", "77684375N", "25617536K", "25620719F",
+  "25686854V", "26501239H", "45199709V", "48949397S", "52256183E",
+  "74939247A", "75158035S", "77228662K", "77661271T", "79034140E",
+  "11859406P", "18569374W", "31001403W", "34866473Z", "45603206W",
+  "45640756Q", "48632687S", "49121206Z", "54097698L", "54139347S",
+  "75223697N", "75242835Z", "75255475G", "75271957H", "75714294L",
+  "75714569H", "75719710F", "76636207T", "76657810Y", "76660197R",
+  "77170111M", "14633723L", "23240587F", "23256030V", "23270021R",
+  "23271899Q", "23286186C", "30547444V", "45596764T", "45597404L",
+  "45606589G", "45606593P", "49631062Y", "77246422W", "02419658N",
+  "15255942L", "15426806Q", "15452108H", "23256335T", "23286171M",
+  "26010078E", "26518709P", "45605681Q", "54122249Y", "54143491L",
+  "54203430C", "75127068Y", "75262989C", "75727572A", "75728050K",
+  "77486707Y", "29439841W", "44234001X", "44236877B", "45736260R",
+  "52872535C", "01878511D", "17478673F", "25322065P", "25342717Y",
+  "25345816T", "25346098Y", "25346675P", "50626400L", "74914476A",
+  "77561313T", "79440992G", "29492096R", "29621505N", "34773408F",
+  "40451990G", "44208078P", "44214770F", "44243487C", "47555041B",
+  "48920403R", "48923788M", "48938640E", "48962961D", "49115399A",
+  "49118994X", "55481874D", "79052812H", "25333352W", "25341664B",
+  "25342271C", "25347599N", "25349672S", "25612815S", "25619604L",
+  "26299635D", "31873623Q", "49124693M", "74919225Z", "77231559C",
+  "77366554M", "77674632K", "24223257W", "26238570D", "52529093Z",
+  "74677179C", "75150302X", "76144502N", "76629673K", "29622765F",
+  "44230484N", "48911393F", "48912660D", "48940907N", "48953316R",
+  "49061717A", "49237354N", "75559763W", "75772042Z", "76256666M",
+  "80226071R", "09043495X", "45089736F", "45106236Q", "45106610E",
+  "45112163D", "45112498E", "45112967P", "45120291H", "45121006C",
+  "45151666K", "45088418T", "45098008E", "45101534Y", "45102377K",
+  "45103464G", "45104166Q", "45112720Z", "45119838W", "20623949X",
+  "29608988F", "29793266D", "44209603S", "48931443R", "48946450N",
+  "49057733K", "49058014A", "49059064H", "49112182Y", "Y0030820Z",
+  "29767841E", "29785372G", "44210635N", "44217760F", "44235067H",
+  "44249256Q", "48906421A", "48907777W", "49235487P", "75555654X",
+  "79165641D", "14275988A", "15514772F", "18575983X", "23813921C",
+  "24257951N", "24258587G", "54142395G", "74650130L", "74717679V",
+  "74738693D", "75147011P", "75149840P", "75156156E", "75158164Y",
+  "76067417T", "76069697A", "77144194D", "77389806G", "X4126661R",
+  "14631893Y", "45711046H", "45719186Q", "45920306R", "45920371C",
+  "45920586M", "45920834T", "73657359C", "74656777L", "75578185R",
+  "76423106V", "26050332A", "26812824E", "45306140G", "45900892E",
+  "54135112N", "74933919B", "74943485D", "77684695X", "78950739L",
+  "80166703L"
+];
 
+
+
+
+
+
+const HEADERS = [
+  'Nombre','Apellidos','Tipo de identificación','Nº de identificación','Fecha de nacimiento','Género',
+  'Nacionalidad','Estado civil','Nº de hijos','Porcentaje de discapacidad','Domicilio','Localidad',
+  'Provincia','Código postal','País','Email empresa','Email personal','Teléfono','Teléfono de empresa',
+  'Teléfono de emergencia','Cargo en la empresa','Responsable directo','Días de vacaciones',
+  'Primer Validador de Ausencias','Segundo Validador de Ausencias','Tercer Validador de Ausencias',
+  'Primer Validador de Fichajes','Segundo Validador de Fichajes','Tercer Validador de Fichajes',
+  'Reclutador Principal','Centro','Departamento','Idioma','Código de acceso','PIN','Tag NFC',
+  'Nivel de estudios','Grupo de cotización','Beneficiario de la cuenta','Tipo de cuenta','Nombre del banco',
+  'Empleado sindicalizado','¿Pertenece a una zona geográfica fronteriza?','¿Es un empleado expatriado?',
+  'Registro federal de contribuyentes','Tipo de trabajador','Plan de beneficios','Tipo de salario'
+];
+
+const INACTIVE_STATUS = 'ya no trabaja con nosotros';
+
+async function revisarUsuariosSesame() {
+  // Normalizamos DNIs y quitamos duplicados
+  const dniList = Array.from(
+    new Set(listaDniSesame.map(d => d.replace(/\s+/g, '').toUpperCase()))
+  );
+
+  // Traemos solo lo necesario
+  const users = await User.find(
+    { dni: { $in: dniList } },
+    { dni: 1, employmentStatus: 1, firstName: 1, lastName: 1 }
+  ).lean();
+
+  const mapUsers = new Map(users.map(u => [u.dni.toUpperCase(), u]));
+
+  const resultado = {
+    noExisten: [],
+    inactivos: [],
+    ok: []
+  };
+
+  for (const dni of dniList) {
+    const user = mapUsers.get(dni);
+    if (!user) {
+      resultado.noExisten.push(dni);
+      continue;
+    }
+
+    const status = (user.employmentStatus || '').trim().toLowerCase();
+    const nombreCompleto = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+
+    if (status === INACTIVE_STATUS) {
+      resultado.inactivos.push({
+        dni,
+        nombreCompleto,
+        userId: user._id
+      });
+    } else {
+      resultado.ok.push({
+        dni,
+        nombreCompleto,
+        userId: user._id
+      });
+    }
+  }
+
+  return resultado;
+}
+
+
+// // Ejemplo de uso
+// (async () => {
+//   const resumen = await revisarUsuariosSesame();
+//   console.log('Inactivos:', resumen.inactivos);
+//   console.log('No existen:', resumen.noExisten);
+//   console.log('OK:', resumen.ok.length, 'usuarios');
+// })();
+
+//sesame BORRAR MAS TARDE
+
+const fs = require('fs');
+const path = require('path');
+const ExcelJS = require('exceljs');
+
+function formatDate(d){
+  if(!d) return '';
+  const date = new Date(d);
+  const mm = String(date.getMonth()+1).padStart(2,'0');
+  const dd = String(date.getDate()).padStart(2,'0');
+  return `${date.getFullYear()}-${mm}-${dd}`;
+}
+
+// crea un índice que tiene entradas tanto para programs como para devices
+// crea un índice que tiene entradas tanto para programs como para devices
+const createProgramDevicesIndex = (programs) => {
+  const index = {};
+
+  programs.forEach(program => {
+    // Registro para el programa
+    index[program._id.toString()] = {
+      _id: program._id.toString(),
+      type: "program",
+      name: program.name,
+      responsible: program.responsible,
+      devicesIds: (program.devices || []).map(d => d._id.toString())
+    };
+
+    // Registros para cada device del programa
+    (program.devices || []).forEach(device => {
+      index[device._id.toString()] = {
+        _id: device._id.toString(),
+        type: "device",
+        name: device.name,
+        responsible: device.responsible,
+        coordinators: device.coordinators,
+        programId: program._id.toString()
+      };
+    });
+  });
+
+  return index;
+};
+
+async function buildEmployeesJson(dniList) {
+  const users = await User.find({ dni: { $in: dniList } })
+    .populate({ path: 'dispositiveNow.position', model: 'Jobs', select: 'name' })
+    .populate({ path: 'studies', select: 'name' })
+    .lean();
+
+  // Recolectar todos los deviceIds
+  const deviceIds = new Set();
+  users.forEach(u =>
+    (u.dispositiveNow || []).forEach(p => {
+      if (p.device) deviceIds.add(p.device.toString());
+    })
+  );
+
+  // Buscar los programas que contienen esos devices y crear índice
+  let index = {};
+  if (deviceIds.size) {
+    const programs = await Program.find(
+      { 'devices._id': { $in: [...deviceIds] } },
+      // Traemos lo necesario para construir el índice
+      { name: 1, devices: 1, responsible: 1 }
+    ).lean();
+
+    index = createProgramDevicesIndex(programs);
+  }
+
+  return users.map(user => {
+    // Periodo activo (o el primero)
+    const activePeriod =
+      (user.dispositiveNow || []).find(p => p.active) ||
+      (user.dispositiveNow || [])[0];
+
+    // Id del device
+    const deviceId = activePeriod?.device
+      ? activePeriod.device.toString()
+      : null;
+
+    // Entrada del device en el índice
+    const deviceEntry = deviceId ? index[deviceId] : null;
+    // Entrada del programa (si existe)
+    const programEntry =
+      deviceEntry && deviceEntry.programId
+        ? index[deviceEntry.programId]
+        : null;
+
+    return {
+      'Nombre': user.firstName || '',
+      'Apellidos': user.lastName || '',
+      'Tipo de identificación': 'DNI',
+      'Nº de identificación': user.dni || '',
+      'Fecha de nacimiento': formatDate(user.birthday),
+      'Género': (user.gender=='female')?'Femenino':'Masculino',
+      'Nacionalidad': '',
+      'Estado civil': '',
+      'Nº de hijos': '',
+      'Porcentaje de discapacidad': user.disability?.percentage ?? '',
+      'Domicilio': '',
+      'Localidad': '',
+      'Provincia': '',
+      'Código postal': '',
+      'País': '',
+      'Email empresa': user.email || '',
+      'Email personal': user.email_personal || '',
+      'Teléfono': user.phone || '',
+      'Teléfono de empresa': user.phoneJob?.number || '',
+      'Teléfono de emergencia': '',
+      'Cargo en la empresa': activePeriod?.position?.name || '',
+      'Responsable directo': '',
+      'Días de vacaciones': (user.vacationDays || []).length || '',
+      'Primer Validador de Ausencias': '',
+      'Segundo Validador de Ausencias': '',
+      'Tercer Validador de Ausencias': '',
+      'Primer Validador de Fichajes': '',
+      'Segundo Validador de Fichajes': '',
+      'Tercer Validador de Fichajes': '',
+      'Reclutador Principal': '',
+      'Centro': deviceEntry ? deviceEntry.name : '',
+      'Departamento': programEntry ? programEntry.name : '',
+      'Idioma': 'es-ES',
+      'Código de acceso': '',
+      'PIN': '',
+      'Tag NFC': '',
+      'Nivel de estudios': (user.studies || []).map(s => s.name).filter(Boolean).join(', '),
+      'Grupo de cotización': activePeriod?.category || '',
+      'Beneficiario de la cuenta': '',
+      'Tipo de cuenta': '',
+      'Nombre del banco': '',
+      'Empleado sindicalizado': '',
+      '¿Pertenece a una zona geográfica fronteriza?': '',
+      '¿Es un empleado expatriado?': '',
+      'Registro federal de contribuyentes': user.socialSecurityNumber || '',
+      'Tipo de trabajador': '',
+      'Plan de beneficios': '',
+      'Tipo de salario': ''
+    };
+  });
+}
+
+const fs_p = require('fs/promises');
+
+async function guardarJsonEnArchivo(data, ruta = 'empleados.json') {
+  await fs_p.writeFile(ruta, JSON.stringify(data, null, 2), { encoding: 'utf8' });
+  console.log('JSON guardado en', ruta);
+}
+
+
+async function generateEmployeesExcel(employeesJson, outputPath) {
+  try {
+    console.log('generateEmployeesExcel -> tipo recibido:', typeof employeesJson);
+
+    if (typeof employeesJson === 'string') {
+      try {
+        employeesJson = JSON.parse(employeesJson);
+        console.log('JSON parseado correctamente.');
+      } catch (e) {
+        console.error('Error parseando el JSON que llega como string:', e);
+        return;
+      }
+    }
+
+    if (!Array.isArray(employeesJson)) {
+      console.error('employeesJson no es un array:', employeesJson);
+      return;
+    }
+
+    console.log('Número de empleados a escribir:', employeesJson.length);
+
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('DATOS PRINCIPALES');
+
+    // ===== Texto superior =====
+    const topRows = [
+      "PLANTILLA CARGA EMPLEADOS",
+      "Campos obligatorios de carga: nombre, apellido, tipo de identificación y nº de identificación.",
+      "Modificar la estructura de la plantilla puede generar fallos de carga.",
+      "No es posible asignar roles desde esta plantilla.",
+      "El formato correcto es 'AAAA-MM-DD. Te recomendamos que incluyas una comilla simple (') al inicio de la fecha para evitar que se formatee la fecha, ej. '2000-01-01",
+      "Para asignar departamentos o centros, es necesario agregarlos sin espacios seguidos de un ';'",
+      "v2.5_13-11-2025",
+      "Si quieres saber más sobre los requisitos de la plantilla, encontrarás más información en este enlace:",
+      "https://help.sesamehr.com/es_ES/gestion-de-empleados/instrucciones-para-una-correcta-importacion-de-empleados-por-carga-masiva"
+    ];
+
+    topRows.forEach((text, idx) => {
+      const rowNumber = idx + 1;
+      ws.getRow(rowNumber).getCell(1).value = text;
+    });
+    console.log('Filas superiores creadas (1 a', topRows.length, ')');
+
+    // ===== Cabeceras =====
+    const HEADERS = [
+      'Nombre','Apellidos','Tipo de identificación','Nº de identificación','Fecha de nacimiento','Género',
+      'Nacionalidad','Estado civil','Nº de hijos','Porcentaje de discapacidad','Domicilio','Localidad',
+      'Provincia','Código postal','País','Email empresa','Email personal','Teléfono','Teléfono de empresa',
+      'Teléfono de emergencia','Cargo en la empresa','Responsable directo','Días de vacaciones',
+      'Primer Validador de Ausencias','Segundo Validador de Ausencias','Tercer Validador de Ausencias',
+      'Primer Validador de Fichajes','Segundo Validador de Fichajes','Tercer Validador de Fichajes',
+      'Reclutador Principal','Centro','Departamento','Idioma','Código de acceso','PIN','Tag NFC',
+      'Nivel de estudios','Grupo de cotización','Beneficiario de la cuenta','Tipo de cuenta','Nombre del banco',
+      'Empleado sindicalizado','¿Pertenece a una zona geográfica fronteriza?','¿Es un empleado expatriado?',
+      'Registro federal de contribuyentes','Tipo de trabajador','Plan de beneficios','Tipo de salario'
+    ];
+    console.log('Número de columnas:', HEADERS.length);
+
+    const groupRowNumber = topRows.length + 1;   // Fila 10
+    const headerRowNumber = topRows.length + 2;  // Fila 11
+
+    // Fila de grupo
+    ws.getRow(groupRowNumber).getCell(6).value = 'Información general';
+    ws.mergeCells(groupRowNumber, 6, groupRowNumber, 10);
+
+    // Fila de cabeceras
+    const headerRow = ws.getRow(headerRowNumber);
+    HEADERS.forEach((h, i) => {
+      headerRow.getCell(i + 1).value = h;
+    });
+    console.log('Cabeceras escritas en fila', headerRowNumber);
+
+    // Campos obligatorios coloreados (A-D)
+    [1,2,3,4].forEach(idx => {
+      headerRow.getCell(idx).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF4CCCC' }
+      };
+    });
+
+    // ===== Datos =====
+    const startDataRow = headerRowNumber + 1; // Fila 12
+    employeesJson.forEach((emp, index) => {
+      const targetRowNumber = startDataRow + index;
+      const row = ws.getRow(targetRowNumber);
+      HEADERS.forEach((h, colIdx) => {
+        row.getCell(colIdx + 1).value =
+          emp[h] === undefined || emp[h] === null ? '' : emp[h];
+      });
+    });
+    console.log('Filas de empleados escritas desde la fila', startDataRow);
+
+    // Ancho de columnas
+    HEADERS.forEach((h, i) => {
+      const col = ws.getColumn(i + 1);
+      let maxLen = h.length;
+      col.eachCell({ includeEmpty: true }, c => {
+        if (c.value) maxLen = Math.max(maxLen, c.value.toString().length);
+      });
+      col.width = Math.min(maxLen + 2, 50);
+    });
+    console.log('Anchos de columnas ajustados.');
+
+    await workbook.xlsx.writeFile(outputPath);
+    console.log('Excel guardado en:', outputPath);
+    console.log('IMPORTANTE: cabeceras en fila', headerRowNumber, 'datos desde fila', startDataRow);
+
+  } catch (err) {
+    console.error('Error en generateEmployeesExcel:', err);
+  }
+}
 
 
 
