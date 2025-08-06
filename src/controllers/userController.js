@@ -666,7 +666,6 @@ const getUserName = async (req, res) => {
 
 
 
-
 // Descargar archivos de usuario
 const getFileUser = async (req, res) => {
   const userId = req.body.id; // ID del usuario
@@ -753,7 +752,6 @@ const UserDeleteId = async (req, res) => {
 
 
 const userPut = async (req, res) => {
-
   const files = req.files;
 
   if (!req.body._id) {
@@ -807,7 +805,7 @@ const userPut = async (req, res) => {
   if (req.body.firstName) updateFields.firstName = toTitleCase(req.body.firstName);  // Capitalizamos el firstName
 
   if (req.body.lastName) updateFields.lastName = toTitleCase(req.body.lastName);
-  if (req.body.email) updateFields.email = req.body.email.toLowerCase();
+  if (req.body.email_personal) updateFields.email_personal = req.body.email_personal.toLowerCase();
   if (req.body.role) updateFields.role = req.body.role;
   if (req.body.phone) updateFields.phone = req.body.phone;
   if (req.body.dni) updateFields.dni = req.body.dni.replace(/\s+/g, "").trim().toUpperCase();
@@ -921,8 +919,10 @@ const userPut = async (req, res) => {
       path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
       model: 'Filedrive',       // Nombre del modelo de Filedrive
     });
+
     response(res, 200, updatedUser);
   } catch (error) {
+    console.log(error)
     // Si el error es de índice duplicado (E11000)
     if (error.code === 11000) {
       // error.keyValue es un objeto con la forma: { email: 'valor duplicado' } u otro campo
@@ -1528,6 +1528,156 @@ const hirings = async (req, res) => {
 
 
 };
+
+
+const rehireUser = async (req, res) => {
+  // 1) Validación de entrada
+  validateRequiredFields(req.body, ['dni', 'hiring']);
+
+  const raw = req.body.dni;
+  const hiringInput = req.body.hiring;
+
+  if (typeof raw !== 'string') {
+    throw new ClientError('El DNI debe ser un string', 400);
+  }
+
+  // Normalizar DNI
+  const dni = raw.replace(/\s+/g, '').toUpperCase();
+
+  // 2) Buscar usuario por DNI (insensible a mayúsculas/minúsculas)
+  const userDoc = await User.findOne({
+    dni: { $regex: `^${dni}$`, $options: 'i' }
+  });
+
+  if (!userDoc) {
+    throw new ClientError('Usuario no encontrado', 404);
+  }
+
+  // 3) Preparar el nuevo hiring con los mismos casts/validaciones que en "hirings create"
+  let [newHiring] = convertIds([hiringInput]); // convierte device/position/leaveType a ObjectId
+
+  // Resolver reason.dni -> reason completo (igual que en tu código)
+  if (newHiring.reason && newHiring.reason.dni) {
+    const replacementUser = await User.findOne({
+      dni: { $regex: `^${newHiring.reason.dni.trim()}$`, $options: 'i' }
+    });
+
+    if (!replacementUser) {
+      throw new ClientError('El trabajador al que sustituye no existe', 400);
+    }
+
+    let cause, startLeaveDate, expectedEndLeaveDate;
+
+    const activeHiringPeriod = replacementUser.hiringPeriods.find(
+      period => period.active && period.leavePeriods && period.leavePeriods.length > 0
+    );
+
+    if (activeHiringPeriod) {
+      const activeLeavePeriod = activeHiringPeriod.leavePeriods.find(lp => lp.active);
+      if (activeLeavePeriod) {
+        cause = activeLeavePeriod.leaveType;
+        startLeaveDate = activeLeavePeriod.startLeaveDate;
+        expectedEndLeaveDate = activeLeavePeriod.expectedEndLeaveDate;
+      }
+    }
+
+    newHiring.reason = {
+      replacement: true,
+      user: replacementUser._id,
+      notes: {
+        nameUser: `${replacementUser.firstName || ''} ${replacementUser.lastName || ''}`.trim(),
+        dniUser: replacementUser.dni.replace(/\s+/g, ""),
+        ...(cause && { cause }),
+        ...(startLeaveDate && { startLeaveDate }),
+        ...(expectedEndLeaveDate && { expectedEndLeaveDate })
+      }
+    };
+  }
+
+  // 4) Reglas de negocio (idénticas a hirings -> create)
+  const openPeriods = userDoc.hiringPeriods.filter(
+    p => !p.endDate && p.active !== false
+  );
+
+  const shiftType = newHiring?.workShift?.type;
+  if (!shiftType) throw new ClientError('Falta el tipo de horario', 400);
+
+  const endDateExist = hiringInput.endDate; // mismo criterio que en tu create
+
+  if (!endDateExist) {
+    if (shiftType === 'completa') {
+      if (openPeriods.length > 0) {
+        throw new ClientError(
+          'Ya existe un periodo de contratación abierto a jornada completa, no se puede crear otro',
+          400
+        );
+      }
+    } else if (shiftType === 'parcial') {
+      if (openPeriods.some(p => p.workShift?.type === 'completa')) {
+        throw new ClientError(
+          'Hay un periodo de contratación a jornada completa abierto, no se puede crear parcial',
+          400
+        );
+      }
+      if (openPeriods.filter(p => p.workShift?.type === 'parcial').length >= 2) {
+        throw new ClientError(
+          'No se permiten más de 2 periodos de contratación con media jornada abiertos',
+          400
+        );
+      }
+    } else {
+      throw new ClientError('Tipo de horario incorrecto', 400);
+    }
+  }
+
+  // 5) Transacción: push del hiring + set del employmentStatus y (opcional) email corporativo
+  const session = await mongoose.startSession();
+  let updatedUser;
+
+  try {
+    await session.withTransaction(async () => {
+      // push + set status
+      updatedUser = await User.findOneAndUpdate(
+        { _id: userDoc._id },
+        {
+          $push: { hiringPeriods: newHiring },
+          $set: { employmentStatus: 'en proceso de contratación' }
+        },
+        { new: true, session }
+      );
+
+      // Si no tiene email corporativo, crearlo (igual que en userPut)
+      if (!updatedUser.email) {
+        const userWorkspace = await createUserWS(updatedUser._id);
+        if (userWorkspace?.email) {
+          updatedUser = await User.findOneAndUpdate(
+            { _id: userDoc._id },
+            { $set: { email: userWorkspace.email } },
+            { new: true, session }
+          );
+        }
+      }
+    });
+  } finally {
+    session.endSession();
+  }
+
+  // 6) Sincronizar dispositiveNow y grupos (reutiliza tu helper)
+  const finalUser = await changeDispositiveNow(updatedUser);
+
+  return response(res, 200, finalUser);
+};
+
+
+
+
+
+
+
+
+
+
+
 const listaDniSesame=  [
   "26821581Q", "29055355F", "29549957V", "29611560A", "29759583K",
   "44604636T", "49058174W", "60350181K", "75553136E", "12799125Q",
@@ -1950,7 +2100,9 @@ async function generateEmployeesExcel(employeesJson, outputPath) {
   }
 }
 
-
+const prueba=async (req, res) => {
+response(res, 200, {ok:true})
+}
 
 module.exports = {
   //gestiono los errores con catchAsync
@@ -1962,7 +2114,9 @@ module.exports = {
   getUsersFilter: catchAsync(getUsersFilter),
   payroll: catchAsync(payroll),
   hirings: catchAsync(hirings),
+  rehireUser:catchAsync(rehireUser),
   getFileUser: catchAsync(getFileUser),
   getUserName: catchAsync(getUserName),
   getAllUsersWithOpenPeriods: catchAsync(getAllUsersWithOpenPeriods),
+  prueba:catchAsync(prueba)
 }

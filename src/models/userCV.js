@@ -60,6 +60,10 @@ const userCv = mongoose.Schema({
         type: [String],
         require:true,
     },
+    gender:{
+        type:String,
+        enum: ['male', 'female', 'others', 'nonBinary'],
+    },
     about:{
         type: String,
     },

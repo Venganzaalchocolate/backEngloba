@@ -1,6 +1,6 @@
-
 const { Jobs, Studies, Provinces, Work_schedule, Finantial, Offer, Program, User, Leavetype, Documentation, Filedrive } = require('../models/indexModels');
 const leavetype = require('../models/leavetype');
+const { default: cache } = require('../utils/cache');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 
 // Función para crear índice de leaveTypes
@@ -60,19 +60,25 @@ const createProgramDevicesIndex = (programs) => {
 };
 
 const getEnums = async (req, res) => {
-  let enumValues = {}
-  enumValues['jobs'] = await Jobs.find();
-  enumValues['provinces'] = await Provinces.find();
-  enumValues['work_schedule'] = await Work_schedule.find();
-  enumValues['studies'] = await Studies.find();
-  enumValues['finantial'] = await Finantial.find();
+    const cached = cache.get('enums');
+    if (cached) return response(res, 200, cached);
 
-  if (enumValues.jobs == undefined) throw new ClientError('Error al solicitar los enums de los trabajos', 500)
-  if (enumValues.provinces == undefined) throw new ClientError('Error al solicitar los enums de las provincias ', 500)
-  if (enumValues.work_schedule == undefined) throw new ClientError('Error al solicitar los enums de los horarios', 500)
-  if (enumValues.studies == undefined) throw new ClientError('Error al solicitar los enums de los estudios', 500)
-  if (enumValues.finantial == undefined) throw new ClientError('Error al solicitar los enums de las financiaciones', 500)
-  response(res, 200, enumValues);
+    const [jobs, provinces, work_schedule, studies, finantial] = await Promise.all([
+      Jobs.find().lean(),           // solo campo name
+      Provinces.find().lean(),
+      Work_schedule.find().lean(),
+      Studies.find().lean(),
+      Finantial.find().lean(),
+    ]);
+
+    if (!jobs || !provinces || !work_schedule || !studies || !finantial) {
+      throw new ClientError('No se han podido cargar todos los enums', 500);
+    }
+
+    const enumValues = { jobs, provinces, work_schedule, studies, finantial };
+
+    cache.set('enums', enumValues);
+    response(res, 200, enumValues);
 }
 
 const getEnumEmployers = async (req, res) => {

@@ -1,4 +1,4 @@
-const {postCreateUser, getUserID, getUsers, UserDeleteId, userPut, getUsersFilter, payroll, hirings, getFileUser, getUserName, getAllUsersWithOpenPeriods}=require("./userController");
+const {postCreateUser, getUserID, getUsers, UserDeleteId, userPut, getUsersFilter, payroll, hirings, getFileUser, getUserName, getAllUsersWithOpenPeriods, rehireUser, prueba}=require("./userController");
 const { login, validToken, verifyCode } = require("./loginController");
 const {tokenValid, tokenValidAdmin} = require("./authController");
 const { getUserCvsFilter, postCreateUserCv, getUsersCvsIDs, getUserCvs, UserCvDeleteId, UserCvPut, getUserCvID } = require("./userCvController");
@@ -12,7 +12,7 @@ const {sendEmail, generateEmailHTML}=require("./emailControllerGoogle");
 const { getDocumentation } = require("./documentationController");
 const { confirmSignature, requestSignature } = require("./pdfSignController");
 const { auditMissingFieldsInfoUser, auditMissingFieldsProgram, auditMissingFieldsDevice,auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram, auditMissingFieldsDocumentationDevice, auditMissingFieldsContractAndLeave } = require("./auditorController");
-const { getCvOverview, getCvMonthly, getCvDistribution, getCvConversion, auditWorkersStats, getWorkersStats, prueba} = require("./statisticsController");
+const { getCvOverview, getCvMonthly, getCvDistribution, getCvConversion, auditWorkersStats, getWorkersStats} = require("./statisticsController");
 const {deleteGroupWS, deleteMemberGroupWS,addGroupWS, createGroupWS, infoGroupWS,addUserToGroup, createUserWS, deleteUserByEmailWS, deleteMemeberAllGroups } = require("./workspaceController");
 
 
@@ -20,7 +20,7 @@ const {deleteGroupWS, deleteMemberGroupWS,addGroupWS, createGroupWS, infoGroupWS
 
 
 module.exports = {
-    getAllUsersWithOpenPeriods, postCreateUser, getUserID, getUsers, UserDeleteId, userPut,getUsersFilter,
+    prueba, getAllUsersWithOpenPeriods, postCreateUser, getUserID, getUsers, UserDeleteId, userPut,getUsersFilter,rehireUser,
     login, validToken,verifyCode,
     tokenValid, tokenValidAdmin,
     getUserCvsFilter, postCreateUserCv, getUsersCvsIDs, getUserCvs, UserCvDeleteId, UserCvPut, payroll, hirings, getFileUser,getUserCvID, getUserName,

@@ -2,6 +2,7 @@
 const { google }   = require('googleapis');
 const MailComposer = require('nodemailer/lib/mail-composer');
 const { User } = require('../models/indexModels');
+const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail } = require('../templates/emailTemplates');
 
 /* ────────────────────────────────────────────────────────────────────────────
    1. Autenticación: cliente Gmail “impersonando” al remitente
@@ -67,17 +68,27 @@ async function sendEmail(to, subject, text, html, attachments = []) {
   const from  = process.env.DEFAULT_SENDER || 'archi@engloba.org.es';
   const gmail = getGmailClient(from);
 
-  // 1) Construir MIME con MailComposer
-  const mail = new MailComposer({ from, to, subject, text, html, attachments });
-  const raw  = await mail.compile().build();                // Buffer RFC 5322
+  // 1) Si viene un array ⇒ lo convertimos a "a@b.com, c@d.com, …"
+  const toHeader = Array.isArray(to) ? to.join(', ') : to;
 
-  // 2) Gmail exige base64url
+  // 2) Construir MIME
+  const mail = new MailComposer({
+    from,
+    to: toHeader,          // ← ahora puede ser lista
+    subject,
+    text,
+    html,
+    attachments
+  });
+  const raw = await mail.compile().build();
+
+  // 3) Codificar a base64url
   const encoded = raw.toString('base64')
                      .replace(/\+/g, '-')
                      .replace(/\//g, '_')
                      .replace(/=+$/, '');
 
-  // 3) Enviar
+  // 4) Enviar
   await gmail.users.messages.send({
     userId: 'me',
     requestBody: { raw: encoded }
@@ -86,93 +97,9 @@ async function sendEmail(to, subject, text, html, attachments = []) {
 
 
     //---------
-    const TEST_TO  = 'comunicaicon@engloba.org.es';  // <- ¡ojo! comprueba la ortografía
+const TEST_TO  = 'comunicacion@engloba.org.es';  // <- ¡ojo! comprueba la ortografía
 const TEST_FN  = 'Equipo';                       // nombre para el saludo (firstName)
 
-/* ────────────────────────────────────────────────────────────────────────────
-   Plantillas
-   ──────────────────────────────────────────────────────────────────────── */
-function buildPlainText(name, corpEmail) {
-  return `Hola ${name},\n\n` +
-         `Bienvenido a tu nuevo correo electrónico de Asociación Engloba.\n\n` +
-         `Esperamos que te sientas cómod@ en este nuevo entorno que te ofrecemos. ` +
-         `Desde esta cuenta tendrás acceso al espacio de trabajo de nuestro equipo ` +
-         `y a todas las ventajas de Google Workspace.\n\n` +
-         `Tu nueva dirección es: ${corpEmail}\n\n` +
-        `Accede a tu bandeja de entrada en https://mail.google.com\n\n` +
-        `Tu dirección temporal es: Temporal123*` +
-         `Departamento de Comunicación — Gustavo Lorca & Elisabeth D'Acosta`;
-}
-
-function buildHtmlEmail(name = '', corpEmail = '') {
-  return `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <title>Bienvenido a Engloba</title>
-  <style>
-    body{margin:0;padding:0;background:#f4f6f9;color:#333;font-family:Arial,Helvetica,sans-serif;line-height:1.5}
-    .container{max-width:640px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.05)}
-    .header{background:#50529f;color:#fff;text-align:center;padding:24px 16px}
-    .header h1{margin:0;font-size:24px}
-    .content{padding:32px 40px}
-    .content p{margin:16px 0}
-    h2{color:#50529f;font-size:18px;margin:24px 0 8px}
-    .btn{display:inline-block;padding:12px 24px;margin:24px 0;background:#50529f;color:white;text-decoration:none;border-radius:4px;font-weight:bold}
-    ul,ol{margin:8px 0 16px 24px}
-    code{background:#eef1ff;padding:2px 4px;border-radius:4px;font-family:monospace}
-    .footer{background:#f0f0f7;text-align:center;padding:20px;font-size:12px;color:#666}
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>¡Bienvenid@, ${name}!</h1>
-    </div>
-    <div class="content">
-      <p>Bienvenido a tu nuevo correo electrónico de <strong>Asociación Engloba</strong>. Esperamos que te sientas cómod@ en este nuevo entorno que te ofrecemos. Desde esta cuenta tendrás acceso al espacio de trabajo de nuestro equipo y a todas las ventajas de Google&nbsp;Workspace.</p>
-      <p style="font-weight:bold">Tu nueva dirección es: ${corpEmail}</p>
-      <p style="font-weight:bold">Tu contraseña temporal es: Temporal123*</p>
-      <p style="text-align:center">
-        <a href="https://mail.google.com/" class="btn">Acceder al gmail</a>
-      </p>
-
-      <h2>¿Qué tengo que hacer?</h2>
-      <p>Si antes no accedías a ninguna cuenta <code>@engloba.org.es</code> no es necesario que hagas nada. Con tu nueva cuenta podrás enviar y recibir correos electrónicos y conectar con tus compañer@s.</p>
-
-      <h2>¿Qué ocurre con mi mail anterior?</h2>
-      <p>Las direcciones anteriores no se han perdido; simplemente se han trasladado a grupos o usuarios.</p>
-      <p>Para ver los grupos a los que perteneces, visita <a href="https://groups.google.com/">Google&nbsp;Groups</a>.</p>
-      <p>Si no estás segur@ de dónde encontrar tus correos archivados o necesitas acceso a otra dirección, ponte en contacto con nosotros y te ayudaremos.</p>
-
-      <h2>¿Cómo puedo enviar mails desde la dirección anterior?</h2>
-      <ol>
-        <li>Abre Gmail en tu ordenador.</li>
-        <li>Arriba a la derecha, haz clic en <em>Configuración ▸ Ver todos los ajustes</em>.</li>
-        <li>Selecciona la pestaña <em>Cuentas e importación</em>.</li>
-        <li>En la sección <em>Enviar como</em>, haz clic en <em>Añadir otra dirección de correo electrónico</em>.</li>
-        <li>Introduce tu nombre y la dirección desde la que quieras enviar.</li>
-        <li>Haz clic en <em>Siguiente paso ▸ Enviar verificación</em>.</li>
-        <li>Entra en <a href="https://groups.google.com">Groups</a>, abre el grupo correspondiente y acepta la petición en <em>Conversaciones ▸ Pendiente</em>.</li>
-      </ol>
-
-      <h2>¿Llegan los mails a las direcciones antiguas?</h2>
-      <p>Sí, los correos enviados a las direcciones de grupo llegarán automáticamente a todos los miembros correspondientes. Las direcciones asignadas a personas seguirán funcionando con normalidad.</p>
-
-      <h2>¿Qué pasa con mis contactos?</h2>
-      <p>Los contactos no se han transferido automáticamente. Escríbenos a <a href="mailto:web@engloba.org.es">web@engloba.org.es</a> y te explicaremos cómo importarlos.</p>
-
-      <p>Sabemos que este cambio puede requerir un periodo de adaptación. Te invitamos a explorar la nueva plataforma y a aprovechar sus posibilidades. Por ejemplo, puedes crear una unidad de equipo en <a href="https://drive.google.com/">Google Drive</a> para gestionar documentos, plantillas, calendarios y más.</p>
-
-      <p>¡Mucho éxito en esta nueva etapa!</p>
-    </div>
-    <div class="footer">
-      Departamento de Comunicación — Gustavo Lorca · Elisabeth D'Acosta
-    </div>
-  </div>
-</body>
-</html>`;
-}
 
 const DOMAIN='engloba.org.es'
 /* ────────────────────────────────────────────────────────────────────────────
@@ -202,41 +129,142 @@ function buildUserEmail(user) {
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '');
   return `${normalizedFirst}.${normalizedLast}@${DOMAIN}`;
 }
-// const emials=async () => {
-// const subject = 'Tu nueva cuenta de Engloba y Google Workspace';
-
-// const usuarios = await User.find({
-//   employmentStatus: { $ne: 'ya no trabaja con nosotros' },
-//   apafa: true,
-// });
-
-// for (const [index, user] of usuarios.entries()) {
-//   const toPersonal = (user.email_personal || '').trim().toLowerCase();
-//   if (!toPersonal) {
-//     console.warn(`⚠︎ ${user._id} sin email_personal: omitido`);
-//     continue;
-//   }
-
-//   const corpEmail = buildUserEmail(user);          // lo usarás dentro del cuerpo
-//   const text = buildPlainText(user.firstName, corpEmail);
-//   const html = buildHtmlEmail(user.firstName, corpEmail);
-
-//   try {
-//     await sendEmail(toPersonal, subject, text, html);
-//     console.log(`✔︎ ${index + 1}/${usuarios.length} enviado a ${toPersonal}`);
-//   } catch (err) {
-//     console.error(`✘ Error enviando a ${toPersonal}:`, err.message);
-//   }
-// }
-
-// }
 
 
-// emials()
+
+
+
+async function sendWelcomeEmail(user) {
+  if (!user) throw new Error('user es obligatorio');
+  const toPersonal = (user.email_personal || '').trim().toLowerCase();
+  if (!toPersonal) throw new Error('El usuario no tiene email_personal');
+
+
+  const subject     = 'Tu nueva cuenta de Engloba y Google Workspace';
+  const text        = buildPlainText(user.firstName, user.email);
+  const html        = buildHtmlEmail(user.firstName, user.email);
+
+  await sendEmail([toPersonal,user.email], subject, text, html);
+}
+
 /* ────────────────────────────────────────────────────────────────────────────
-   4. Exporta las dos utilidades
-   ────────────────────────────────────────────────────────────────────────── */
+   Plantilla SESAME · TEXTO PLANO
+   ──────────────────────────────────────────────────────────────────────── */
+
+
+
+
+// ──────────────────────────────────────────────────────────────
+// Utilidad: normaliza DNI (mayúsculas, sin espacios)
+// ──────────────────────────────────────────────────────────────
+const normalizeDni = (s = '') =>
+  String(s).toUpperCase().replace(/\s+/g, '').trim();
+
+// ──────────────────────────────────────────────────────────────
+// (Opcional) Ajuste recomendado en sendSesameEmail
+// ──────────────────────────────────────────────────────────────
+async function sendSesameEmail(user) {
+  if (!user) throw new Error('user es obligatorio');
+  const toPersonal = (user.email_personal || '').trim().toLowerCase();
+
+  const subject = 'Activa tu cuenta en Sesame | Control horario';
+  const text    = buildSesamePlainText(user.firstName, user.email);
+  const html    = buildSesameHtmlEmail(user.firstName, user.email);
+
+  // siempre array; si existe corporativo, lo usamos; si además hay personal, lo añadimos
+  const recipients = [];
+  if (user.email) recipients.push(user.email.trim().toLowerCase());
+  if (toPersonal && toPersonal !== (user.email || '').trim().toLowerCase()) {
+    recipients.push(toPersonal);
+  }
+  if (!recipients.length) throw new Error('El usuario no tiene ningún email');
+
+  await sendEmail(recipients, subject, text, html);
+}
+
+// ──────────────────────────────────────────────────────────────
+/**
+ * Envía el email a todos los usuarios cuyo DNI esté en la lista.
+ * @param {string[]} dniArray Lista de DNIs.
+ * @param {{ dryRun?: boolean, delayMs?: number }} options
+ */
+// ──────────────────────────────────────────────────────────────
+async function sendSesameToDniList(
+  dniArray,
+  { dryRun = true, delayMs = 250, logger = console.log, errorLogger = console.error } = {}
+) {
+  const normalizeDni = (s = '') => String(s).toUpperCase().replace(/\s+/g, '').trim();
+  const ts = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+  const dniSet = new Set(dniArray.map(normalizeDni));
+
+  let users = await User.find({ dni: { $in: Array.from(dniSet) } });
+  if (!users.length) {
+    const or = Array.from(dniSet).map(d => ({ dni: new RegExp(`^${d}$`, 'i') }));
+    users = await User.find({ $or: or });
+  }
+
+  const uniqueById = new Map();
+  for (const u of users) uniqueById.set(String(u._id), u);
+  const queue = Array.from(uniqueById.values());
+
+  const results = { total: queue.length, sent: 0, skipped: 0, errors: [] };
+
+  for (let i = 0; i < queue.length; i++) {
+    const u = queue[i];
+    const idx = `${i + 1}/${queue.length}`;
+    const targetsPreview = [u.email, u.email_personal].filter(Boolean).join(', ') || 'SIN EMAIL';
+
+    try {
+      if (dryRun) {
+        logger(`[${ts()}] [DRY RUN ${idx}] ${u.firstName} (${u.dni}) → ${targetsPreview}`);
+      } else {
+        await sendSesameEmail(u); // debe lanzar si no hay emails válidos
+        logger(`✅ [${ts()}] [${idx}] Enviado a ${u.firstName} (${u.dni}) → ${targetsPreview}`);
+      }
+      results.sent += 1;
+    } catch (err) {
+      errorLogger(`❌ [${ts()}] [${idx}] Error con ${u.firstName} (${u.dni}): ${err.message}`);
+      results.errors.push({
+        id: String(u._id),
+        dni: u.dni,
+        email: u.email,
+        email_personal: u.email_personal,
+        error: err.message,
+      });
+      results.skipped += 1;
+    }
+
+    if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+  }
+
+  logger(`— Resumen: procesados ${results.total} | OK ${results.sent} | Errores ${results.skipped}`);
+  return results;
+}
+
+
+// Envía SOLO al buzón comunicacion@engloba.org.es
+async function sendOpsToComunicacion({ logoUrl = '', supportEmail = 'web@engloba.org.es' } = {}) {
+  const target = 'comunicacion@engloba.org.es';
+
+  // (Opcional) busca el usuario para personalizar el nombre si existe
+  const user = await User.findOne({ email: new RegExp(`^${target}$`, 'i') });
+  const name = user?.firstName || 'equipo';
+
+  const subject = 'Sesame HR · Incidencias comunes y cómo resolverlas';
+  const text    = buildSesameOpsPlainText(name, supportEmail);
+  const html    = buildSesameOpsHtmlEmail(name, { logoUrl, supportEmail });
+
+  // Fuerza el envío únicamente a ese correo
+  await sendEmail([target], subject, text, html);
+}
+// const prueba=async()=>{
+//   sendOpsToComunicacion();
+// }
+
+// prueba();
 module.exports = {
   sendEmail,          // firma idéntica a tu antiguo SMTP
-  generateEmailHTML
+  generateEmailHTML,
+  sendWelcomeEmail
 };

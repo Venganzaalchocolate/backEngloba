@@ -37,7 +37,6 @@ const corsOptions = {
 // Middleware para verificar los encabezados `origin` y `referer`
 const verifyOriginAndReferer = (req, res, next) => {
   if (openPaths.includes(req.path)) return next();
-
   const origin = req.get('origin');
   const referer = req.get('referer');
   const allowedOrigin = process.env.CORS_ALLOWED_ORIGIN;

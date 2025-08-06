@@ -17,6 +17,7 @@ const postCreateUserCv = async (req, res) => {
         work_schedule:req.body.work_schedule,
         firstName:req.body.firstName.toLowerCase(),
         lastName:req.body.lastName.toLowerCase(),
+        gender:req.body.gender
     }
 
     if (!!req.body.dni) {               // el doble !! no hace falta
@@ -115,6 +116,7 @@ const getUserCvs = async (req, res) => {
 }
 
 const getUserCvsFilter = async (req, res) => {
+
     let filter={}
     if(!!req.body.phone) filter = { phone: req.body.phone };
     if(!!req.body.id) filter = { _id: req.body.id };
@@ -185,6 +187,7 @@ const UserCvPut = async (req, res) => {
     if (!!req.body.work_schedule) updateText['work_schedule'] = req.body.work_schedule
     if (!!req.body.job_exchange) updateText['job_exchange'] = req.body.job_exchange
     if (!!req.body.numberCV) updateText['numberCV'] = req.body.numberCV
+    if(!!req.body.gender)updateText['gender'] = req.body.gender
     // Manejo de comentarios
     const dateNow = new Date();
     // Manejar comentarios independientes

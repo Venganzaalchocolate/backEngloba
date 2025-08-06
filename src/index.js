@@ -32,11 +32,14 @@ app.use(express.urlencoded({ extended: false }));
 // 1) Aplicar CORS globalmente
 app.use(cors(corsOptions));
 
+
 // Aplicar Rate Limiting a todas las rutas
 app.use(limiter);
 
+  
 
 app.use((req, res, next) => {
+
   // Deja pasar los preflight
   if (req.method === 'OPTIONS') return next();
   verifyOriginAndReferer(req, res, next);
@@ -44,6 +47,7 @@ app.use((req, res, next) => {
 
 /* ----------  Health check ---------- */
 app.get('/healthz', (_, res) => res.sendStatus(200));
+
 
 // Rutas con prefijo `/api`
 app.use('/api', userRoutes);
@@ -59,12 +63,6 @@ app.use('/api', auditRoutes)
 app.use('/api', statisticsRoutes);
 app.use('/api', workspaceRoutes);
 
-// Middleware para manejar rutas no encontradas (404)
-app.use((req, res) => {
-  res.status(404).json({ message: 'Ruta no encontrada' });
-});
-
-
 
  
 
@@ -75,6 +73,7 @@ app.use((err, req, res, next) => {            // <-- ¡las 4 params!
   const message =
     status === 429 ? 'Ha alcanzado el número máximo de solicitudes, inténtelo más tarde'
   : status === 500 ? 'Error interno en el servidor'
+  : status === 404 ? 'Ruta no encontrada'
   : err.message;
 
   resError(res, status, message);
