@@ -98,6 +98,7 @@ const userCv = mongoose.Schema({
         type: [String],
         enum: ['Cualquiera', 'Jornada completa', 'Media Jornada', 'Mañanas', 'Tardes', 'Noches'],
         require:true,
+        default:'Cualquiera'
     },
     job_exchange: {
         type: Boolean,

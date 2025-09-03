@@ -8,7 +8,6 @@ const { validateRequiredFields } = require('../utils/utils');
 const postCreateOfferJob = async (req, res) => {
 
     const requiredFields=["programId","entity","job_title","functions", "work_schedule", "province", "location", "create", "expected_incorporation_date", "dispositiveId", "studies", "sepe"]
-    
     const {
         functions,
         work_schedule,
@@ -26,7 +25,9 @@ const postCreateOfferJob = async (req, res) => {
         entity,
         programId,
         type,
-        datecreate
+        datecreate,
+        jobId,
+        provinceId,
       } = req.body;
 
     validateRequiredFields(req.body, requiredFields);
@@ -50,7 +51,9 @@ const postCreateOfferJob = async (req, res) => {
         studies: Array.isArray(studies) ? studies : [], // Asegurar array
         sepe: sepe === "si", // Convertir a booleano
         type: type || "external",
-        datecreate:datecreate || new Date()
+        datecreate:datecreate || new Date(),
+        jobId:jobId,
+        provinceId:provinceId
     };
 
     const savedOfferJob = await Offer.create(dataOfferJob);

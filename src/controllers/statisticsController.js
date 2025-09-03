@@ -753,7 +753,7 @@ if (!stats.length || wanted.has('hiredEnded')) {
   ];
 
   /* 4 · Ejecución y formateo ----------------------------------------- */
-  const [raw] = await User.aggregate(pipeline, { allowDiskUse:true }).catch((x)=>console.log(x));
+  const [raw] = await User.aggregate(pipeline, { allowDiskUse:true });
 
   // Normalizamos salida parecido a lo que ya hacías
   const responseData = {

@@ -99,6 +99,14 @@ const offer= mongoose.Schema({
     },
     datecreate:{
         type:Date
+    },
+    jobId:{
+        type: Schema.Types.ObjectId,
+        ref: 'Jobs'
+    },
+    provinceId:{
+         type: Schema.Types.ObjectId,
+        ref: 'Provinces'
     }
 }, { timestamps: true })
 

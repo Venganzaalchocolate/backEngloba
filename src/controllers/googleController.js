@@ -310,8 +310,8 @@ async function gestionAutomaticaNominas() {
           process.env.GOOGLE_DRIVE_FALLO_NOMINAS,
           carpetaActual
         );
-        console.log(`No se pudo insertar la nómina en la BD para DNI: ${dniExtraido}`);
-        throw new Error(`No se pudo insertar la nómina en la BD para DNI: ${dniExtraido}`);
+        console.log(`No se pudo insertar la nómina en la BD`);
+        throw new Error(`No se pudo insertar la nómina en la BD`);
       }
     } catch (errorProcesandoArchivo) {
       console.error(`Error al procesar el archivo ${archivo.name}:`, errorProcesandoArchivo.message);

@@ -107,7 +107,6 @@ async function patchWithBackoff(email) {
         groupUniqueId: email,
         requestBody: { isArchived: 'true' },
       });
-      console.log(`✔ Historial activado en ${email}`);
       return;
     } catch (err) {
       const apiErr = err?.errors?.[0] || {};
@@ -238,7 +237,6 @@ async function addUserToGroup(userId, groupEmail) {
         groupKey: groupEmail,
         requestBody: { email: userEmail, role: 'MEMBER', type: 'USER' }
       });
-      console.log(`✅ "${userEmail}" añadido a "${groupEmail}".`);
     } catch (err) {
       if (err.errors?.[0]?.reason === 'duplicate') {
         console.warn(`⚠️ "${userEmail}" ya es miembro de "${groupEmail}".`);
@@ -672,7 +670,6 @@ async function patchWithBackoff(groupEmail, requestBody) {
         groupUniqueId: groupEmail,
         requestBody
       });
-      console.log(`✔ Ajustes aplicados en ${groupEmail}`);
       return;
     } catch (err) {
       const apiErr = err?.errors?.[0] || {};
@@ -702,7 +699,6 @@ async function updateAllGroupsSettings() {
   //   await patchWithBackoff(g.email, commonSettings);
   // }
   await patchWithBackoff('cvvgjaen@engloba.org.es', commonSettings);
-  console.log('✅ Todos los grupos actualizados.');
 }
 
 //updateAllGroupsSettings()

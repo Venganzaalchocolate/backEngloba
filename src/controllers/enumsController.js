@@ -25,6 +25,26 @@ const createSubcategoriesIndex = (x) => {
   return index;
 };
 
+function createCategoryAndSubcategoryIndex(arr) {
+  const index = {};
+  arr.forEach(cat => {
+    // Añade la categoría principal
+    index[cat._id.toString()] = { ...cat, type: 'category' };
+
+    // Añade todas las subcategorías (si existen)
+    (cat.subcategories || []).forEach(sub => {
+      index[sub._id.toString()] = {
+        ...sub,
+        parentId: cat._id.toString(),
+        parentName: cat.name,
+        type: 'subcategory'
+      };
+    });
+  });
+  return index;
+}
+
+
 
 // crea un índice que tiene entradas tanto para programs como para devices
 const createProgramDevicesIndex = (programs) => {
@@ -124,6 +144,7 @@ const getEnumEmployers = async (req, res) => {
       work_schedule: workSchedule,
       offers,
       jobsIndex: createSubcategoriesIndex(jobs),
+      provincesIndex: createCategoryAndSubcategoryIndex(provinces),
       leavesIndex: createCategoriesIndex(leavetype),
       programsIndex: createProgramDevicesIndex(programs),
       finantial,

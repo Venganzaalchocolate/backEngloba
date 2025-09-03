@@ -128,7 +128,7 @@ async function generateReceiptPDF({
     throw new Error('[generateReceiptPDF] Falta worker o concept');
   }
   
-      console.log('llega')
+
 
   /* ── 1. Crear PDF ─────────────────────────────────────────────── */
   const pdfDoc = await PDFDocument.create();
@@ -157,7 +157,7 @@ async function generateReceiptPDF({
       height: logoH,
     });
   } catch (err) {
-    console.warn('[generateReceiptPDF] No se pudo cargar el logo:', err.message);
+    console.warn(' No se pudo cargar el logo:');
   }
 
   const marginX = 60;
@@ -195,7 +195,7 @@ async function generateReceiptPDF({
     cursorY -= lineHeight;
   });
 
-  console.log('llega')
+
   /* ── 6. Caja de firma digital ────────────────────────────────── */
   if (includeSignature) {
     const signText =
@@ -205,7 +205,7 @@ async function generateReceiptPDF({
       `Fecha: ${new Date().toLocaleDateString('es-ES')}\n` +
       `Hora: ${new Date().toLocaleTimeString('es-ES')}`;
 
-      console.log('llega')
+
     await addSignatureBox(
       pdfDoc,
       signText,
@@ -246,7 +246,7 @@ const requestSignature = async (req, res) => {
     user = await User.findById(userId);
 
   } catch (error) {
-    console.error('[requestSignature] Error al encontrar el usuario:', error);
+    console.error('[requestSignature] Error al encontrar el usuario:');
     throw new ClientError('Usuario no encontrado', 404);
   }
 
@@ -261,7 +261,7 @@ const requestSignature = async (req, res) => {
     );
 
   } catch (error) {
-    console.error('[requestSignature] Error al crear o actualizar OTP:', error);
+    console.error('[requestSignature] Error al crear o actualizar OTP:');
     throw new ClientError('Error al crear OTP', 500);
   }
 
@@ -283,7 +283,7 @@ const requestSignature = async (req, res) => {
     );
 
   } catch (error) {
-    console.error('[requestSignature] Error al enviar el email:', error);
+    console.error('[requestSignature] Error al enviar el email:');
     throw new ClientError('Error al enviar el email', 500);
   }
 
@@ -300,7 +300,7 @@ const confirmSignature = async (req, res) => {
     throw new ClientError('Faltan parámetros', 400);
   }
 
-  console.log(req.body)
+
 
   /* ── B. Obtener el OTP ─────────────────────────────────────────── */
   let otp;
@@ -308,7 +308,7 @@ const confirmSignature = async (req, res) => {
     otp = await OneTimeCode.findById(fileId);
 
   } catch (err) {
-    console.error('[confirmSignature] OTP no encontrado:', err);
+    console.error('[confirmSignature] OTP no encontrado');
     throw new ClientError('Código inválido o expirado', 403);
   }
 
@@ -336,21 +336,21 @@ const confirmSignature = async (req, res) => {
   let file;                            // sólo para payroll / contrato
 
   if (otp.docType === 'recibi') {
-    console.log('pasaporrecibi')
+
     // 1. Generar recibí genérico
     const worker = await User.findById(userId, {
       dni: 1, firstName: 1, lastName: 1, apafa: 1
     });
 
     const concept = otp.meta?.concept || 'la documentación entregada';
-console.log('concept')
+
     originalBuffer = await generateReceiptPDF({
       worker,
       concept,
       includeSignature: false   // la firma se añade después
     });
 
-    console.log(originalBuffer)
+
     folderId = process.env.GOOGLE_DRIVE_FILES || null;
   } else {
     // 2. Descargar nómina / contrato desde Drive
@@ -370,8 +370,8 @@ console.log('concept')
   try {
     pdfDoc = await PDFDocument.load(originalBuffer);
   } catch (err) {
-    console.log('[confirmSignature] Error al cargar PDF:', err)
-    console.error('[confirmSignature] Error al cargar PDF:', err);
+    console.log('[confirmSignature] Error al cargar PDF:')
+    console.error('[confirmSignature] Error al cargar PDF:');
     throw new ClientError('Error al cargar el PDF', 500);
   }
 
@@ -386,7 +386,7 @@ DNI: ${userAux.dni}
 Fecha: ${fecha.toLocaleDateString('es-ES')}
 Hora: ${fecha.toLocaleTimeString('es-ES')}`;
 
-console.log(signText)
+
   try {
     await addSignatureBox(
       pdfDoc,
@@ -395,7 +395,7 @@ console.log(signText)
       userAux.apafa
     );
   } catch (err) {
-    console.error('[confirmSignature] Error al firmar PDF:', err);
+    console.error('[confirmSignature] Error al firmar PDF:');
     throw new ClientError('Error al firmar el documento', 500);
   }
 
@@ -417,7 +417,7 @@ console.log(signText)
       signedName
     );
   } catch (err) {
-    console.error('[confirmSignature] Error al subir PDF:', err);
+    console.error('[confirmSignature] Error al subir PDF:');
     throw new ClientError('Error al subir documento firmado', 500);
   }
 
