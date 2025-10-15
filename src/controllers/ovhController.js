@@ -20,6 +20,15 @@ const minioClient = new Minio.Client({
 const RETRY_LIMIT = 3; // Número máximo de intentos para operaciones fallidas
 const BACKOFF_FACTOR = 1000; // Tiempo base (en milisegundos) para el backoff exponencial
 
+// Presigned PUT (subir) y GET (leer)
+const getPresignedPut = async (key) =>
+  await minioClient.presignedPutObject(containerName, key, 60 * 5);
+
+
+const getPresignedGet = async (key) =>
+  await minioClient.presignedGetObject(containerName, key, 60 * 5);
+
+
 // Función que maneja reintentos con backoff exponencial
 const retryOperation = async (fn, retries = RETRY_LIMIT) => {
   let attempt = 0;
@@ -108,5 +117,6 @@ module.exports = {
   listBucketContents,
   getFileCv,
   deleteAllFiles,
-  deleteFile
+  deleteFile,
+  getPresignedPut, getPresignedGet
 };

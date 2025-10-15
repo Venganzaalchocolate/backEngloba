@@ -19,7 +19,7 @@ const preferents= mongoose.Schema({
     },
     type:{
         type:String,
-        enum:['traslado','reincorporación']
+        enum:['traslado','reincorporacion']
     },
     authorized:{
         type: Schema.Types.ObjectId,
@@ -33,6 +33,10 @@ const preferents= mongoose.Schema({
     moveDone:{
         type:Boolean,
         default:false
+    },
+    hiringsId:{
+        type: [Schema.Types.ObjectId],
+        ref: 'Periods'
     }
 
 }, { timestamps: true })

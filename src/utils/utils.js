@@ -1,4 +1,5 @@
 const { ClientError } = require("./clientError");
+const mongoose = require("mongoose");
 
 const dateAndHour = () => {
     const currentDate = new Date();
@@ -96,7 +97,6 @@ const parseAndValidateDates = (dates, fieldName) => {
 
 // Función para validar campos requeridos
 const validateRequiredFields = (body, fields) => {
-
     for (const field of fields) {
         if (!body[field]) {
             throw new ClientError(`El campo ${field} es requerido`, 400);
@@ -104,11 +104,14 @@ const validateRequiredFields = (body, fields) => {
     }
 };
 
+const toId = (v) => (v ? new mongoose.Types.ObjectId(v) : v);
+
 
 module.exports = {
     dateAndHour,
     getSpainCurrentDate,
     createAccentInsensitiveRegex,
     parseAndValidateDates,
-    validateRequiredFields
+    validateRequiredFields,
+    toId
 };

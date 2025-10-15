@@ -1,52 +1,111 @@
 const { default: mongoose } = require('mongoose');
-const { Preferents } = require('../models/indexModels');
+const { Preferents, Periods } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 
-// Obtener todos los preferents
+const toId = (v) => new mongoose.Types.ObjectId(v);
+
 const getPreferents = async (req, res) => {
   const preferents = await Preferents.find()
+    .populate({ path: 'user', select: 'firstName lastName dni' })
+    .populate({ path: 'authorized', select: 'firstName lastName dni email' }) // <—
     .lean();
+
   response(res, 200, preferents);
 };
 
-// Obtener un preferent por ID
+// Obtener por ID
 const getPreferentById = async (req, res) => {
-  const { id } = req.body._id;
+
+  const { id} = req.body; 
   if (!id) throw new ClientError('Falta _id', 400);
-  const preferent = await Preferents.findById(new mongoose.Types.ObjectId(id)).lean();
+
+  const preferent = await Preferents.findById(id)
+    .populate({ path: 'user', select: 'firstName lastName dni' })
+    .populate({ path: 'authorized', select: 'firstName lastName dni email' }) // <—
+    .lean();
+
   if (!preferent) throw new ClientError('Preferent no encontrado', 404);
   response(res, 200, preferent);
 };
 
-// Crear un nuevo preferent
+// Crear
+
+
 const createPreferent = async (req, res) => {
-  const { userId, provinces, jobs, type, authorized } = req.body;
-  if (!userId || !provinces || !jobs || !type || !authorized) {
+  const { userId, provinces = [], jobs = [], type, authorized, hiringsId } = req.body;
+
+  // Validaciones básicas
+  if (!userId || !provinces.length || !jobs.length || !type || !authorized) {
     throw new ClientError('Faltan datos obligatorios', 400);
   }
-  // 1. Buscar preferencias activas de ese usuario
-  const filter = { user: new mongoose.Types.ObjectId(userId), active: true };
 
-  // OJO: find() es asíncrono, necesitas await
-  const preferentOldActive = await Preferents.find(filter);
+  // ---- Normalización de arrays ----
+  const provincesIds = (Array.isArray(provinces) ? provinces : String(provinces).split(','))
+    .filter(Boolean).map(toId);
 
-  // 2. Si hay alguna, las actualizas todas a active: false
-  if (preferentOldActive.length > 0) {
-    await Preferents.updateMany(filter, { active: false });
-    // Si solo puede haber una, puedes usar updateOne
+  const jobsIds = (Array.isArray(jobs) ? jobs : String(jobs).split(','))
+    .filter(Boolean).map(toId);
+
+  // ---- hiringsId (opcional: 1..2) ----
+  let hiringIds = [];
+  if (hiringsId !== undefined && hiringsId !== null) {
+    const raw = Array.isArray(hiringsId) ? hiringsId : [hiringsId];
+    const dedup = [...new Set(raw.filter(Boolean))];
+    if (dedup.length === 0) {
+      // permitido: array vacío => no asociar
+      hiringIds = [];
+    } else {
+      if (dedup.length > 2) throw new ClientError('hiringsId admite como máximo 2 elementos', 400);
+      // Validar ObjectId
+      const invalid = dedup.find(x => !mongoose.Types.ObjectId.isValid(x));
+      if (invalid) throw new ClientError(`HiringId inválido: ${invalid}`, 400);
+
+      // Comprobar que existen y pertenecen al mismo userId
+      const idsAsObj = dedup.map(toId);
+      const periods = await Periods.find({ _id: { $in: idsAsObj } }, { _id: 1, idUser: 1 }).lean();
+
+      if (periods.length !== idsAsObj.length) {
+        throw new ClientError('Algún hiringId no existe', 404);
+      }
+      const wrong = periods.find(p => String(p.idUser) !== String(userId));
+      if (wrong) {
+        throw new ClientError('Todos los hiringId deben pertenecer al mismo usuario indicado en userId', 400);
+      }
+
+      hiringIds = idsAsObj;
+    }
   }
-  const newPreferent = new Preferents({
-    user: new mongoose.Types.ObjectId(userId),
-    provinces: provinces.map(str => new mongoose.Types.ObjectId(str)),
-    jobs: jobs.map(str => new mongoose.Types.ObjectId(str)),
+
+  // Desactivar preferentes activos anteriores del usuario
+  await Preferents.updateMany(
+    { user: toId(userId), active: true },
+    { $set: { active: false } }
+  );
+
+  // Crear y guardar
+  const doc = await Preferents.create({
+    user: toId(userId),
+    provinces: provincesIds,
+    jobs: jobsIds,
     type,
-    authorized: new mongoose.Types.ObjectId(authorized),
+    authorized: toId(authorized),
+    hiringsId: hiringIds,           // <-- nuevo
   });
-  const savedPreferent = await newPreferent.save();
-  response(res, 201, savedPreferent);
+
+  // Popular después de guardar
+  await doc.populate([
+    { path: 'user', select: 'firstName lastName dni' },
+    { path: 'authorized', select: 'firstName lastName dni email' },
+    // (opcional) devolver algo de los periods asociados:
+    { path: 'hiringsId', select: 'startDate endDate position deviceID active' },
+  ]);
+
+  return response(res, 201, doc);
 };
 
-// Actualizar un preferent existente
+
+
+// Actualizar
 const updatePreferent = async (req, res) => {
   const id = req.body._id;
   if (!id) throw new ClientError('Falta _id', 400);
@@ -57,48 +116,59 @@ const updatePreferent = async (req, res) => {
   });
 
   if (updateData.provinces) {
-    updateData.provinces = updateData.provinces.map(str => new mongoose.Types.ObjectId(str));
+    updateData.provinces = updateData.provinces.map(toId);
   }
   if (updateData.jobs) {
-    updateData.jobs = updateData.jobs.map(str => new mongoose.Types.ObjectId(str));
+    updateData.jobs = updateData.jobs.map(toId);
   }
   if (updateData.authorized) {
-    updateData.authorized = new mongoose.Types.ObjectId(updateData.authorized);
+    updateData.authorized = toId(updateData.authorized);
   }
 
-  const updated = await Preferents
-    .findByIdAndUpdate(id, updateData, { new: true, runValidators: true })
+  let updated = await Preferents.findByIdAndUpdate(
+    id,
+    updateData,
+    { new: true, runValidators: true }
+  )
+  .populate({ path: 'user', select: 'firstName lastName dni' })
+  .populate({ path: 'authorized', select: 'firstName lastName dni email' }); // <—
 
   if (!updated) throw new ClientError('Preferent no encontrado', 404);
   response(res, 200, updated);
 };
 
-// Eliminar un preferent
+// Eliminar (no hace falta populate aquí)
 const deletePreferent = async (req, res) => {
-  const { id } = req.body._id;
+  const { id } = req.body; // corregido
   if (!id) throw new ClientError('Falta _id', 400);
-  const deleted = await Preferents.findByIdAndDelete(new mongoose.Types.ObjectId(id));
+  const deleted = await Preferents.findByIdAndDelete(id);
   if (!deleted) throw new ClientError('Preferent no encontrado', 404);
   response(res, 200, { message: 'Preferent eliminado correctamente' });
 };
 
-// Buscar preferents con filtros de provincias y trabajos
+// Filtrar
 const filterPreferents = async (req, res) => {
-  const { userId, provinces, jobs } = req.body;
 
+  const { userId, provinces, jobs,active } = req.body;
   const filter = {};
-  if (userId) filter.user = new mongoose.Types.ObjectId(userId);
+  if (userId) filter.user = toId(userId);
 
   if (provinces) {
     const provArray = Array.isArray(provinces) ? provinces : provinces.split(',');
-    filter.provinces = { $in: provArray.map(str => new mongoose.Types.ObjectId(str)) };
+    filter.provinces = { $in: provArray.map(toId) };
   }
   if (jobs) {
     const jobsArray = Array.isArray(jobs) ? jobs : jobs.split(',');
-    filter.jobs = { $in: jobsArray.map(str => new mongoose.Types.ObjectId(str)) };
+    filter.jobs = { $in: jobsArray.map(toId) };
+  }
+  if (active){
+    filter.active=active
   }
 
-  const preferents = await Preferents.find(filter).populate({ path: 'user', select: 'firstName lastName dni' }); // <-- corregido;
+  const preferents = await Preferents.find(filter)
+    .populate({ path: 'user', select: 'firstName lastName dni' })
+    .populate({ path: 'authorized', select: 'firstName lastName dni email' }); // <—
+
   response(res, 200, preferents);
 };
 

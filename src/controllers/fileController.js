@@ -1,11 +1,31 @@
 
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
-const { uploadFile, getFileCv, deleteFile } = require('./ovhController');
+const { uploadFile, getFileCv, deleteFile, getPresignedPut, getPresignedGet } = require('./ovhController');
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 const { uploadFileToDrive, deleteFileById, getFileById, updateFileInDrive } = require('./googleController');
 const { User, Program, Jobs, Leavetype, Filedrive } = require('../models/indexModels');
+
+const getCvPresignPut = async (req, res) => {
+  const { id } = req.body;              // id del UserCv de tu BD
+  if (!id) throw new ClientError('Falta id', 400);
+
+  // la clave real del objeto (mantén tu esquema actual)
+  const key = `${id}.pdf`;              // <= no cambies nada más para “mínimos cambios”
+  const url = await getPresignedPut(key); // 5 minutos de validez
+  response(res, 200, { url, key });
+};
+
+// Presigned GET para ver/descargar
+const getCvPresignGet = async (req, res) => {
+  const { id } = req.body;
+  if (!id) throw new ClientError('Falta id', 400);
+
+  const key = `${id}.pdf`;
+  const url = await getPresignedGet(key);
+  response(res, 200, { url });
+};
 
 
 const postUploadFile = async (req, res) => {
@@ -325,5 +345,7 @@ module.exports = {
   createFileDrive: catchAsync(createFileDrive),
   updateFileDrive: catchAsync(updateFileDrive),
   deleteFileDrive: catchAsync(deleteFileDrive),
-  getFileDrive: catchAsync(getFileDrive)
+  getFileDrive: catchAsync(getFileDrive),
+  getCvPresignPut: catchAsync(getCvPresignPut),
+  getCvPresignGet: catchAsync(getCvPresignGet),
 };

@@ -1,9 +1,9 @@
-const { Program, User, Provinces } = require('../models/indexModels');
+const { Program, Provinces, Dispositive } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
-const { validateRequiredFields } = require('../utils/utils');
 const { generateEmailHTML, sendEmail } = require('./emailControllerGoogle');
 const { ensureProgramGroup, ensureDeviceGroup } = require('./workspaceController');
+
 
 
 const postCreateProgram = async (req, res) => {
@@ -174,7 +174,11 @@ const addDispositive = async (req, res) => {
   program.devices.push(newDevice);
   const savedProgram = await program.save();
   const createdDevice = savedProgram.devices.at(-1);       // el que acabamos de meter
-  await ensureDeviceGroup(createdDevice, savedProgram);
+  try {
+   const resW=await ensureDeviceGroup(createdDevice, savedProgram); 
+  } catch (error) {
+    console.log(error)
+  }
 
   const asunto = "Creación de un nuevo dispositivo";
   const textoPlano = `Programa padre: ${savedProgram.name}
@@ -714,9 +718,239 @@ const listsResponsiblesAndCoordinators = async (req, res) => {
   return response(res, 200, list);
 };
 
+//-----------------------------------------------
+//-----------------------------------------------
+//-------------CONTACTOS ENGLOBA-----------------
+//-----------------------------------------------
+//-----------------------------------------------
+
+// // export-contacts.js
+// const fs = require('node:fs/promises');
+// const path = require('node:path');
+
+
+// // Encabezados EXACTOS (tal como me pasaste)
+
+// // Escapar CSV (comas, comillas, saltos de línea)
+// const csvEscape = (v) => {
+//   v = v == null ? '' : String(v);
+//   return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+// };
+
+// // Pequeño helper por si faltan nombre/apellidos: intenta sacarlos del email
+// const nameFromEmail = (email) => {
+//   if (!email) return { first: '', last: '' };
+//   const local = String(email).split('@')[0] || '';
+//   // intentar "nombre.apellido" o "nombre_apellido"
+//   const parts = local.replace(/_/g, '.').split('.');
+//   if (parts.length >= 2) {
+//     return {
+//       first: parts[0].charAt(0).toUpperCase() + parts[0].slice(1),
+//       last:  parts.slice(1).join(' ').replace(/\b\w/g, m => m.toUpperCase())
+//     };
+//   }
+//   // como fallback, todo a First Name
+//   return { first: local, last: '' };
+// };
+
+// // === Construye y guarda CSV en raíz ===
+// // === Construye y guarda CSV en raíz usando la plantilla oficial de Google (Label/Value) ===
+// // Requiere: Program, csvEscape, nameFromEmail, fs (fs/promises) y path ya importados en tu archivo.
+// // Reemplaza tu HEADERS por este (misma plantilla + Phone 2):
+// const HEADERS = [
+//   'Name Prefix','First Name','Middle Name','Last Name','Name Suffix',
+//   'Phonetic First Name','Phonetic Middle Name','Phonetic Last Name',
+//   'Nickname','File As',
+//   'E-mail 1 - Label','E-mail 1 - Value',
+//   'Phone 1 - Label','Phone 1 - Value',
+//   'Phone 2 - Label','Phone 2 - Value', // ← añadido
+//   'Address 1 - Label','Address 1 - Country','Address 1 - Street','Address 1 - Extended Address','Address 1 - City','Address 1 - Region','Address 1 - Postal Code','Address 1 - PO Box',
+//   'Organization Name','Organization Title','Organization Department',
+//   'Birthday',
+//   'Event 1 - Label','Event 1 - Value',
+//   'Relation 1 - Label','Relation 1 - Value',
+//   'Website 1 - Label','Website 1 - Value',
+//   'Custom Field 1 - Label','Custom Field 1 - Value',
+//   'Notes','Labels'
+// ];
+
+// // === Construye y guarda CSV en raíz usando la plantilla (Label/Value) ===
+// // Requiere: Program, csvEscape, nameFromEmail, fs (fs/promises), path ya importados.
+// async function exportContactsCSVToRoot() {
+//   // Sanitizador ASCII para campos largos/libres (evita caracteres raros)
+//   const toAsciiSafe = (str, { maxLen = 1000 } = {}) => {
+//     if (!str) return '';
+//     let s = String(str)
+//       .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quita tildes/ñ
+//       .replace(/[•·]/g, '; ')
+//       .replace(/[–—―]/g, '-')
+//       .replace(/[\r\n]+/g, ' ')
+//       .replace(/[^\x20-\x7E]/g, '')
+//       .replace(/\s{2,}/g, ' ')
+//       .trim();
+//     if (s.length > maxLen) s = s.slice(0, maxLen);
+//     return s;
+//   };
+
+//   // 1) Traer datos
+//   const programs = await Program.find({})
+//     .populate({ path: 'responsible', select: 'firstName lastName email phone phoneJob.number phoneJob.extension' })
+//     .populate({ path: 'devices.responsible', select: 'firstName lastName email phone phoneJob.number phoneJob.extension' })
+//     .populate({ path: 'devices.coordinators', select: 'firstName lastName email phone phoneJob.number phoneJob.extension' })
+//     .lean();
+
+//   // 2) Consolidar por usuario
+//   const byUser = new Map();
+//   const addUser = (u, role, programName, deviceName) => {
+//     if (!u) return;
+//     const id = String(u._id || u.id || u.email || Math.random());
+//     if (!byUser.has(id)) {
+//       byUser.set(id, {
+//         firstName: u.firstName || '',
+//         lastName:  u.lastName  || '',
+//         email:     u.email     || '',
+//         phonePersonal: u.phone || '',
+//         phoneWork:  u?.phoneJob?.number || '',
+//         phoneExt:   u?.phoneJob?.extension || '',
+//         orgName: 'Asociacion Engloba', // ASCII seguro
+//         deptSet: new Set(),
+//         roles:   new Set(),
+//         devices: []
+//       });
+//     }
+//     const it = byUser.get(id);
+//     if (programName) it.deptSet.add(programName);
+//     if (role) it.roles.add(role);
+//     if (deviceName) it.devices.push(programName ? `${programName} - ${deviceName}` : deviceName);
+//   };
+
+//   programs.forEach(p => {
+//     const pName = p.name || '';
+//     (p.responsible || []).forEach(u => addUser(u, 'Responsable de programa', pName, null));
+//     (p.devices || []).forEach(d => {
+//       const dName = d?.name || '';
+//       (d.responsible || []).forEach(u => addUser(u, 'Responsable de dispositivo', pName, dName));
+//       (d.coordinators || []).forEach(u => addUser(u, 'Coordinador/a', pName, dName));
+//     });
+//   });
+
+//   // 3) Construir CSV
+//   const rows = [];
+//   rows.push(HEADERS);
+
+//   for (const u of byUser.values()) {
+//     let first = (u.firstName || '').trim();
+//     let last  = (u.lastName  || '').trim();
+
+//     if (!first && !last) {
+//       const guess = nameFromEmail(u.email);
+//       first = guess.first;
+//       last  = guess.last;
+//     }
+
+//     const fileAs = [last, first].filter(Boolean).join(', ');
+
+//     // ---- Teléfonos: decidir Phone 1 y Phone 2 ----
+//     let workPhone = u.phoneWork || '';
+//     if (workPhone && u.phoneExt) workPhone = `${workPhone} x${u.phoneExt}`;
+//     const personalPhone = u.phonePersonal || '';
+
+//     let phone1Label = '', phone1Value = '';
+//     let phone2Label = '', phone2Value = '';
+
+//     if (workPhone) {
+//       phone1Label = 'Work';
+//       phone1Value = workPhone;
+//       if (personalPhone) {
+//         phone2Label = 'Mobile';     // o 'Home' si prefieres
+//         phone2Value = personalPhone;
+//       }
+//     } else if (personalPhone) {
+//       phone1Label = 'Mobile';
+//       phone1Value = personalPhone;
+//       // phone 2 vacío
+//     }
+
+//     const roles      = Array.from(u.roles).join(' · ');
+//     const dept       = Array.from(u.deptSet).join(' | ');
+//     const devicesStr = toAsciiSafe(u.devices.join('; '), { maxLen: 1000 });
+
+//     const data = {
+//       'Name Prefix': '',
+//       'First Name': first,
+//       'Middle Name': '',
+//       'Last Name': last,
+//       'Name Suffix': '',
+//       'Phonetic First Name': '',
+//       'Phonetic Middle Name': '',
+//       'Phonetic Last Name': '',
+//       'Nickname': '',
+//       'File As': fileAs,
+
+//       'E-mail 1 - Label': u.email ? 'Work' : '',
+//       'E-mail 1 - Value': u.email || '',
+
+//       'Phone 1 - Label': phone1Label,
+//       'Phone 1 - Value': phone1Value,
+//       'Phone 2 - Label': phone2Label,
+//       'Phone 2 - Value': phone2Value,
+
+//       'Address 1 - Label': '',
+//       'Address 1 - Country': '',
+//       'Address 1 - Street': '',
+//       'Address 1 - Extended Address': '',
+//       'Address 1 - City': '',
+//       'Address 1 - Region': '',
+//       'Address 1 - Postal Code': '',
+//       'Address 1 - PO Box': '',
+
+//       'Organization Name': u.orgName,
+//       'Organization Title': roles,
+//       'Organization Department': dept,
+
+//       'Birthday': '',
+
+//       'Event 1 - Label': '',
+//       'Event 1 - Value': '',
+
+//       'Relation 1 - Label': '',
+//       'Relation 1 - Value': '',
+
+//       'Website 1 - Label': '',
+//       'Website 1 - Value': '',
+
+//       'Custom Field 1 - Label': devicesStr ? 'Devices' : '',
+//       'Custom Field 1 - Value': devicesStr,
+
+//       'Notes': devicesStr,
+//       'Labels': '' // sin grupos para evitar errores
+//     };
+
+//     const row = HEADERS.map(h => csvEscape(data[h] ?? ''));
+//     rows.push(row);
+//   }
+
+//   // 4) Guardar CSV con BOM
+//   const csv = '\uFEFF' + rows.map(r => r.join(',')).join('\n');
+//   const fileName = `engloba_contactos_${new Date().toISOString().slice(0,10)}.csv`;
+//   const filePath = path.resolve(process.cwd(), fileName);
+
+//   await fs.writeFile(filePath, csv, 'utf8');
+//   return { ok: true, filePath, count: rows.length - 1 };
+// }
 
 
 
+// (async () => {
+//   const res = await exportContactsCSVToRoot();
+//   console.log(`CSV creado: ${res.filePath} (${res.count} contactos)`);
+// })();
+
+// const prueba=()=>{
+//   migrateAllProgramDispositives({ apply: true });
+// }
+
+// prueba()
 
 module.exports = {
   postCreateProgram: catchAsync(postCreateProgram),
@@ -724,12 +958,4 @@ module.exports = {
   getProgramID: catchAsync(getProgramID),
   ProgramDeleteId: catchAsync(ProgramDeleteId),
   ProgramPut: catchAsync(ProgramPut),
-  addDispositive: catchAsync(addDispositive),
-  getDispositive: catchAsync(getDispositive),
-  updateDispositive: catchAsync(updateDispositive),
-  deleteDispositive: catchAsync(deleteDispositive),
-  getDispositiveResponsable: catchAsync(getDispositiveResponsable),
-  handleCoordinators: catchAsync(handleCoordinators),
-  handleResponsibles: catchAsync(handleResponsibles),
-  listsResponsiblesAndCoordinators:catchAsync(listsResponsiblesAndCoordinators)
-};
+}

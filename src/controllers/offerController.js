@@ -1,173 +1,311 @@
-const mongoose = require('mongoose');
+// controllers/offerController.js
+const { Types } = require('mongoose');
 const { Offer } = require('../models/indexModels');
-const {  catchAsync, response, ClientError } = require('../utils/indexUtils');
-const { validateRequiredFields } = require('../utils/utils');
+// IMPORTAMOS DESDE TUS UTILS
+const { catchAsync, response, ClientError, validateRequiredFields, toId } = require('../utils/indexUtils');
+const { migracionOfertasStudies, migrateSolicitants } = require('./periodoTransicionController');
+
+// -------------------- Helpers --------------------
 
 
-// crear usuario
-const postCreateOfferJob = async (req, res) => {
 
-    const requiredFields=["programId","entity","job_title","functions", "work_schedule", "province", "location", "create", "expected_incorporation_date", "dispositiveId", "studies", "sepe"]
-    const {
-        functions,
-        work_schedule,
-        essentials_requirements,
-        optionals_requirements,
-        conditions,
-        province,
-        location,
-        create,
-        expected_incorporation_date,
-        dispositiveId,
-        studies,
-        sepe,
-        job_title,
-        entity,
-        programId,
-        type,
-        datecreate,
-        jobId,
-        provinceId,
-      } = req.body;
 
-    validateRequiredFields(req.body, requiredFields);
+// -------------------- LIST --------------------
+const toIdStrict = (v, field) => {
+  if (v == null || v === '') throw new ClientError(`"${field}" está vacío`, 400);
+  const s = String(v);
+  if (!Types.ObjectId.isValid(s)) throw new ClientError(`"${field}" no es un ObjectId válido`, 400);
+  return new Types.ObjectId(s);
+};
 
-    const dataOfferJob = {
-        entity:entity,
-        job_title:job_title,
-        functions:functions,
-        work_schedule:work_schedule,
-        essentials_requirements: essentials_requirements || "",
-        optionals_requirements: optionals_requirements || "",
-        conditions:conditions,
-        province:province,
-        location:location,
-        create: new mongoose.Types.ObjectId(create),
-        expected_incorporation_date: expected_incorporation_date, // Asegurar formato string
-        dispositive: {
-            programId: new mongoose.Types.ObjectId(programId),
-            dispositiveId: new mongoose.Types.ObjectId(dispositiveId)
-        },
-        studies: Array.isArray(studies) ? studies : [], // Asegurar array
-        sepe: sepe === "si", // Convertir a booleano
-        type: type || "external",
-        datecreate:datecreate || new Date(),
-        jobId:jobId,
-        provinceId:provinceId
+const parseBoolLoose = (v) => {
+  if (v === true || v === 'true' || v === 1 || v === '1' || v === 'si' || v === 'sí') return true;
+  if (v === false || v === 'false' || v === 0 || v === '0' || v === 'no') return false;
+  return undefined;
+};
+
+const offerList = async (req, res) => {
+  const input = req.body;
+
+  const {
+    q, active, type, sepe, jobId, studiesId, programId,
+    newDispositiveId,            // ⬅️ nuevo (nombre claro)
+    dateFrom, dateTo, sort = '-createdAt',
+    page, limit, all,
+  } = input;
+
+  const filters = {};
+
+  // --- búsqueda por texto / job name (sin cambios) ---
+  if (q && String(q).trim()) {
+    const rx = new RegExp(String(q).trim(), 'i');
+    const jobDocs = await Job.find({ name: rx }, { _id: 1 }).lean();
+    filters.$or = [
+      { location: rx },
+      { job_title: rx },
+      ...(jobDocs.length ? [{ jobId: { $in: jobDocs.map(j => j._id) } }] : []),
+    ];
+  }
+
+  // --- booleanos (sin cambios) ---
+  const parsedActive = parseBoolLoose(active);
+  if (parsedActive !== undefined) filters.active = parsedActive;
+
+  if (type) {
+    if (!['internal', 'external'].includes(type)) throw new ClientError('type inválido', 400);
+    filters.type = type;
+  }
+
+  const parsedSepe = parseBoolLoose(sepe);
+  if (parsedSepe !== undefined) filters.sepe = parsedSepe;
+
+  // --- IDs (ampliado) ---
+  if (jobId) filters.jobId = toIdStrict(jobId, 'jobId');
+
+  if (studiesId) {
+    filters.studiesId = Array.isArray(studiesId)
+      ? { $in: studiesId.map((v, i) => toIdStrict(v, `studiesId[${i}]`)) }
+      : toIdStrict(studiesId, 'studiesId');
+  }
+
+  if (programId) {
+    filters['dispositive.programId'] = toIdStrict(programId, 'programId');
+  }
+
+  // ✅ NUEVO: filtro por dispositivo
+  const deviceId = newDispositiveId; // acepta ambos nombres
+  if (deviceId) {
+    filters['dispositive.newDispositiveId'] = toIdStrict(deviceId, 'newDispositiveId');
+  }
+
+  // --- rango fechas (sin cambios) ---
+  if (dateFrom || dateTo) {
+    const createdAt = {};
+    if (dateFrom) {
+      const d = new Date(dateFrom);
+      if (Number.isNaN(d.getTime())) throw new ClientError('dateFrom inválida', 400);
+      createdAt.$gte = d;
+    }
+    if (dateTo) {
+      const d = new Date(dateTo);
+      if (Number.isNaN(d.getTime())) throw new ClientError('dateTo inválida', 400);
+      createdAt.$lte = d;
+    }
+    filters.createdAt = createdAt;
+  }
+
+  // --- orden seguro (sin cambios) ---
+  const allowedSort = new Set(['createdAt','-createdAt','datecreate','-datecreate','job_title','-job_title']);
+  const sortSafe = allowedSort.has(String(sort)) ? String(sort) : '-createdAt';
+
+  // --- paginación (sin cambios) ---
+  const forceAll = parseBoolLoose(all) === true;
+  const hasPage  = page !== undefined && page !== null && String(page) !== '';
+  const hasLimit = limit !== undefined && limit !== null && String(limit) !== '';
+  const doPaginate = !forceAll && (hasPage || hasLimit);
+
+  let pageNum = 1;
+  let limitNum = 20;
+  if (doPaginate) {
+    pageNum  = Math.max(1, Number(page) || 1);
+    limitNum = Math.min(100, Math.max(1, Number(limit) || 20));
+  }
+
+  let total, docs;
+  if (doPaginate) {
+    total = await Offer.countDocuments(filters);
+    docs = await Offer.find(filters)
+      .sort(sortSafe)
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum)
+      .lean();
+  } else {
+    docs = await Offer.find(filters).sort(sortSafe).lean();
+    total = docs.length;
+  }
+
+  const out = docs.map(d => ({
+    ...d,
+    userCvCount: Array.isArray(d.userCv) ? d.userCv.length : 0,
+  }));
+
+  const totalPages = doPaginate ? Math.max(1, Math.ceil(total / limitNum)) : 1;
+  response(res, 200, {
+    total,
+    page: pageNum,
+    limit: doPaginate ? limitNum : total,
+    totalPages,
+    docs: out,
+  });
+};
+
+
+
+
+// -------------------- CREATE --------------------
+async function offerCreate(req, res) {
+  const b = req.body || {};
+  // Reutilizamos tus utils para requeridos (sin dot paths)
+  validateRequiredFields(b, ['work_schedule', 'location', 'expected_incorporation_date', 'jobId','programId', 'newDispositiveId']);
+
+  if (b.type && !['internal', 'external'].includes(b.type)) {
+    throw new ClientError('type debe ser "internal" o "external"', 400);
+  }
+ let payload = {
+    work_schedule: b.work_schedule,
+    essentials_requirements: b.essentials_requirements || undefined,
+    optionals_requirements: b.optionals_requirements || undefined,
+    conditions: b.conditions || undefined,
+    location: b.location,
+    create: b.create ? toId(b.create) : undefined,
+    expected_incorporation_date: b.expected_incorporation_date,
+    active: b.active === false ? false : true,
+    dispositive: {
+      programId: toId(b.programId),
+      newDispositiveId: toId(b.newDispositiveId),
+    },
+    sepe: b.sepe === true,
+    rejectCv: Array.isArray(b.rejectCv) ? b.rejectCv.map(toId) : [],
+    favoritesCv: Array.isArray(b.favoritesCv) ? b.favoritesCv.map(toId) : [],
+    viewCv: Array.isArray(b.viewCv) ? b.viewCv.map(toId) : [],
+    userCv: Array.isArray(b.userCv) ? b.userCv.map(toId) : [],
+    type: b.type || 'external',
+    datecreate: b.datecreate ? new Date(b.datecreate) : new Date(),
+    studiesId: Array.isArray(b.studiesId) ? b.studiesId.map((s)=>toId(s)) : undefined,
+    jobId: toId(b.jobId),
+  };
+
+  const created = await Offer.create(payload).catch((x)=>console.log(x));
+  const doc = await Offer.findById(created._id);
+  response(res, 201, doc);
+}
+
+// -------------------- UPDATE --------------------
+async function offerUpdate(req, res) {
+  const b = req.body;
+  const { offerId } = b;
+  if (!offerId || !Types.ObjectId.isValid(String(offerId))) {
+    throw new ClientError('offerId inválido', 400);
+  }
+
+  const current = await Offer.findById(offerId).lean();
+  if (!current) throw new ClientError('Oferta no encontrada', 404);
+
+  const patch = {};
+
+  // ------- campos simples
+  const simple = [
+    'work_schedule', 'essentials_requirements', 'optionals_requirements',
+    'conditions', 'location', 'expected_incorporation_date', 'type',
+  ];
+  for (const f of simple) {
+    if (b[f] !== undefined) patch[f] = b[f] || undefined;
+  }
+  if (patch.type && !['internal', 'external'].includes(patch.type)) {
+    throw new ClientError('type debe ser "internal" o "external"', 400);
+  }
+
+  // ------- fechas / booleanos
+  if (b.date !== undefined)       patch.date = b.date ? new Date(b.date) : undefined;
+  if (b.datecreate !== undefined) patch.datecreate = b.datecreate ? new Date(b.datecreate) : undefined;
+  if (b.active !== undefined)     patch.active = !!b.active;
+  if (b.sepe !== undefined)       patch.sepe = !!b.sepe;
+
+  // ------- arrays de refs
+  if (b.rejectCv !== undefined)   patch.rejectCv    = Array.isArray(b.rejectCv)    ? b.rejectCv.map(toId)    : [];
+  if (b.favoritesCv !== undefined)patch.favoritesCv = Array.isArray(b.favoritesCv) ? b.favoritesCv.map(toId) : [];
+  if (b.viewCv !== undefined)     patch.viewCv      = Array.isArray(b.viewCv)      ? b.viewCv.map(toId)      : [];
+  if (b.userCv !== undefined)     patch.userCv      = Array.isArray(b.userCv)      ? b.userCv.map(toId)      : [];
+  if (b.studiesId !== undefined)  patch.studiesId   = Array.isArray(b.studiesId)   ? b.studiesId.map(toId)   : [];
+
+  // ------- IDs directos (opcionales en UPDATE)
+  if (b.jobId !== undefined)      patch.jobId      = b.jobId ? toId(b.jobId) : undefined;
+  if (b.provinceId !== undefined) patch.provinceId = b.provinceId ? toId(b.provinceId) : undefined;
+
+  // ------- dispositive (acepta varias formas de enviar)
+  const hasDispositiveObj = b.newDispositiveId !== undefined;
+  const hasDispositiveLoose = b.programId !== undefined || b.newDispositiveId !== undefined;
+
+  if (hasDispositiveObj || hasDispositiveLoose) {
+    const inObj = b.dispositive || {};
+    const programId     = inObj.programId     ?? b.programId;
+    const dispositiveId = inObj.newDispositiveId ?? b.newDispositiveId;
+
+    if (!programId || !dispositiveId) {
+      throw new ClientError('Faltan programId y/o dispositiveId para actualizar el dispositivo', 400);
+    }
+    patch.dispositive = {
+      programId: toId(programId),
+      newDispositiveId: toId(dispositiveId),
     };
+  }
 
-    const savedOfferJob = await Offer.create(dataOfferJob);
 
-    response(res, 200, savedOfferJob)
+  // Si no hay nada que actualizar, devolver la actual
+  if (Object.keys(patch).length === 0) {
+    const doc = await Offer.findById(offerId);
+    return response(res, 200, doc);
+  }
+
+  await Offer.updateOne({ _id: offerId }, { $set: patch }, { runValidators: true });
+  const doc = await Offer.findById(offerId);
+  return response(res, 200, doc);
 }
 
 
+// -------------------- HARD DELETE --------------------
+async function offerHardDelete(req, res) {
+  const { offerId } = req.body;
+  if (!offerId || !Types.ObjectId.isValid(offerId)) {
+    throw new ClientError('offerId inválido', 400);
+  }
 
-//recoge todos los usuarios
-const getOfferJobs = async (req, res) => {
-    const OfferJobs = await Offer.find()
-    // Responde con la lista de usuarios paginada y código de estado 200 (OK)
-    response(res, 200, OfferJobs);
+  const doc = await Offer.findById(offerId).lean();
+  if (!doc) throw new ClientError('Oferta no encontrada', 404);
+
+  await Offer.deleteOne({ _id: doc._id });
+  return response(res, 200, { deleted: true });
 }
 
-const getOfferJobID = async (req, res) => {
-    // Obtén el ID del parámetro de la solicitud
-    const id = req.body.id;
-    // Utiliza el método findById() de Mongoose para buscar un usuario por su ID
-    // Si no se encuentra el usuario, responde con un código de estado 404 (Not Found)
-    const offerJobData = await Offer.findById(id).catch(error => { throw new ClientError('OfferJob no encontrado', 404) });
-    // Responde con el usuario encontrado y código de estado 200 (OK)ç
-    response(res, 200, offerJobData);
+// -------------------- GET ONE --------------------
+
+async function offerId(req, res) {
+  const { offerId, public: isPublic } = req.body; // renombramos para evitar confusiones
+  if (!offerId || !Types.ObjectId.isValid(offerId)) {
+    throw new ClientError('offerId inválido', 400);
+  }
+
+  // normaliza "public" por si llega como string: "true"/"1"
+  const isPub = typeof isPublic === 'string'
+    ? /^(true|1)$/i.test(isPublic)
+    : !!isPublic;
+
+  // construimos el filtro
+  const filter = { _id: offerId };
+  if (isPub) {
+    filter.type = 'external';
+    filter.active = true;
+  }
+
+  // un único findOne
+  const doc = await Offer.findOne(filter)
+    // .populate('jobId')
+    // .populate('provinceId')
+    .lean();
+
+  if (!doc) {
+    throw new ClientError('Oferta no disponible', 404);
+  }
+
+  response(res, 200, doc);
 }
 
-const OfferJobDeleteId = async (req, res) => {
-    const id = req.params.id;
-    const OfferJobDelete = await Offer.deleteOne({ _id: id });
-    response(res, 200, OfferJobDelete);
-}
-
-// modificar el usuario
-const OfferJobPut = async (req, res) => {
-    const requiredFields=["id"]
-    validateRequiredFields(req.body, requiredFields);
-
-    const {
-        functions,
-        work_schedule,
-        essentials_requirements,
-        optionals_requirements,
-        conditions,
-        province,
-        location,
-        create,
-        expected_incorporation_date,
-        dispositiveId,
-        studies,
-        sepe,
-        job_title,
-        entity,
-        programId,
-        id,
-        active,
-        userCv, 
-        type,
-        datecreate
-    } = req.body;
-
-    // Verificar si la oferta existe
-    const existingOffer = await Offer.findById(id);
-    if (!existingOffer) {
-        return response(res, 404, { error: "Oferta no encontrada." });
-    }
-
-    // Construir objeto con los campos a actualizar (solo los enviados)
-    const updatedFields = {};
-    if (entity) updatedFields.entity = entity;
-    
-    if (job_title) updatedFields.job_title = job_title;
-    if (functions) updatedFields.functions = functions;
-    if (userCv) updatedFields.userCv = userCv;
-    if (work_schedule) updatedFields.work_schedule = work_schedule;
-    if (essentials_requirements) updatedFields.essentials_requirements = essentials_requirements;
-    if (optionals_requirements) updatedFields.optionals_requirements = optionals_requirements;
-    if (conditions) updatedFields.conditions = conditions;
-    if (province) updatedFields.province = province;
-    if (location) updatedFields.location = location;
-    if (create) updatedFields.create = new mongoose.Types.ObjectId(create);
-    if (expected_incorporation_date) updatedFields.expected_incorporation_date = expected_incorporation_date;
-    if (studies) updatedFields.studies = Array.isArray(studies) ? studies : [];
-    if (typeof sepe !== "undefined") updatedFields.sepe = sepe === "si";
-    if(type) updatedFields.type=type
-    if(datecreate) updatedFields.datecreate=datecreate
-
-    if (active){
-        if(active === "si"){
-            updatedFields.active = true
-        } else if (active === "no"){
-            updatedFields.active = false
-        }
-    } 
-    // Actualizar dispositive si se envían nuevos valores
-    if (programId && dispositiveId) {
-        updatedFields.dispositive = {
-            programId: new mongoose.Types.ObjectId(programId),
-            dispositiveId: new mongoose.Types.ObjectId(dispositiveId),
-        };
-    }
-
-    // Actualizar en la base de datos
-    const updatedOffer = await Offer.findByIdAndUpdate(id, updatedFields, { new: true });
-
-    response(res, 200, updatedOffer);
-}
-
-
-
+//migracionOfertasStudies();
+// migrateSolicitants({ apply: true });
 module.exports = {
-    //gestiono los errores con catchAsync
-    postCreateOfferJob: catchAsync(postCreateOfferJob),
-    getOfferJobs: catchAsync(getOfferJobs),
-    getOfferJobID: catchAsync(getOfferJobID),
-    OfferJobDeleteId: catchAsync(OfferJobDeleteId),
-    OfferJobPut: catchAsync(OfferJobPut),
-}
+  offerList: catchAsync(offerList),
+  offerCreate: catchAsync(offerCreate),
+  offerUpdate: catchAsync(offerUpdate),
+  offerHardDelete: catchAsync(offerHardDelete),
+  offerId: catchAsync(offerId),
+};

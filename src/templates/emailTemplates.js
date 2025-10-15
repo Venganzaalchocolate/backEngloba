@@ -463,3 +463,270 @@ export function buildHtmlEmail(name = '', corpEmail = '', logoUrl = '') {
 </body>
 </html>`;
 }
+
+/* ──────────────────────────────────────────────────────────────────
+   Notificación a responsable: nueva solicitud de trabajador
+   - Texto plano
+   - HTML "bonito" con cabecera morada y botón de acción
+   Parámetros esperados en ambas funciones (objeto options):
+   {
+     approverName: 'María Pérez',
+     workerFullName: 'Juan López',
+     dni: '12345678A',
+     deviceName: 'Hogar Sevilla 1',
+     requestType: 'datos' | 'documentos',   // o 'mixta'
+     submittedAt: '2025-03-01T12:34:00Z',    // opcional
+     note: 'Comentario opcional del trabajador',
+     changes: [                              // opcional
+       { label: 'Teléfono personal', from: '600000000', to: '699999999' },
+       { label: 'Email personal', from: 'a@b.com', to: 'c@d.com' },
+     ],
+     documents: [                            // opcional
+       { name: 'CURRICULUM', kind: 'Oficial', date: '2025-02-20', description: '' },
+       { name: 'Certificado curso PRL', kind: 'Varios', date: '2025-02-01', description: '20h' },
+     ],
+     actionUrl: 'https://tuapp.interno/solicitudes/abc123', // botón CTA
+     logoUrl: 'https://tudominio/logo.png',  // opcional (HTML)
+     supportEmail: 'soporte@tudominio.com'   // opcional
+   }
+   ────────────────────────────────────────────────────────────────── */
+
+export function buildChangeRequestNotificationPlainText(opts = {}) {
+  const {
+    approverName = '',
+    workerFullName = '',
+    dni = '',
+    deviceName = '',
+    requestType = 'documentos',
+    submittedAt,
+    note,
+    changes = [],
+    documents = [],
+    actionUrl = '',
+    supportEmail = 'soporte@tudominio.com',
+  } = opts;
+
+  const t = requestType === 'datos' ? 'cambio de datos'
+          : requestType === 'mixta' ? 'cambio de datos y documentación'
+          : 'documentación';
+
+  const when = submittedAt ? new Date(submittedAt).toLocaleString('es-ES') : null;
+
+  const lines = [];
+  if (Array.isArray(changes) && changes.length) {
+    lines.push('\nCambios solicitados:');
+    for (const c of changes) {
+      lines.push(`• ${c?.label || 'Campo'}: ${c?.from ?? '—'} → ${c?.to ?? '—'}`);
+    }
+  }
+  if (Array.isArray(documents) && documents.length) {
+    lines.push('\nDocumentos adjuntos:');
+    for (const d of documents) {
+      const fecha = d?.date ? ` · Fecha: ${d.date}` : '';
+      const tipo  = d?.kind ? ` · Tipo: ${d.kind}` : '';
+      const desc  = d?.description ? ` · ${d.description}` : '';
+      lines.push(`• ${d?.name || 'Documento'}${tipo}${fecha}${desc}`);
+    }
+  }
+
+  return (
+`Hola ${approverName || 'equipo'},
+
+El/la trabajador/a ${workerFullName} (DNI ${dni}), que actualmente trabaja en el dispositivo «${deviceName}», ha enviado una solicitud de ${t}.${when ? `\nFecha de envío: ${when}.` : ''}
+
+${note ? `Nota del trabajador: ${note}\n` : ''}${lines.length ? lines.join('\n') + '\n\n' : '\n'}
+${actionUrl ? `Revisar solicitud: ${actionUrl}\n` : ''} 
+Para cualquier duda, escribe a ${supportEmail}.
+
+Un saludo.`
+  );
+}
+
+
+/* ─────────────────────────────────────────────────────────────
+   HTML bonito con chip de tipo, lista de cambios/docs y botón
+   ──────────────────────────────────────────────────────────── */
+export function buildChangeRequestNotificationHtml(opts = {}) {
+  const {
+    approverName = '',
+    workerFullName = '',
+    dni = '',
+    deviceName = '',
+    requestType = 'documentos',
+    submittedAt,
+    note,
+    changes = [],
+    documents = [],
+    actionUrl = '',
+    logoUrl = '',
+    supportEmail = 'soporte@tudominio.com',
+  } = opts;
+
+  // Paleta corporativa
+  const COLORS = {
+    morado: '#4f529f',       // principal
+    malva: '#bec3f4',
+    chicle: '#e08fa7',
+    verde: '#94aa51',
+    yema: '#f5b136',
+    naranja: '#f3853a',
+    rosa: '#eddcf2',
+    crema: '#f5dc98',
+  };
+
+  const tTxt = requestType === 'datos' ? 'Cambio de datos'
+           : requestType === 'mixta' ? 'Datos + Documentación'
+           : 'Documentación';
+
+  const when = submittedAt ? new Date(submittedAt).toLocaleString('es-ES') : '';
+
+  // Colores de chip según tipo
+  const chipColor = requestType === 'datos' ? COLORS.verde
+                   : requestType === 'mixta' ? COLORS.yema
+                   : COLORS.morado;
+
+  const renderChanges = (arr = []) => {
+    if (!arr.length) return '';
+    return `
+      <h3>Cambios solicitados</h3>
+      <ul class="list">
+        ${arr.map(c => `
+          <li>
+            <span class="label">${c?.label || 'Campo'}</span>
+            <span class="arrow">→</span>
+            <span class="val">${c?.from ?? '—'}</span>
+            <span class="sep">→</span>
+            <span class="val to">${c?.to ?? '—'}</span>
+          </li>
+        `).join('')}
+      </ul>
+    `;
+  };
+
+  const renderDocs = (arr = []) => {
+    if (!arr.length) return '';
+    return `
+      <h3>Documentos adjuntos</h3>
+      <ul class="list">
+        ${arr.map(d => `
+          <li>
+            <span class="label">${d?.name || 'Documento'}</span>
+            ${d?.kind ? `<span class="pill">${d.kind}</span>` : ''}
+            ${d?.date ? `<span class="meta">· ${d.date}</span>` : ''}
+            ${d?.description ? `<div class="desc">${d.description}</div>` : ''}
+          </li>
+        `).join('')}
+      </ul>
+    `;
+  };
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Nueva solicitud de ${workerFullName}</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* Reset básico */
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#f0f2f7;font-family:'Roboto',Arial,sans-serif;color:#2a2a2a;line-height:1.55}
+
+  /* Card */
+  .card{max-width:720px;margin:36px auto;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 10px 28px rgba(0,0,0,.08)}
+
+  /* Header con colores corporativos */
+  .header{
+    background:linear-gradient(90deg, #4f529f 0%, #bec3f4 100%);
+    color:#fff;padding:28px 24px;text-align:center
+  }
+  .logo{max-width:120px;margin:0 auto 8px;display:block}
+  .title{font-size:22px;font-weight:700;margin-top:2px}
+
+  .content{padding:28px 32px}
+  .hello{margin-bottom:10px}
+
+  /* Summary usando malva muy claro */
+  .summary{
+    background:rgba(190,195,244,0.20);
+    border:1px solid rgba(79,82,159,0.18);
+    border-radius:12px;padding:14px 16px;margin:12px 0 18px
+  }
+  .row{margin:6px 0}
+
+  /* Línea de "Solicitud" – mayor compatibilidad email (sin flex) */
+  .tag{display:inline-block;white-space:nowrap}
+  .tag strong,.chip,.meta{display:inline-block;vertical-align:middle}
+  .tag strong{margin-right:6px}
+
+  /* Chip corregido (sin margen que lo desalineaba) */
+  .chip{
+    padding:6px 10px;border-radius:999px;background:${chipColor};
+    color:#fff;font-weight:700;font-size:12px;letter-spacing:.2px;line-height:1
+  }
+  .meta{font-size:13px;color:#555;margin-left:10px}
+
+  h3{color:#4f529f;font-size:16px;margin:18px 0 10px}
+  .list{margin:0 0 10px 18px}
+  .list li{margin:8px 0}
+  .label{font-weight:700}
+  .arrow,.sep{opacity:.65;margin:0 6px}
+  .val{font-family:ui-monospace,Menlo,Consolas,monospace;background:#fafafa;border:1px solid #eee;border-radius:6px;padding:1px 6px}
+  .val.to{background:#eef0ff;border-color:#dfe2ff}
+
+  /* Píldoras y detalles con morado/malva */
+  .pill{
+    display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;
+    background:#eef0ff;color:#4f529f;border:1px solid #dfe2ff;font-size:12px;font-weight:700
+  }
+  .desc{font-size:14px;color:#444;margin-top:4px}
+
+  /* Botón con gradiente corporativo */
+  .btns{margin:18px 0 6px;text-align:center}
+  .btn{
+    display:inline-block;padding:12px 22px;border-radius:40px;font-weight:700;
+    color:#fff !important;text-decoration:none !important;
+    background:linear-gradient(90deg,#4f529f 0%,#bec3f4 100%)
+  }
+
+  .footer{background:#e9ebff;text-align:center;padding:16px;font-size:13px;color:#444}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      ${logoUrl ? `<img class="logo" src="${logoUrl}" alt="Logo">` : ''}
+      <div class="title">Nueva solicitud del trabajador</div>
+    </div>
+
+    <div class="content">
+      <p class="hello">Hola ${approverName || 'equipo'},</p>
+      <div class="summary">
+        <div class="row"><strong>Trabajador/a:</strong> ${workerFullName}</div>
+        <div class="row"><strong>DNI:</strong> ${dni}</div>
+        <div class="row"><strong>Dispositivo:</strong> ${deviceName}</div>
+        <div class="row tag">
+          <strong>Solicitud:</strong>
+          <span class="chip">${tTxt}</span>
+          ${when ? `<span class="meta">Enviada: ${when}</span>` : ''}
+        </div>
+        ${note ? `<div class="row"><strong>Nota del trabajador:</strong> ${note}</div>` : ''}
+      </div>
+
+      ${renderChanges(changes)}
+      ${renderDocs(documents)}
+
+      <div class="btns">
+        ${actionUrl ? `<a class="btn" href="${actionUrl}" target="_blank" rel="noopener">Revisar solicitud ▸</a>` : ''}
+        <div style="margin-top:10px;font-size:13px;color:#555">
+          Soporte: <a href="mailto:${supportEmail}" style="color:#4f529f;text-decoration:none;font-weight:700">${supportEmail}</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      Este mensaje se generó automáticamente desde el panel de solicitudes.
+    </div>
+  </div>
+</body>
+</html>`;
+}

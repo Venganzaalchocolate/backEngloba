@@ -1,269 +1,303 @@
+const { default: mongoose } = require('mongoose');
 const { UserCv, User } = require('../models/indexModels');
-const { catchAsync, response, ClientError, resError } = require('../utils/indexUtils');
-const { dateAndHour, getSpainCurrentDate, createAccentInsensitiveRegex } = require('../utils/utils');
+const { catchAsync, response, ClientError } = require('../utils/indexUtils');
+const { createAccentInsensitiveRegex } = require('../utils/utils');
 const { deleteFile } = require('./ovhController');
 
-// crear usuario
+// ---------- Helpers ----------
+const normalize = (s) =>
+  (s ?? '')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+const commentsPopulate = [
+  { path: 'commentsPhone.userCv', model: 'User', select: 'firstName lastName' },
+  { path: 'commentsVideo.userCv', model: 'User', select: 'firstName lastName' },
+  { path: 'commentsInperson.userCv', model: 'User', select: 'firstName lastName' },
+  { path: 'notes.userCv', model: 'User', select: 'firstName lastName' },
+];
+
+const normDNI = (d) => (d ?? '').toString().trim().toUpperCase();
+
+const buildEnglobaMap = async (dnisRaw = []) => {
+  const dnis = [...new Set(dnisRaw.filter(Boolean).map(normDNI))];
+  if (!dnis.length) return new Map();
+
+  const usersInEngloba = await User.find(
+    { dni: { $in: dnis } },
+    { _id: 1, dni: 1, employmentStatus: 1 }
+  );
+
+  const map = new Map();
+  for (const u of usersInEngloba) {
+    const st = normalize(u.employmentStatus);
+    const active =
+      st === 'activo' ||
+      st === 'en proceso de contratacion' ||
+      st === 'en proceso de contratación';
+    map.set(normDNI(u.dni), { status: true, active, idUser: u._id });
+  }
+  return map;
+};
+
+const attachWorkedInEngloba = async (docs) => {
+  const arr = Array.isArray(docs) ? docs : [docs];
+  const dnis = arr.map((d) => d?.dni).filter(Boolean);
+  const englobaMap = await buildEnglobaMap(dnis);
+
+  const attachOne = (doc) => {
+    if (!doc) return doc;
+    const obj = doc.toObject ? doc.toObject() : doc;
+    const key = normDNI(doc.dni);
+    obj.workedInEngloba =
+      englobaMap.get(key) ?? { status: false, active: null, idUser: null };
+    return obj;
+  };
+
+  const out = arr.map(attachOne);
+  return Array.isArray(docs) ? out : out[0];
+};
+
+const toId = (v) => (v ? new mongoose.Types.ObjectId(v) : v);
+// --------------------------------------------
+// crear usuario (SOLO nuevos campos *_Id)
 const postCreateUserCv = async (req, res) => {
-    if (!req.body.email || !req.body.phone || !req.body.jobs || !req.body.studies || !req.body.provinces || !req.body.work_schedule) throw new ClientError("Los datos no son correctos", 400);
-    let dataUser = {
-        date: new Date(),
-        name: req.body.firstName.toLowerCase()+' '+req.body.lastName.toLowerCase(),
-        email: req.body.email.toLowerCase(),
-        phone: req.body.phone,
-        jobs: req.body.jobs,
-        studies:req.body.studies,
-        provinces: req.body.provinces,
-        work_schedule:req.body.work_schedule,
-        firstName:req.body.firstName.toLowerCase(),
-        lastName:req.body.lastName.toLowerCase(),
-        gender:req.body.gender
+  const required = ['email', 'phone', 'jobsId', 'studiesId', 'provincesId', 'work_schedule', 'firstName', 'lastName'];
+  for (const k of required) {
+    if (req.body[k] === undefined || req.body[k] === null) {
+      throw new ClientError(`Falta el campo requerido: ${k}`, 400);
     }
+  }
 
-    if (!!req.body.dni) {               // el doble !! no hace falta
-        const dni = req.body.dni.trim().toUpperCase();  // opcional: trim para limpiar espacios
-        dataUser['dni'] = dni;           // usa notación punto o corchetes, ambas valen
-      }
-    if (!!req.body.about) dataUser['about'] = req.body.about
-    if (!!req.body.offer) dataUser['offer'] = req.body.offer
-    if (!!req.body.job_exchange) dataUser['job_exchange'] = req.body.job_exchange
-    if(!!req.body.disability) dataUser['disability']= req.body.disability
-    if (!!req.body.fostered) {
-        dataUser['fostered'] = req.body.fostered === 'si';
-      }
+  const dataUser = {
+    date: new Date(),
+    name: `${(req.body.firstName || '').toLowerCase()} ${(req.body.lastName || '').toLowerCase()}`.trim(),
+    email: (req.body.email || '').toLowerCase(),
+    phone: req.body.phone,
+    // SOLO nuevos campos:
+    jobsId: Array.isArray(req.body.jobsId) ? req.body.jobsId : [],
+    studiesId: Array.isArray(req.body.studiesId) ? req.body.studiesId : [],
+    provincesId: Array.isArray(req.body.provincesId) ? req.body.provincesId : [],
+    work_schedule: req.body.work_schedule, // mantiene formato anterior (array de strings)
+    firstName: (req.body.firstName || '').toLowerCase(),
+    lastName: (req.body.lastName || '').toLowerCase(),
+    gender: req.body.gender,
+  };
 
-    const newUserCv = new UserCv(dataUser)
-    const savedUserCv = await newUserCv.save();
-    response(res, 200, savedUserCv)
-}
+  if (req.body.dni) dataUser.dni = req.body.dni.trim().toUpperCase();
+  if (req.body.about) dataUser.about = req.body.about;
+  if (req.body.offer) dataUser.offer = req.body.offer;
+  if (req.body.job_exchange !== undefined) dataUser.job_exchange = !!req.body.job_exchange;
+  if (req.body.disability !== undefined) dataUser.disability = +req.body.disability || 0;
+  if (req.body.fostered !== undefined) dataUser.fostered = req.body.fostered === 'si' || req.body.fostered === true;
+  const newUserCv = new UserCv(dataUser);
+  const savedUserCv = await newUserCv.save();
+  response(res, 200, savedUserCv);
+};
 
-//recoge todos los usuarios
+
+const asObjectIdArray = (input) => {
+  if (input == null) return [];
+
+  const arr = Array.isArray(input) ? input.map((x)=>toId(x)) : [toId(input)];
+  return arr;
+};
+const asArray = (v) => (Array.isArray(v) ? v : (v ? [v] : []));
+
+// recoge todos los usuarios (paginado) usando *_Id
 const getUserCvs = async (req, res) => {
-    if (!req.body.page || !req.body.limit) throw new ClientError("Faltan datos no son correctos", 400);
-    const page = parseInt(req.body.page) || 1; // Página actual, por defecto página 1
-    const limit = parseInt(req.body.limit) || 10; // Tamaño de página, por defecto 10 documentos por página
+  if (!req.body.page || !req.body.limit) {
+    throw new ClientError("Faltan datos no son correctos", 400);
+  }
+  const page  = parseInt(req.body.page)  || 1;
+  const limit = parseInt(req.body.limit) || 10;
 
+  const filters = {};
 
-    const filters = {};
-    if (req.body.name) {
-        const nameRegex = createAccentInsensitiveRegex(req.body.name);
-        filters["name"] = { $regex: nameRegex };
-    }
-    if (req.body.email) filters["email"] = { $regex: req.body.email, $options: 'i' };
-    if (req.body.phone) filters["phone"] = { $regex: req.body.phone, $options: 'i' };
-    if (req.body.jobs && req.body.jobs.length > 0) filters["jobs"] = { $in: req.body.jobs };
-    if (req.body.provinces && req.body.provinces.length > 0) filters["provinces"] = { $in: req.body.provinces };
-    if (req.body.work_schedule && req.body.work_schedule.length > 0) filters["work_schedule"] = { $in: req.body.work_schedule };
-    if (req.body.studies && req.body.studies.length > 0) filters["studies"] = { $in: req.body.studies };
+  if (req.body.name) {
+    const nameRegex = createAccentInsensitiveRegex(req.body.name);
+    filters.name = { $regex: nameRegex };
+  }
+  if (req.body.email) filters.email = { $regex: req.body.email, $options: 'i' };
+  if (req.body.phone) filters.phone = { $regex: req.body.phone, $options: 'i' };
 
-    if (req.body.fostered === 'si') {
-        filters.fostered = true;
-      } else if (req.body.fostered === 'no') {
-        filters.fostered = false;
-      }
+  // NUEVOS filtros por IDs (acepta string o array)
+  const jobsIds      = asObjectIdArray(req.body.jobsId);
+  const studiesIds   = asObjectIdArray(req.body.studiesId);
+  const provincesIds = asObjectIdArray(req.body.provincesId);
 
-    if (req.body.offer) filters["offer"] = req.body.offer;
+  if (jobsIds.length)      filters.jobsId      = { $in: jobsIds };
+  if (studiesIds.length)   filters.studiesId   = { $in: studiesIds };
+  if (provincesIds.length) filters.provincesId = { $in: provincesIds };
 
-    if (req.body.users) filters["_id"]={ $in: req.body.users }
+  // work_schedule: acepta string o array
+  const workSched = asArray(req.body.work_schedule);
+  if (workSched.length) filters.work_schedule = { $in: workSched };
 
-    if (req.body.view !== undefined) {
-        filters["view"] = req.body.view == '0' ? null  : { $ne: null };
-    }
+  if (req.body.fostered === 'si') filters.fostered = true;
+  else if (req.body.fostered === 'no') filters.fostered = false;
 
-    if (req.body.favorite !== undefined) {
-        filters["favorite"] = (req.body.favorite=='0') ? null : { $ne: null };
-    }
+  if (req.body.offer) filters.offer = req.body.offer; // (ajusta a ObjectId si cambiaste el schema)
 
-    if (req.body.reject !== undefined) {
-        filters["reject"] = req.body.reject == '0' ? null : { $ne: null };
-    }
+  const ids = asObjectIdArray(req.body.users);
+  if (ids.length) filters._id = { $in: ids };
 
-    if (req.body.disability > 0) {
-        filters.disability = { $gt: 0 };
-      }
+  if (req.body.view !== undefined) {
+    filters.view = req.body.view == '0' ? null : { $ne: null };
+  }
+  if (req.body.favorite !== undefined) {
+    filters.favorite = req.body.favorite == '0' ? null : { $ne: null };
+  }
+  if (req.body.reject !== undefined) {
+    filters.reject = req.body.reject == '0' ? null : { $ne: null };
+  }
+  if (Number(req.body.disability) > 0) {
+    filters.disability = { $gt: 0 };
+  }
 
+  const totalDocs  = await UserCv.countDocuments(filters);
+  const totalPages = Math.ceil(totalDocs / limit);
 
+  const users = await UserCv.find(filters)
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .populate(commentsPopulate);
 
-    const totalDocs = await UserCv.countDocuments(filters);
+  const usersWithEnglobaInfo = await attachWorkedInEngloba(users);
+  response(res, 200, { users: usersWithEnglobaInfo, totalPages });
+};
 
-    // Calcular el número total de páginas
-    const totalPages = Math.ceil(totalDocs / limit);
-    // Utiliza el método find() de Mongoose con skip() y limit() para paginar
-
-    const users = await UserCv.find(filters).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit)
-
-      // 2. Reunimos los DNIs de todos los userCV encontrados
-  const dnis = users.map((userCv) => userCv.dni);
-
-  // 3. Buscamos si existen usuarios en la colección 'User' con alguno de esos DNIs
-  const usersInEngloba = await User.find({ dni: { $in: dnis } });
-  // 4. Creamos un set con los DNIs encontrados en 'User' para luego hacer una comprobación rápida
-  const dnisSet = new Set(usersInEngloba.map((u) => u.dni));
-
-  // 5. Recorremos los userCV y añadimos un nuevo campo indicando si ha trabajado en Engloba
-  const usersWithEnglobaInfo = users.map((userCv) => {
-    // Convertimos a objeto plain (para poder añadir campos sin problemas)
-    const userCvObj = userCv.toObject();
-    // El campo `workedInEngloba` será true si el DNI está en 'dnisSet'
-    userCvObj.workedInEngloba = dnisSet.has(userCv.dni);
-    return userCvObj;
-  });
-
-
-    // Responde con la lista de usuarios paginada y código de estado 200 (OK)
-    response(res, 200, { users:usersWithEnglobaInfo, totalPages });
-
-}
-
+// filtrar por dni/phone/id (sin cambios, devuelve nuevos campos igualmente)
 const getUserCvsFilter = async (req, res) => {
-    let filter={}
-    if(req.body.dni) filter = { dni: req.body.dni };
-    else if(req.body.phone) filter = { phone: req.body.phone };
-    else if(req.body.id) filter = { _id: req.body.id };
-    // Utiliza el método find() de Mongoose para obtener todos los documentos en la colección
-    const usuarios = await UserCv.find(filter);
-    // Responde con la lista de usuarios y código de estado 200 (OK)
-    response(res, 200, usuarios);
-}
 
+  let filter = {};
+  if (req.body.dni) filter = { dni: req.body.dni };
+  else if (req.body.phone) filter = { phone: req.body.phone };
+  else if (req.body.id) filter = { _id: req.body.id };
 
-//busca un usuario por ID
-const getUsersCvsIDs = async (req, res) => {
-    // Obtén el ID del parámetro de la solicitud
-    const userIds = req.body.ids;
-    // Utiliza el método findById() de Mongoose para buscar un usuario por su ID
-    // Si no se encuentra el usuario, responde con un código de estado 404 (Not Found)
-    const usuarios = await UserCv.find({ _id: { $in: userIds } })
-    const dnis = usuarios.map((userCv) => userCv.dni);
+  const usuarios = await UserCv.find(filter).populate(commentsPopulate);
+  const enriched = await attachWorkedInEngloba(usuarios);
+  response(res, 200, enriched);
+};
 
-    // 3. Buscamos si existen usuarios en la colección 'User' con alguno de esos DNIs
-    const usersInEngloba = await User.find({ dni: { $in: dnis } });
-    // 4. Creamos un set con los DNIs encontrados en 'User' para luego hacer una comprobación rápida
-    const dnisSet = new Set(usersInEngloba.map((u) => u.dni));
-  
-    // 5. Recorremos los userCV y añadimos un nuevo campo indicando si ha trabajado en Engloba
-    const usersWithEnglobaInfo = usuarios.map((userCv) => {
-      // Convertimos a objeto plain (para poder añadir campos sin problemas)
-      const userCvObj = userCv.toObject();
-      // El campo `workedInEngloba` será true si el DNI está en 'dnisSet'
-      userCvObj.workedInEngloba = dnisSet.has(userCv.dni);
-      return userCvObj;
-    });
-  
-
-    // Responde con el usuario encontrado y código de estado 200 (OK)
-    response(res, 200, usersWithEnglobaInfo);
-}
-
-const getUserCvID=()=>{
-
-}
+// busca un usuario por ID (single)
+const getUserCvID = async (req, res) => {
+  const { id } = req.body;
+  if (!id) throw new ClientError("Falta id", 400);
+  const user = await UserCv.findById(id).populate(commentsPopulate);
+  if (!user) throw new ClientError("No existe el usuario", 404);
+  const enriched = await attachWorkedInEngloba(user);
+  response(res, 200, enriched);
+};
 
 // borrar un usuario
 const UserCvDeleteId = async (req, res) => {
-    const filter = { _id: req.body._id };
-    const deleteFileAux= await deleteFile(req.body._id)
-    if(deleteFileAux) responseDelete=await UserCv.deleteOne(filter);
-    else throw new ClientError('No se ha podido borrar el cv', 400)
-    response(res, 200, {userDelete:true});
-}
+  const filter = { _id: req.body._id };
+  const deleteFileAux = await deleteFile(req.body._id);
+  if (!deleteFileAux) throw new ClientError('No se ha podido borrar el cv', 400);
+  await UserCv.deleteOne(filter);
+  response(res, 200, { userDelete: true });
+};
 
-// modificar el usuario
+// modificar el usuario (SOLO nuevos campos *_Id)
 const UserCvPut = async (req, res) => {
-    const filter = { _id: req.body._id };
-    const updateText = {};
-    if (!!req.body.name) updateText['name'] = req.body.name;
-    if (!!req.body.email) updateText['email'] = req.body.email;
-    if (!!req.body.dni) {               // el doble !! no hace falta
-        const dni = req.body.dni.trim().toUpperCase();  // opcional: trim para limpiar espacios
-        updateText.dni = dni;           // usa notación punto o corchetes, ambas valen
-      }
-    if (!!req.body.phone) updateText['phone'] = req.body.phone;
-    if (!!req.body.jobs) updateText['jobs'] = req.body.jobs;
-    if (!!req.body.studies) updateText['studies'] = req.body.studies;
-    if (!!req.body.provinces) updateText['provinces'] = req.body.provinces;
-    if (!!req.body.about) updateText['about'] = req.body.about
-    if (!!req.body.offer) updateText['offer'] = req.body.offer
-    if (!!req.body.work_schedule) updateText['work_schedule'] = req.body.work_schedule
-    if (!!req.body.job_exchange) updateText['job_exchange'] = req.body.job_exchange
-    if (!!req.body.numberCV) updateText['numberCV'] = req.body.numberCV
-    if(!!req.body.gender)updateText['gender'] = req.body.gender
-    // Manejo de comentarios
-    const dateNow = new Date();
-    // Manejar comentarios independientes
+  const filter = { _id: req.body._id };
+  const updateText = {};
 
-    if (req.body.fostered !== undefined) {
-        updateText['fostered'] = (req.body.fostered === 'si');
-    }
+  if (req.body.name)       updateText.name = req.body.name;
+  if (req.body.email)      updateText.email = req.body.email;
+  if (req.body.dni)        updateText.dni = req.body.dni.trim().toUpperCase();
+  if (req.body.phone)      updateText.phone = req.body.phone;
 
-    if (req.body.commentsPhone) {
-        updateText['view'] = req.body.id
-        updateText['$push'] = {
-            commentsPhone: {
-                userCv: req.body.id,
-                nameUser: req.body.nameUserComment,
-                date: dateNow,
-                message: req.body.commentsPhone
-            }
-        };
-    }
+  // NUEVOS campos por IDs
+  if (req.body.jobsId)       updateText.jobsId = Array.isArray(req.body.jobsId) ? req.body.jobsId : [];
+  if (req.body.studiesId)    updateText.studiesId = Array.isArray(req.body.studiesId) ? req.body.studiesId : [];
+  if (req.body.provincesId)  updateText.provincesId = Array.isArray(req.body.provincesId) ? req.body.provincesId : [];
 
-    if (req.body.commentsVideo) {
-        updateText['view'] = req.body.id
-        updateText['$push'] = {
-            commentsVideo: {
-                userCv: req.body.id,
-                nameUser: req.body.nameUserComment,
-                date: dateNow,
-                message: req.body.commentsVideo
-            }
-        };
-    }
+  if (req.body.about)         updateText.about = req.body.about;
+  if (req.body.offer)         updateText.offer = req.body.offer;
+  if (req.body.work_schedule) updateText.work_schedule = req.body.work_schedule;
+  if (req.body.job_exchange !== undefined) updateText.job_exchange = !!req.body.job_exchange;
+  if (req.body.numberCV !== undefined)     updateText.numberCV = +req.body.numberCV || 1;
+  if (req.body.gender)        updateText.gender = req.body.gender;
 
-    if (req.body.commentsInperson) {
-        updateText['view'] = req.body.id
-        updateText['$push'] = {
-            commentsInperson: {
-                userCv: req.body.id,
-                nameUser: req.body.nameUserComment,
-                date: dateNow,
-                message: req.body.commentsInperson
-            }
-        };
-    }
+  const dateNow = new Date();
 
-    if (req.body.notes) {
-        updateText['view'] = req.body.id
-        updateText['$push'] = {
-            notes: {
-                userCv: req.body.id,
-                nameUser: req.body.nameUserComment,
-                date: dateNow,
-                message: req.body.notes
-            }
-        };
-    }
+  if (req.body.fostered !== undefined) {
+    updateText.fostered = (req.body.fostered === 'si') || (req.body.fostered === true);
+  }
 
+  // $push acumulado para comentarios
+  const pushOps = {};
+  if (req.body.commentsPhone) {
+    pushOps.commentsPhone = {
+      userCv: req.body.id,
+      nameUser: req.body.nameUserComment,
+      date: dateNow,
+      message: req.body.commentsPhone
+    };
+    updateText.view = req.body.id;
+  }
+  if (req.body.commentsVideo) {
+    pushOps.commentsVideo = {
+      userCv: req.body.id,
+      nameUser: req.body.nameUserComment,
+      date: dateNow,
+      message: req.body.commentsVideo
+    };
+    updateText.view = req.body.id;
+  }
+  if (req.body.commentsInperson) {
+    pushOps.commentsInperson = {
+      userCv: req.body.id,
+      nameUser: req.body.nameUserComment,
+      date: dateNow,
+      message: req.body.commentsInperson
+    };
+    updateText.view = req.body.id;
+  }
+  if (req.body.notes) {
+    pushOps.notes = {
+      userCv: req.body.id,
+      nameUser: req.body.nameUserComment,
+      date: dateNow,
+      message: req.body.notes
+    };
+    updateText.view = req.body.id;
+  }
+  if (Object.keys(pushOps).length) {
+    updateText.$push = {};
+    for (const k of Object.keys(pushOps)) updateText.$push[k] = pushOps[k];
+  }
 
-    if (!!req.body.view || req.body.view==null) updateText['view'] = req.body.view
-    if (!!req.body.favorite || req.body.favorite==null) updateText['favorite'] = req.body.favorite
-    if (!!req.body.reject || req.body.reject==null) updateText['reject'] = req.body.reject
+  if (req.body.view !== undefined)     updateText.view = req.body.view;
+  if (req.body.favorite !== undefined) updateText.favorite = req.body.favorite;
+  if (req.body.reject !== undefined)   updateText.reject = req.body.reject;
 
-    let doc = await UserCv.findOneAndUpdate(filter, updateText,  { new: true });
-    if (doc == null)  throw new ClientError("No existe el usuario", 400)
-    response(res, 200, doc);
-}
+  const doc = await UserCv.findOneAndUpdate(filter, updateText, { new: true }).populate(commentsPopulate);
+  if (!doc) throw new ClientError("No existe el usuario", 400);
 
+  const enriched = await attachWorkedInEngloba(doc);
+  response(res, 200, enriched);
+};
 
-
+const getUsersCvsIDs = async (req, res) => {
+  const userIds = req.body.ids || [];
+  const usuarios = await UserCv.find({ _id: { $in: userIds } }).populate(commentsPopulate);
+  const enriched = await attachWorkedInEngloba(usuarios);
+  response(res, 200, enriched);
+};
 
 module.exports = {
-    //gestiono los errores con catchAsync
-    postCreateUserCv: catchAsync(postCreateUserCv),
-    getUserCvs: catchAsync(getUserCvs),
-    getUserCvID: catchAsync(getUserCvID),
-    UserCvDeleteId: catchAsync(UserCvDeleteId),
-    UserCvPut: catchAsync(UserCvPut),
-    getUserCvsFilter: catchAsync(getUserCvsFilter),
-    getUsersCvsIDs:catchAsync(getUsersCvsIDs)
-}
+  postCreateUserCv: catchAsync(postCreateUserCv),
+  getUserCvs: catchAsync(getUserCvs),
+  getUserCvID: catchAsync(getUserCvID),
+  UserCvDeleteId: catchAsync(UserCvDeleteId),
+  UserCvPut: catchAsync(UserCvPut),
+  getUserCvsFilter: catchAsync(getUserCvsFilter),
+  getUsersCvsIDs: catchAsync(getUsersCvsIDs)
+};

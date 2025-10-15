@@ -16,7 +16,9 @@ const {
   updateFileDrive,
   getFileDrive,
   confirmSignature,
-  requestSignature
+  requestSignature,
+  getCvPresignPut,
+  getCvPresignGet
 } = require('../controllers/indexController');
 
 // Multer en memoria (CV, FileDrive)
@@ -30,6 +32,10 @@ router.post(   '/crfilemodel',     tokenValid, uploadMem.single('file'), createF
 router.post(   '/dlfilemodel',     tokenValid, uploadMem.single('file'), deleteFileDrive);
 router.post(   '/upfilemodel',     tokenValid, uploadMem.single('file'), updateFileDrive);
 router.post(   '/getfiledrive',    tokenValid, getFileDrive);
+
+router.post('/cv/presign-put', getCvPresignPut);
+router.post('/cv/presign-get',  tokenValid, getCvPresignGet);
+
 
 // NUEVAS RUTAS PARA FIRMA DE PDF
 router.post('/pdf/request-sign', tokenValid, requestSignature);

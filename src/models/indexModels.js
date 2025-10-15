@@ -1,6 +1,5 @@
 
 const UserCv=require('./userCV');
-const Bag=require('./bag');
 const Program=require('./programs')
 const Jobs=require('./jobs');
 const Provinces=require('./provinces');
@@ -13,11 +12,14 @@ const Offer=require('./offer')
 const Documentation=require('./documentation')
 const Filedrive=require('./file')
 const Preferents=require('./preferents')
+const Periods=require('./period')
+const Leaves=require('./leave');
+const UserChangeRequest = require('./UserChangeRequest');
+const Dispositive=require('./dispositive');
 
 module.exports = {
     User,
     UserCv,
-    Bag,
     Program,
     Jobs,
     Provinces,
@@ -28,5 +30,9 @@ module.exports = {
     Offer,
     Documentation,
     Filedrive,
-    Preferents
+    Preferents,
+    Periods,
+    Leaves,
+    UserChangeRequest,
+    Dispositive
 }

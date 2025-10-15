@@ -12,40 +12,78 @@ const credentials = JSON.parse(
   Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString('utf-8')
 );
 
+// const commonSettings = {
+//   // 1) Permitir miembros externos
+//   allowExternalMembers: 'false',                   // entry/apps:allowExternalMembers :contentReference[oaicite:0]{index=0}
+
+//   // 2) Control de acceso
+//   whoCanViewGroup: 'ALL_MEMBERS_CAN_VIEW',   // entry/apps:whoCanViewGroup :contentReference[oaicite:1]{index=1}
+//   whoCanViewMembership: 'ALL_MEMBERS_CAN_VIEW',   // entry/apps:whoCanViewMembership :contentReference[oaicite:2]{index=2}
+//   whoCanJoin: 'CAN_REQUEST_TO_JOIN',    // entry/apps:whoCanJoin :contentReference[oaicite:3]{index=3}
+
+//   // 3) Publicación
+//   whoCanPostMessage: 'ANYONE_CAN_POST',        // entry/apps:whoCanPostMessage :contentReference[oaicite:4]{index=4}
+//   allowWebPosting: 'true',                   // entry/apps:allowWebPosting :contentReference[oaicite:5]{index=5}
+
+//   // 4) Historial (archivo, pero no readonly)
+//   archiveOnly: 'false',                  // entry/apps:archiveOnly :contentReference[oaicite:6]{index=6}
+//   isArchived: 'true',                   // entry/apps:isArchived :contentReference[oaicite:7]{index=7}
+
+//   // 5) Moderación de contenido
+//   messageModerationLevel: 'MODERATE_NONE',   // entry/apps:messageModerationLevel :contentReference[oaicite:8]{index=8}
+//   spamModerationLevel: 'SILENTLY_MODERATE',      // entry/apps:spamModerationLevel :contentReference[oaicite:9]{index=9}
+
+//   // 6) Moderación de miembros
+//   whoCanModerateMembers: 'ALL_MEMBERS',            // entry/apps:whoCanModerateMembers :contentReference[oaicite:10]{index=10}
+
+//   // 7) Buzón colaborativo y etiquetas
+//   enableCollaborativeInbox: 'true',                   // entry/apps:enableCollaborativeInbox :contentReference[oaicite:11]{index=11}
+//   whoCanEnterFreeFormTags: 'ALL_MEMBERS',            // entry/apps:whoCanEnterFreeFormTags :contentReference[oaicite:12]{index=12}
+//   whoCanModifyTagsAndCategories: 'ALL_MEMBERS',            // entry/apps:whoCanModifyTagsAndCategories :contentReference[oaicite:13]{index=13}
+
+//   // 8) Publicar “como grupo” y respuestas
+//   membersCanPostAsTheGroup: 'true',                   // entry/apps:membersCanPostAsTheGroup :contentReference[oaicite:14]{index=14}
+//   replyTo: 'REPLY_TO_IGNORE',          // entry/apps:replyTo :contentReference[oaicite:15]{index=15}
+//   defaultSender: 'GROUP'                   // (UI: Remitente predeterminado)
+// };
+
 const commonSettings = {
-  // 1) Permitir miembros externos
-  allowExternalMembers: 'false',                   // entry/apps:allowExternalMembers :contentReference[oaicite:0]{index=0}
+  // Idioma
+  primaryLanguage: 'es',
 
-  // 2) Control de acceso
-  whoCanViewGroup: 'ALL_MEMBERS_CAN_VIEW',   // entry/apps:whoCanViewGroup :contentReference[oaicite:1]{index=1}
-  whoCanViewMembership: 'ALL_MEMBERS_CAN_VIEW',   // entry/apps:whoCanViewMembership :contentReference[oaicite:2]{index=2}
-  whoCanJoin: 'CAN_REQUEST_TO_JOIN',    // entry/apps:whoCanJoin :contentReference[oaicite:3]{index=3}
+  // Acceso y visibilidad
+  allowExternalMembers: 'false',
+  whoCanJoin: 'CAN_REQUEST_TO_JOIN',
+  whoCanViewGroup: 'ALL_MEMBERS_CAN_VIEW',
+  whoCanViewMembership: 'ALL_MEMBERS_CAN_VIEW',
 
-  // 3) Publicación
-  whoCanPostMessage: 'ANYONE_CAN_POST',        // entry/apps:whoCanPostMessage :contentReference[oaicite:4]{index=4}
-  allowWebPosting: 'true',                   // entry/apps:allowWebPosting :contentReference[oaicite:5]{index=5}
+  // Publicación
+  whoCanPostMessage: 'ANYONE_CAN_POST',
+  allowWebPosting: 'true',
+  messageModerationLevel: 'MODERATE_NONE',
+  spamModerationLevel: 'SILENTLY_MODERATE',
 
-  // 4) Historial (archivo, pero no readonly)
-  archiveOnly: 'false',                  // entry/apps:archiveOnly :contentReference[oaicite:6]{index=6}
-  isArchived: 'true',                   // entry/apps:isArchived :contentReference[oaicite:7]{index=7}
+  // Bandeja colaborativa + etiquetas
+  enableCollaborativeInbox: 'true',
+  whoCanEnterFreeFormTags: 'ALL_MEMBERS',
+  whoCanModifyTagsAndCategories: 'ALL_MEMBERS',
 
-  // 5) Moderación de contenido
-  messageModerationLevel: 'MODERATE_NONE',   // entry/apps:messageModerationLevel :contentReference[oaicite:8]{index=8}
-  spamModerationLevel: 'SILENTLY_MODERATE',      // entry/apps:spamModerationLevel :contentReference[oaicite:9]{index=9}
+  // Enviar como el grupo y responder al grupo
+  membersCanPostAsTheGroup: 'true',
+  replyTo: 'REPLY_TO_LIST',
 
-  // 6) Moderación de miembros
-  whoCanModerateMembers: 'ALL_MEMBERS',            // entry/apps:whoCanModerateMembers :contentReference[oaicite:10]{index=10}
+  // Añadir/invitar miembros (lo más amplio que permite la API)
+  whoCanInvite: 'ALL_MANAGERS_CAN_INVITE',
+  whoCanAdd: 'ALL_MANAGERS_CAN_ADD',
 
-  // 7) Buzón colaborativo y etiquetas
-  enableCollaborativeInbox: 'true',                   // entry/apps:enableCollaborativeInbox :contentReference[oaicite:11]{index=11}
-  whoCanEnterFreeFormTags: 'ALL_MEMBERS',            // entry/apps:whoCanEnterFreeFormTags :contentReference[oaicite:12]{index=12}
-  whoCanModifyTagsAndCategories: 'ALL_MEMBERS',            // entry/apps:whoCanModifyTagsAndCategories :contentReference[oaicite:13]{index=13}
+  // Archivo
+  isArchived: 'true',
+  archiveOnly: 'false',
 
-  // 8) Publicar “como grupo” y respuestas
-  membersCanPostAsTheGroup: 'true',                   // entry/apps:membersCanPostAsTheGroup :contentReference[oaicite:14]{index=14}
-  replyTo: 'REPLY_TO_IGNORE',          // entry/apps:replyTo :contentReference[oaicite:15]{index=15}
-  defaultSender: 'GROUP'                   // (UI: Remitente predeterminado)
+  replyTo: 'REPLY_TO_IGNORE'
 };
+
+
 
 // 2. Extraemos client_email y private_key del JSON
 const { client_email, private_key } = credentials;
@@ -191,7 +229,7 @@ const createUserWS = async (userId, contador = 0) => {
     return {
       id: data.id,
       email: data.primaryEmail,
-      name: data.name.fullName,
+      name: data.name,
     };
   } catch (err) {
     const reason = err?.errors?.[0]?.reason;
@@ -297,11 +335,26 @@ const deleteMemeberAllGroups = async (email) => {
 };
 
 const infoGroupWS = async (req, res) => {
-  const { idGroup } = req.body
+  const { idGroup, idProgram, idDevice } = req.body
+  let idGroupWorkSpace=null
+  if(!!idDevice && !!idProgram){
+      const doc = await Program.findOne(
+      { _id: idProgram, 'devices._id': idDevice },
+      { 'devices.$': 1, _id: 0 }
+    )
+    console.log(doc)
+    idGroupWorkSpace=doc.devices[0].groupWorkspace
+  } else if(!!idProgram){
+    const programInfo=await Program.findById(idProgram).select('groupWorkspace');
+    idGroupWorkSpace=programInfo.groupWorkspace
+  } else if(!!idGroup){
+    idGroupWorkSpace=idGroup
+  } else {
+    throw new ClientError('Faltan datos para obtener los grupos de Workspace', 400);
+  }
 
-  if (!idGroup) throw new ClientError('Falta el id del grupo', 400);
+  const info = await infoGroup(idGroupWorkSpace);
 
-  const info = await infoGroup(idGroup);
   if (!info) throw new Error('No se ha podido obtener los datos', 500);
 
   return response(res, 200, info);   //  <-- envía el objeto correcto
@@ -480,23 +533,24 @@ const createGroupWS = async (req, res) => {
 
 
   /* ───────── ACTUALIZAR MONGODB ───────── */
-  if (type === 'program') {
-    await Program.updateOne(
-      { _id: id },
-      idGroupFather
-        ? { $addToSet: { subGroupWorkspace: newGroupId } }
-        : { groupWorkspace: newGroupId }
-    );
-  } else {
-    const arrayFilter = { 'd._id': id };
-    await Program.updateOne(
-      { 'devices._id': id },
-      idGroupFather
-        ? { $addToSet: { 'devices.$[d].subGroupWorkspace': newGroupId } }
-        : { 'devices.$[d].groupWorkspace': newGroupId },
-      { arrayFilters: [arrayFilter] }
-    );
-  }
+if (type === 'program') {
+  await Program.updateOne(
+    { _id: id },
+    idGroupFather
+      ? { $addToSet: { subGroupWorkspace: newGroupId } }
+      : { $set: { groupWorkspace: newGroupId } }   // <-- $set
+  );
+} else {
+  const device=await Program.updateOne(
+    { 'devices._id': id },
+    idGroupFather
+      ? { $addToSet: { 'devices.$[d].subGroupWorkspace': newGroupId } }
+      : { $set: { 'devices.$[d].groupWorkspace': newGroupId } }, // <-- $set
+    { arrayFilters: [{ 'd._id': id }] } // asegúrate del casteo a ObjectId si aplica
+  );
+}
+
+
 
 
   response(res, 200, { id: newGroupId, email: groupEmail, miembros: [] });
@@ -635,8 +689,6 @@ async function ensureProgramGroup(program) {
  * Devuelve { id, email } del nuevo grupo.
  */
 async function ensureDeviceGroup(device, program) {
-  // Nos aseguramos de que el padre exista primero
-  const { id: parentId } = await ensureProgramGroup(program);
 
   const base = normalizeString(device.name);
   const email = `${base}@${DOMAIN}`;
@@ -648,15 +700,16 @@ async function ensureDeviceGroup(device, program) {
       requestBody: { email, name: displayName }
     })).data;
   } catch (err) {
-    if (err?.errors?.[0]?.reason !== 'duplicate') throw err;
+    console.log(err)
     group = (await directory.groups.get({ groupKey: email })).data;
   }
 
   /* — persistir en Mongo — */
-  await Program.updateOne(
-    { 'devices._id': device._id },
-    { $set: { 'devices.$.groupWorkspace': group.id } }
-  );
+const p=await Program.updateOne(
+  { _id: program._id, 'devices._id': device._id },
+  { $set: { 'devices.$.groupWorkspace': group.id } }
+);
+
 
   return { id: group.id, email: group.email };
 }
@@ -666,7 +719,7 @@ async function patchWithBackoff(groupEmail, requestBody) {
   let delay = 400;
   for (let attempt = 1; attempt <= 6; attempt++) {
     try {
-      await groupsSettings.groups.patch({
+      const res=await groupsSettings.groups.patch({
         groupUniqueId: groupEmail,
         requestBody
       });
@@ -707,7 +760,23 @@ async function updateAllGroupsSettings() {
 
 // añadir usuario a grupo con email de usuario y id de grupo
 
+// const prueba=async(groupKey) =>{
+//   if (!groupKey) throw new Error('Falta groupKey (email o id del grupo)');
 
+//   await patchWithBackoff(groupKey, commonSettings);
+
+//   // Verificación rápida
+//   const { data } = await groupsSettings.groups.get({ groupUniqueId: groupKey });
+//   console.log('✅ Ajustes aplicados a', groupKey, {
+//     primaryLanguage: data.primaryLanguage,
+//     enableCollaborativeInbox: data.enableCollaborativeInbox,
+//     membersCanPostAsTheGroup: data.membersCanPostAsTheGroup,
+//     whoCanAdd: data.whoCanAdd,
+//     whoCanModerateContent: data.whoCanModerateContent,
+//     whoCanPostMessage: data.whoCanPostMessage,
+//   });
+// }
+//  prueba('pimenoresalameda.edu@engloba.org.es')
 
 module.exports = {
   addUserToGroup,

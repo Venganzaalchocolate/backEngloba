@@ -1,83 +1,106 @@
-const { Jobs, Studies, Provinces, Work_schedule, Finantial, Offer, Program, User, Leavetype, Documentation, Filedrive } = require('../models/indexModels');
+const { Jobs, Studies, Provinces, Work_schedule, Finantial, Offer, Program, User, Leavetype, Documentation, Filedrive, Dispositive } = require('../models/indexModels');
 const leavetype = require('../models/leavetype');
 const { default: cache } = require('../utils/cache');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 
-// Función para crear índice de leaveTypes
-const createCategoriesIndex = (x) => {
-  const index = {};
-  x.forEach(x => {
-    // Crear un diccionario donde la clave es el ID y el valor es el leaveType completo
-    index[x._id.toString()] = x;
-  });
-  return index;
-};
+/* -------------------------------
+   Helpers para construir índices
+---------------------------------*/
+function createSubcategoriesIndex(list = []) {
+  // Espera docs con { _id, name, subcategories: [{ _id, name }] }
+  const out = {};
+  for (const it of list) {
+    out[String(it._id)] = {
+      name: it.name || '',
+      subcategories: (it.subcategories || []).map(sc => ({
+        _id: sc._id,
+        name: sc.name || ''
+      }))
+    };
+  }
+  return out;
+}
 
-// Función para crear índice de subcategorías de trabajos //jobs
-const createSubcategoriesIndex = (x) => {
-  const index = {};
-  x.forEach(x => {
-    // Crear un diccionario donde la clave es el ID de la subcategoría y el valor es la subcategoría completa
-    x.subcategories?.forEach(sub => {
-      index[sub._id.toString()] = sub;
-    });
-  });
-  return index;
-};
-
-function createCategoryAndSubcategoryIndex(arr) {
-  const index = {};
-  arr.forEach(cat => {
-    // Añade la categoría principal
-    index[cat._id.toString()] = { ...cat, type: 'category' };
-
-    // Añade todas las subcategorías (si existen)
-    (cat.subcategories || []).forEach(sub => {
-      index[sub._id.toString()] = {
-        ...sub,
-        parentId: cat._id.toString(),
-        parentName: cat.name,
-        type: 'subcategory'
+function createCategoryAndSubcategoryIndex(list = []) {
+  // Provincias: indexa tanto categorías raíz como subcategorías
+  //   raízId -> { name, isRoot: true }
+  //   subId  -> { name: "Padre – Hija", parent: raizId, isSub: true }
+  const out = {};
+  for (const p of list) {
+    const pid = String(p._id);
+    out[pid] = { name: p.name || '', isRoot: true };
+    for (const sc of (p.subcategories || [])) {
+      const sid = String(sc._id);
+      out[sid] = {
+        name: sc.name,
+        parent: p._id,
+        isSub: true
       };
+    }
+  }
+  return out;
+}
+
+function createCategoriesIndex(list = []) {
+  // Tipos simples (sin subcategorías)
+  const out = {};
+  for (const it of list) {
+    out[String(it._id)] = { name: it.name || '' };
+  }
+  return out;
+}
+
+function createProgramIndex(programs = []) {
+  // Mantiene la estructura legacy: por cada programa, lista sus "devices"
+  // devices = [{ _id, name, province }]
+  const byProgram = new Map();
+  for (const p of programs) {
+    byProgram.set(String(p._id), {
+      _id: p._id,
+      name: p.name || '',
+      acronym: p.acronym || '',
     });
-  });
-  return index;
+  }
+
+
+  // Devuelve un objeto indexado por id de programa (como antes)
+  const out = {};
+  for (const [k, v] of byProgram.entries()) out[k] = v;
+  return out;
+}
+
+function createDispositiveIndex(dispositives = []) {
+  const out = {};
+  for (const d of dispositives) {
+    out[String(d._id)] = {
+      _id: d._id,
+      name: d.name || '',
+      program: d.program ? String(d.program) : null,   // <<< necesario
+      province: d.province ? String(d.province) : null
+    };
+  }
+  return out;
+}
+
+function createDispositivesByProgram(dispositives = []) {
+  const byProgram = {};
+  for (const d of dispositives) {
+    const pid = String(d.program || 'null');
+    if (!byProgram[pid]) byProgram[pid] = [];
+    byProgram[pid].push({
+      _id: d._id,
+      name: d.name || '',
+      province: d.province ? String(d.province) : null
+    });
+  }
+  // (opcional) ordena por nombre
+  for (const pid of Object.keys(byProgram)) {
+    byProgram[pid].sort((a,b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+  }
+  return byProgram;
 }
 
 
-
-// crea un índice que tiene entradas tanto para programs como para devices
-const createProgramDevicesIndex = (programs) => {
-  const index = {};
-
-  programs.forEach(program => {
-    // Primero, creamos un registro donde la clave es el "programId"
-    index[program._id.toString()] = {
-      _id: program._id.toString(),
-      type: "program",
-      name: program.name,
-      responsible: program.responsible, // responsables del PROGRAMA
-      devicesIds: program.devices.map(d => d._id.toString()) // para saber qué devices pertenecen
-      // ... más campos si deseas
-    };
-
-    // Luego, creamos registros para cada device
-    if (Array.isArray(program.devices)) {
-      program.devices.forEach(device => {
-        index[device._id.toString()] = {
-          _id: device._id.toString(),
-          type: "device",
-          name: device.name,
-          responsible: device.responsible,
-          coordinators: device.coordinators,
-          programId: program._id.toString()
-          // ... más campos si necesitas
-        };
-      });
-    }
-  });
-  return index;
-};
 
 const getEnums = async (req, res) => {
     const cached = cache.get('enums');
@@ -101,70 +124,71 @@ const getEnums = async (req, res) => {
     response(res, 200, enumValues);
 }
 
+
+/* --------------------------------
+   Handler principal (sin caché)
+----------------------------------*/
 const getEnumEmployers = async (req, res) => {
-  try {
-    // Ejecutar todas las consultas en paralelo con Promise.all para mejorar el rendimiento
-    const [
-      provinces,
-      programs,
-      leavetype,
-      jobs,
-      studies,
-      workSchedule,
-      offers,
-      finantial,
-      documentation,
-      categoryFiles
-    ] = await Promise.all([
-      Provinces.find().lean(),
-      Program.find().populate({
-        path: 'devices',               // primero resuelve los devices…
-        populate: {                    // …y luego los files de cada device
-          path: 'files'
-        }
-      }).lean(),
-      Leavetype.find().lean(),
-      Jobs.find().lean(),
-      Studies.find().lean(),
-      Work_schedule.find().lean(),
-      Offer.find({ active: true }).lean(),
-      Finantial.find().lean(),
-      Documentation.find().lean(),
-      Filedrive.schema.path('category').enumValues
-    ]);
+  // status no necesita await (enum del schema)
+  const status = User.schema.path('employmentStatus')?.enumValues || [];
 
-    // Construimos el objeto de respuesta
-    let enumValues = {
-      provinces,
-      programs,
-      status: User.schema.path('employmentStatus').enumValues,  // Esto no necesita await
-      leavetype,
-      jobs,
-      studies,
-      work_schedule: workSchedule,
-      offers,
-      jobsIndex: createSubcategoriesIndex(jobs),
-      provincesIndex: createCategoryAndSubcategoryIndex(provinces),
-      leavesIndex: createCategoriesIndex(leavetype),
-      programsIndex: createProgramDevicesIndex(programs),
-      finantial,
-      documentation,
-      categoryFiles
-    };
+  // Cargas en paralelo
+  const [
+    workSchedule,
+    offers,
+    jobs,
+    provinces,
+    leavetype,
+    programs,
+    studies,
+    finantial,
+    documentation,
+    dispositives,
+    docCats,
+    fileCats,
+  ] = await Promise.all([
+    Work_schedule.find({}).lean(),
+    // Ajusta los campos mínimos que usa tu front
+    Offer.find({ active: true }).lean(),
+    Jobs.find({}, { name: 1, subcategories: 1 }).lean(),
+    Provinces.find({}, { name: 1, subcategories: 1 }).lean(),
+    Leavetype.find({}, { name: 1 }).lean(),
+    Program.find({},{ name: 1, acronym: 1,  active:1  }).lean(),
+    Studies.find({}, { name: 1, subcategories: 1 }).lean(),
+    Finantial.find({}).lean(),
+    Documentation.find({}).lean(),
+    Dispositive.find({},{ name: 1, program: 1, province: 1, active:1 }).lean(),
+    // categorías posibles para categoryFiles (desde Documentation)
+    Documentation.distinct('category').catch(() => []),
+    // ...y también desde FileDrive si existe ese campo
+    Filedrive.distinct('category').catch(() => []),
+  ]);
 
-    // Verificar que los valores críticos no sean undefined o vacíos
-    if (!programs || !provinces) {
-      throw new ClientError('Error al solicitar los enums', 500);
-    }
+  // Índices
+  const jobsIndex = createCategoryAndSubcategoryIndex(jobs);
+  const provincesIndex = createCategoryAndSubcategoryIndex(provinces);
+  const leavesIndex = createCategoryAndSubcategoryIndex(leavetype);
+  const programsIndex = createProgramIndex(programs);
+const dispositiveIndex      = createDispositiveIndex(dispositives);
+const studiesIndex    = createCategoryAndSubcategoryIndex(studies);
 
-    // Responder con los datos obtenidos
-    response(res, 200, enumValues);
-
-  } catch (error) {
-    response(res, error.statusCode || 500, {
-      message: error.message || 'Error interno del servidor',
-    });
-  }
+  // Categorías de ficheros (unificadas + ordenadas)
+  const categoryFiles = Array.from(new Set([...(docCats || []), ...(fileCats || [])]
+    .filter(Boolean))).sort();
+  response(res, 200, {
+    status,
+    work_schedule: workSchedule,
+    offers,
+    jobsIndex,
+    provincesIndex,
+    dispositiveIndex,
+    leavesIndex,
+    programsIndex,   // mismo nombre/estructura que antes (program + devices)
+    studiesIndex,
+    finantial,
+    documentation,
+    categoryFiles,
+  });
 };
 
 // Definición de tipos válidos con su correspondiente modelo

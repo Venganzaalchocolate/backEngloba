@@ -54,11 +54,11 @@ const userCv = mongoose.Schema({
     },
     jobs:{
         type: [String],
-        require:true,
+        // ref:'Jobs'
     },
     provinces: {
         type: [String],
-        require:true,
+        // ref:'Provinces'
     },
     gender:{
         type:String,
@@ -90,9 +90,9 @@ const userCv = mongoose.Schema({
         default: null,
     },
     offer:{
-        type: Schema.Types.ObjectId,
+        type: String,
         default: null,
-        ref:'OfferJob'
+        // ref:'Offer'
     },
     work_schedule:{
         type: [String],
@@ -132,7 +132,8 @@ const userCv = mongoose.Schema({
         // Añadido campo studies que es un enum permitiendo múltiples valores
     studies: {
         type: [String],
-        required: true
+        required: true,
+        // ref:'Studies'
     },
     disability:{
             type:Number,
@@ -141,7 +142,10 @@ const userCv = mongoose.Schema({
     fostered:{
         type:Boolean,
         default: false
-    }
+    },
+    jobsId: [{ type: Schema.Types.ObjectId, ref: 'Jobs', default: [] }],
+    provincesId: [{ type: Schema.Types.ObjectId, ref: 'Provinces', default: [] }],
+    studiesId: [{ type: Schema.Types.ObjectId, ref: 'Studies', default: [] }],
 
 
 }, { timestamps: true });

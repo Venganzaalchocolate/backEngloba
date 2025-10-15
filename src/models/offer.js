@@ -7,13 +7,14 @@ const offer= mongoose.Schema({
         enum: ['ASOCIAIÓN ENGLOBA', 'ENTIDAD DOS'],
         default: 'ASOCIAIÓN ENGLOBA'
     },
+    //es nombre compuesto por el el name de funcions y la provincia, sistema antiguo
     job_title:{
         type: String,
-        required:true,
     },
+    //es jobsId pero el name en vez d ela referecnia este es del sistema antiguo
     functions:{
         type: String,
-        required:true,
+
     },
     work_schedule:{
         type:String,
@@ -28,13 +29,15 @@ const offer= mongoose.Schema({
     conditions:{
         type: String,
     },
+    //es provinceId pero el name en vez d ela referecnia este es del sistema antiguo
     province:{
         type:String,
-        required:true
+
     },
+
     location:{
         type: String,
-        required:true,
+
     },
     date:{
         type:Date,
@@ -59,13 +62,16 @@ const offer= mongoose.Schema({
         },
         dispositiveId:{
             type: Schema.Types.ObjectId,
-            required:true
+        },
+        newDispositiveId:{
+            type: Schema.Types.ObjectId,
         }
     },
     sepe:{
         type:Boolean,
         default:false
-    },
+    }, 
+    //es studiesId pero el name en vez de la referecnia este es del sistema antiguo
     studies:[{
         type:String,
     }],
@@ -100,13 +106,22 @@ const offer= mongoose.Schema({
     datecreate:{
         type:Date
     },
+    studiesId:{
+        type: [Schema.Types.ObjectId],
+        ref: 'Studies'
+    },
     jobId:{
         type: Schema.Types.ObjectId,
         ref: 'Jobs'
     },
     provinceId:{
-         type: Schema.Types.ObjectId,
+        type: Schema.Types.ObjectId,
         ref: 'Provinces'
+    },
+    solicitants:{
+        type: [Schema.Types.ObjectId],
+        ref: 'UserCv',
+        default: []
     }
 }, { timestamps: true })
 

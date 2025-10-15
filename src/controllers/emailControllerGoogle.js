@@ -1,8 +1,9 @@
 
 const { google }   = require('googleapis');
 const MailComposer = require('nodemailer/lib/mail-composer');
-const { User } = require('../models/indexModels');
-const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail } = require('../templates/emailTemplates');
+const { User, Periods, UserChangeRequest, Program } = require('../models/indexModels');
+const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText } = require('../templates/emailTemplates');
+const { default: mongoose } = require('mongoose');
 
 /* ────────────────────────────────────────────────────────────────────────────
    1. Autenticación: cliente Gmail “impersonando” al remitente
@@ -262,9 +263,219 @@ async function sendOpsToComunicacion({ logoUrl = '', supportEmail = 'web@engloba
 //   sendOpsToComunicacion();
 // }
 
+async function notifyDeviceManagersOfChangeRequest({
+  requestId,
+  actionUrl = '',
+  logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
+  supportEmail = 'comunicacion@engloba.org.es',
+  testEmail = null,
+  throwOnError = false,
+  logger = console
+} = {}) {
+
+  const logWarn  = (msg) => (logger?.warn  || console.warn)(msg);
+  const logError = (msg) => (logger?.error || console.error)(msg);
+
+  // 🔹 pequeño helper para fechas en es-ES (solo día)
+  const formatEsDate = (d) =>
+    d ? new Date(d).toLocaleDateString('es-ES', { year: 'numeric', month: '2-digit', day: '2-digit' }) : undefined;
+
+  try {
+    if (!requestId) throw new Error('requestId es obligatorio');
+
+    // 1) Solicitud + trabajador
+    // ⬇️ IMPORTANTE: populate para poder leer originDocumentation.name
+    const reqDoc = await UserChangeRequest.findById(requestId)
+      .populate({ path: 'uploads.originDocumentation', select: 'name' })
+      .lean();
+    if (!reqDoc) throw new Error('Solicitud no encontrada');
+
+    const worker = await User.findById(reqDoc.userId).lean();
+    if (!worker) throw new Error('Trabajador no encontrado');
+
+    // 2) Periodos activos (puede haber 1 o 2 si parcial)
+    const now = new Date();
+    const periods = await Periods.find({
+      idUser: worker._id,
+      active: true,
+      $or: [{ endDate: { $exists: false } }, { endDate: null }, { endDate: { $gte: now } }]
+    }, { device: 1 }).lean();
+
+    const deviceIds = Array.from(new Set(periods.map(p => String(p.device)).filter(Boolean)));
+
+    // 3) Programas con esos dispositivos
+    let deviceContexts = [];
+    if (deviceIds.length) {
+      const programs = await Program.find(
+        { 'devices._id': { $in: deviceIds.map(id => mongoose.Types.ObjectId.createFromHexString(id)) } },
+        { name: 1, acronym: 1, devices: 1 }
+      ).lean();
+
+      const wanted = new Set(deviceIds);
+      for (const prg of programs) {
+        for (const dev of prg.devices || []) {
+          if (!wanted.has(String(dev._id))) continue;
+          deviceContexts.push({
+            programName: prg.name,
+            programAcronym: prg.acronym,
+            deviceId: String(dev._id),
+            deviceName: dev.name,
+            responsibleIds: (dev.responsible || []).map(String),
+            coordinatorIds: (dev.coordinators || []).map(String),
+          });
+        }
+      }
+    }
+
+    // 4) Destinatarios
+    let recipients = [];
+    if (testEmail) {
+      recipients = [String(testEmail).trim().toLowerCase()];
+    } else {
+      const managerIds = Array.from(
+        new Set(deviceContexts.flatMap(d => [...d.responsibleIds, ...d.coordinatorIds]))
+      );
+      if (managerIds.length) {
+        const managers = await User.find(
+          { _id: { $in: managerIds } },
+          { email: 1, email_personal: 1 }
+        ).lean();
+        recipients = Array.from(new Set(
+          managers.flatMap(u => [u.email, u.email_personal]
+            .filter(Boolean)
+            .map(e => e.trim().toLowerCase()))
+        ));
+      }
+      if (!recipients.length && process.env.FALLBACK_APPROVER_EMAIL) {
+        recipients = [process.env.FALLBACK_APPROVER_EMAIL.trim().toLowerCase()];
+      }
+    }
+
+    if (!recipients.length) {
+      const msg = 'No hay destinatarios para la notificación.';
+      if (throwOnError) throw new Error(msg);
+      logWarn(`[notifyDeviceManagersOfChangeRequest] ${msg}`);
+      return { ok: false, reason: msg };
+    }
+
+    // 5) Asunto
+    const subjectBase =
+      `Nueva solicitud de ${worker.firstName || ''} ${worker.lastName || ''} ` +
+      `(${(worker.dni || '').toUpperCase()}) · ${devicesShort(deviceContexts)}`;
+    const subject = testEmail ? `[PRUEBA] ${subjectBase}` : subjectBase;
+
+    // 5.1) 🔸 Construimos los documentos para el email
+    const documentsForEmail = (reqDoc.uploads || []).map(u => {
+      const isOfficial = u.type === 'user-official-doc';
+      // Regla:
+      // - si oficial -> usar Documentation.name
+      // - si no, usar labelFile
+      // - si falta, caer a originalName como último recurso
+      const displayName = isOfficial
+        ? (u.originDocumentation?.name || u.labelFile || u.originalName)
+        : (u.labelFile || u.originalName);
+
+      return {
+        name: displayName,
+        kind: isOfficial ? 'Oficial' : 'Adjunto',
+        date: formatEsDate(u.date),
+        description: u.description,
+      };
+    });
+
+    // 6) Contenido
+    const payload = buildBasicPayload(reqDoc, worker, deviceContexts, actionUrl, logoUrl, supportEmail);
+    // ⬇️ Sobrescribimos/inyectamos los documentos ya formateados
+    payload.documents = documentsForEmail;
+
+    const text = buildChangeRequestNotificationPlainText(payload);
+    const html = buildChangeRequestNotificationHtml(payload);
+
+    // 7) Enviar
+    await sendEmail(recipients, subject, text, html);
+
+    return { ok: true, recipients, subject };
+  } catch (err) {
+    if (throwOnError) throw err;
+    logError(`[notifyDeviceManagersOfChangeRequest] ${err.message}`);
+    return { ok: false, error: err.message };
+  }
+}
+
+/* ── helpers locales ────────────────────────────────────────── */
+
+function devicesShort(ctxs = []) {
+  if (!ctxs.length) return 'sin dispositivo';
+  return ctxs
+    .map(c => (c.programAcronym ? `${c.programAcronym} — ${c.deviceName}` : c.deviceName))
+    .join(', ');
+}
+
+function buildBasicPayload(reqDoc, worker, deviceContexts, actionUrl, logoUrl, supportEmail) {
+  const workerFullName = `${worker.firstName || ''} ${worker.lastName || ''}`.trim();
+  const dni = (worker.dni || '').toUpperCase();
+
+  const hasChanges = Array.isArray(reqDoc.changes) && reqDoc.changes.length > 0;
+  const hasDocs    = Array.isArray(reqDoc.uploads) && reqDoc.uploads.length > 0;
+  const requestType = hasChanges && hasDocs ? 'mixta' : hasChanges ? 'datos' : 'documentos';
+
+  const labelFor = (path) => ({
+    firstName: "Nombre",
+    lastName: "Apellidos",
+    dni: "DNI",
+    birthday: "Fecha de nacimiento",
+    email_personal: "Email personal",
+    socialSecurityNumber: "Nº Seguridad Social",
+    bankAccountNumber: "Cuenta bancaria",
+    phone: "Teléfono personal",
+    "phoneJob.number": "Teléfono laboral",
+    "phoneJob.extension": "Extensión laboral",
+    gender: "Género",
+    fostered: "Extutelado",
+    apafa: "Apafa",
+    consetmentDataProtection: "Consentimiento PD",
+    "disability.percentage": "% Discapacidad",
+    "disability.notes": "Notas discapacidad",
+    studies: "Estudios",
+  }[path] || path || 'Campo');
+
+  const changes = (reqDoc.changes || []).map(c => ({
+    label: c?.label || labelFor(c?.path),
+    from:  c?.from ?? '—',
+    to:    c?.to ?? '—'
+  }));
+
+  const documents = (reqDoc.uploads || []).map(u => ({
+    name: u?.labelFile || u?.description || u?.originalName || 'Documento',
+    kind: u?.originDocumentation ? 'Oficial' : (u?.category || 'Varios'),
+    date: u?.date ? new Date(u.date).toISOString().slice(0,10) : undefined,
+    description: u?.originDocumentation ? '' : (u?.description || '')
+  }));
+
+  const deviceName = (deviceContexts || [])
+    .map(d => d.programAcronym ? `${d.programAcronym} — ${d.deviceName}` : d.deviceName)
+    .join(', ') || '—';
+
+  return {
+    approverName: '',
+    workerFullName,
+    dni,
+    deviceName,
+    requestType,
+    submittedAt: reqDoc.submittedAt,
+    note: reqDoc.note || '',
+    changes,
+    documents,
+    actionUrl,
+    logoUrl,
+    supportEmail
+  };
+}
+
 // prueba();
 module.exports = {
   sendEmail,          // firma idéntica a tu antiguo SMTP
   generateEmailHTML,
-  sendWelcomeEmail
+  sendWelcomeEmail,
+  notifyDeviceManagersOfChangeRequest
 };

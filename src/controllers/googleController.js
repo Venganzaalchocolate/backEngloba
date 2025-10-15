@@ -57,6 +57,56 @@ const drive = google.drive({ version: 'v3', auth });
 const directory = google.admin({ version: 'directory_v1', auth });
 
 
+// googleController.js (añade esto)
+async function moveDriveFile(fileId, addParentId, removeParentId, newName) {
+  const res = await drive.files.update({
+    fileId,
+    addParents: addParentId,
+    removeParents: removeParentId || undefined,
+    requestBody: { name: newName },
+    fields: 'id, parents, name'
+  });
+  return res.data;
+}
+
+// Adoptar un archivo temporal y crear Filedrive sin volver a subir
+async function adoptDriveFileIntoFiledrive({ driveId, originModel, idModel, meta, deviceId }) {
+  const fileDoc = await new Filedrive({
+    originModel,                  // 'User'
+    idModel,                      // userId
+    category: meta.category || 'Varios',
+    date: meta.date || undefined,
+    description: meta.description || meta.originalName || 'Documento',
+    fileName: meta.fileName || meta.originalName,
+    fileLabel: meta.fileLabel || meta.originalName,
+    originDocumentation: meta.originDocumentation, // si aplica
+    cronology: {},
+    idDrive: driveId
+  }).save();
+
+  let updated;
+  if (originModel.toLowerCase() === 'user') {
+    updated = await User.findByIdAndUpdate(
+      idModel,
+      { $push: { files: { filesId: fileDoc._id } } },
+      { new: true }
+    ).populate('files.filesId');
+  } else if (originModel.toLowerCase() === 'device') {
+    updated = await Program.findOneAndUpdate(
+      { _id: idModel, "devices._id": deviceId },
+      { $push: { "devices.$.files": fileDoc._id } },
+      { new: true }
+    ).populate('devices.files');
+  } else if (originModel.toLowerCase() === 'program') {
+    updated = await Program.findByIdAndUpdate(
+      idModel,
+      { $push: { files: fileDoc._id } },
+      { new: true }
+    ).populate('files');
+  }
+  return { fileDoc, updated };
+}
+
 const deleteFileById = async (fileId) => {
   const response = await drive.files.get({
     fileId,
@@ -1170,5 +1220,6 @@ module.exports = {
   deleteFileById,
   updateFileInDrive,
   gestionAutomaticaNominas,
-  obtenerCarpetaContenedora
+  obtenerCarpetaContenedora,
+  moveDriveFile, adoptDriveFileIntoFiledrive,
 };

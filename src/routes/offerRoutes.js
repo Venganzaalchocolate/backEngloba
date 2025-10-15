@@ -1,14 +1,14 @@
 const express = require('express');
 const router = express.Router()
-const {getOfferJobs, getOfferJobID, postCreateOfferJob, OfferJobDeleteId, OfferJobPut, tokenValid, tokenValidAdmin} = require('../controllers/indexController')
+const {offerList,offerCreate,offerUpdate,offerHardDelete,offerId, tokenValid} = require('../controllers/indexController')
 
 
 
-router.get("/offerjobs", getOfferJobs)
-router.post("/offerjob", getOfferJobID)
-router.post("/createofferjob",postCreateOfferJob)
-router.delete("/deleteofferjob/:id", tokenValidAdmin,OfferJobDeleteId)
-router.put("/modifyofferjob", OfferJobPut)
+router.post("/offerlist",offerList)
+router.post("/offercreate", tokenValid,offerCreate)
+router.post("/offerupdate",tokenValid,offerUpdate)
+router.post("/offerharddelete", tokenValid,offerHardDelete)
+router.post("/offerid", offerId)
 
 
 module.exports = router;

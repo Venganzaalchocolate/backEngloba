@@ -24,6 +24,14 @@ const LeavePeriodSchema = new Schema({
     },
     active: {
         type: Boolean
+    },
+    idPeriod:{
+        type:Schema.Types.ObjectId,
+        ref: 'Period'
+    },
+    idUser:{
+        type:Schema.Types.ObjectId,
+        ref: 'User'
     }
 });
 
@@ -116,6 +124,10 @@ const PeriodSchema = new Schema({
 
         }
         
+    },
+    idUser:{
+    type:Schema.Types.ObjectId,
+    ref: 'User'
     }
 
 });
