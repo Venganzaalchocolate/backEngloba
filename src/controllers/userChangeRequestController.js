@@ -66,7 +66,7 @@ const SELF_EDITABLE_FIELDS = [
 
 // ⬇️ SUSTITUYE estas constantes por estas (evita el hardcode y añade log)
 const CR_EMAILS_ENABLED = (process.env.CR_EMAILS_ENABLED ?? '1') !== '0'; // ON por defecto
-const MAIL_TEST_TO      = 'comunicacion@engloba.org.es'|| null;
+const MAIL_TEST_TO      =  null;
 const APP_BASE_URL      = process.env.APP_BASE_URL || 'https://app.engloba.org.es';
 
 const toObjectId = (id, fieldName) => {

@@ -2,7 +2,7 @@
 const mongoose = require('mongoose');
 const { User, Periods, Leaves, Preferents, Dispositive } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
-const { actualizacionHiringyLeave, backfillSelectionProcessFromOffers, repairExistingPeriods, fullFreshMigration, migrateOffersNewdispositiveId, migrateUserCvNameFieldsToRefs } = require('./periodoTransicionController');
+const { actualizacionHiringyLeave, backfillSelectionProcessFromOffers, repairExistingPeriods, fullFreshMigration, migrateOffersNewdispositiveId, migrateUserCvNameFieldsToRefs, backfillPeriodsFromEmbedded } = require('./periodoTransicionController');
 // Opcional si lo usas en un script aparte:
 // const { backfillSelectionProcessFromOffers, backfillPeriodsdispositiveId } = require('./periodoTransicionController');
 
@@ -507,9 +507,9 @@ async function closeHiring(req, res) {
 }
 
 const prueba=async()=>{
+  // await backfillPeriodsFromEmbedded({ apply: true});
   //await migrateOffersNewdispositiveId({ apply:true })
-  // await migrateUserCvNameFieldsToRefs({ apply: true });
- 
+  //await migrateUserCvNameFieldsToRefs({ apply: true });
 
 }
 //   await actualizacionHiringyLeave({

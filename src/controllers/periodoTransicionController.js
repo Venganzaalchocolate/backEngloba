@@ -419,7 +419,7 @@ async function resolveSelectionProcessId(userId, hp) {
 /* =========================================================
    PERIODS + LEAVES (PATCHED para resolver antes de guardar)
 ========================================================= */
-export async function createPeriodIfMissing(userId, hp) {
+export async function createPeriodIfMissing(userId, hp, opts = {}) {
   const filter = {
     idUser: userId,
     startDate: n(hp.startDate),
@@ -427,18 +427,19 @@ export async function createPeriodIfMissing(userId, hp) {
     position: n(hp.position),
   };
 
-  let exists = await Periods.findOne(filter);
+  const exists = await Periods.findOne(filter);
   if (exists) return { doc: exists, created: false };
 
+  // ✅ resolver dispositivo NUEVO desde legacy (o directo si ya venía)
   const [dispositiveId, selectionProc, replacement] = await Promise.all([
-    resolveDispositiveIdFromHP(hp),
-    resolveSelectionProcessId(userId, hp),
-    getReplacementPayload(hp),
+    resolveDispositiveIdForPeriod(hp, opts),
+    resolveSelectionProcessId(userId, hp), // ya la tenías
+    getReplacementPayload(hp),             // ya la tenías
   ]);
 
   const doc = await Periods.create({
     ...filter,
-    dispositiveId: n(dispositiveId),
+    dispositiveId: n(dispositiveId), // ← ya con el “nuevo” o null si no pudo
     workShift: hp.workShift || undefined,
     selectionProcess: n(selectionProc),
     active: hp.active !== undefined ? hp.active : true,
@@ -448,7 +449,7 @@ export async function createPeriodIfMissing(userId, hp) {
   return { doc, created: true };
 }
 
-export async function upsertPeriod(userId, hp) {
+export async function upsertPeriod(userId, hp, opts = {}) {
   const filter = {
     idUser: userId,
     startDate: n(hp.startDate),
@@ -457,7 +458,7 @@ export async function upsertPeriod(userId, hp) {
   };
 
   const [dispositiveId, selectionProc, replacement] = await Promise.all([
-    resolveDispositiveIdFromHP(hp),
+    resolveDispositiveIdForPeriod(hp, opts),
     resolveSelectionProcessId(userId, hp),
     getReplacementPayload(hp),
   ]);
@@ -474,9 +475,14 @@ export async function upsertPeriod(userId, hp) {
   };
 
   const before = await Periods.findOne(filter).lean();
-  const doc = await Periods.findOneAndUpdate(filter, update, { upsert: true, new: true, setDefaultsOnInsert: true });
+  const doc = await Periods.findOneAndUpdate(
+    filter, update,
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
   return { doc, created: !before, updated: !!before };
 }
+
 
 export async function createLeaveIfMissing(userId, periodId, lv) {
   const filter = {
@@ -1136,4 +1142,189 @@ export async function migrateUserCvNameFieldsToRefs({
   }
 
   return stats;
+}
+
+
+// === Resolver “legacy device” → Dispositive._id = dispositiveId (robusto) ===
+export async function resolveDispositiveIdForPeriod(hp, {
+  manualMap = {},     // { legacyId: newId } o { offerId: newId } si lo quieres
+  preferExact = true, // intenta match 1:1 por índice antes de heurísticas
+} = {}) {
+  if (!hp) return null;
+
+  // 0) Si ya viene un id “nuevo” válido, úsalo
+  const directCandidates = [ hp.dispositiveId, hp.dispositive ];
+  for (const cand of directCandidates) {
+    if (!cand) continue;
+    const ok = await Dispositive.exists({ _id: cand });
+    if (ok) return cand;
+  }
+
+  // 1) Sacar el “legacy” que venga del HP embebido (nombres tolerantes)
+  const legacyId =
+    hp?.device ||
+    hp?.dispositiveID || // por si quedó así en legacy
+    hp?.dispositiveIdLegacy ||
+    null;
+
+  if (!legacyId) return null;
+
+  // 2) Overrides manuales por legacyId
+  if (manualMap[String(legacyId)]) {
+    return toId(manualMap[String(legacyId)]);
+  }
+
+  // 3) Índice inverso: legacy -> Set(newIds)
+  const legacy2new = await buildLegacyToNewDeviceIndex(); // ya lo tienes
+  const candidates = legacy2new.get(String(legacyId)) ? Array.from(legacy2new.get(String(legacyId))) : [];
+
+  if (preferExact && candidates.length === 1) {
+    return toId(candidates[0]);
+  }
+
+  // 4) Desambiguación por programa y provincia del “legacy”
+  //    Buscamos el Program que contiene ese device legacy para leer sus datos
+  const prog = await Program.findOne(
+    { 'devices._id': legacyId },
+    { _id: 1, devices: { $elemMatch: { _id: legacyId } } }
+  ).lean();
+
+  const legacyDev = prog?.devices?.[0] || null;
+  const legacyProvince = legacyDev?.province ? String(legacyDev.province) : null;
+  const programId = prog?._id ? String(prog._id) : null;
+
+  if (candidates.length > 1 && programId) {
+    // Filtramos candidatos al mismo programa
+    const byProg = await Dispositive.find(
+      { _id: { $in: candidates.map(toId) }, program: toId(programId) },
+      { _id: 1, province: 1 }
+    ).lean();
+
+    let narrowed = byProg;
+    if (legacyProvince) {
+      const byProv = byProg.filter(d => String(d.province || '') === legacyProvince);
+      if (byProv.length === 1) return toId(byProv[0]._id);
+      if (byProv.length > 0) narrowed = byProv;
+    }
+    if (narrowed.length === 1) return toId(narrowed[0]._id);
+  }
+
+  // 5) Si no teníamos candidates o seguían ambiguos, probamos heurísticas por (programa, provincia)
+  const { byPP, byProgram } = await buildDispositiveByProgramProvinceIndex(); // ya lo tienes
+  if (programId && legacyProvince) {
+    const key = `${programId}:${legacyProvince}`;
+    const arr = byPP.get(key) || [];
+    if (arr.length === 1) return toId(arr[0]);
+  }
+  if (programId) {
+    const arr = byProgram.get(programId) || [];
+    if (arr.length === 1) return toId(arr[0]);
+  }
+
+  // 6) Último intento: si candidates tenía exactamente 1 (sin prog/prov) acéptalo
+  if (candidates.length === 1) return toId(candidates[0]);
+
+  // No resuelto
+  return null;
+}
+
+export async function backfillPeriodsFromEmbedded({
+  apply = false,
+  userLimit = 0,
+  logUnresolved = true,
+  manualMap = {}, // { legacyId: newDispositiveId }
+} = {}) {
+  let q = User.find({ hiringPeriods: { $exists: true, $ne: [] } }, { _id: 1, hiringPeriods: 1 }).lean();
+  if (userLimit > 0) q = q.limit(userLimit);
+
+  const cur = q.cursor();
+  const stats = { dryRun: !apply, users: 0, hpSeen: 0, created: 0, unresolvedDevice: 0, errors: 0, samples: [] };
+
+  for await (const u of cur) {
+    stats.users++;
+    for (const hp of (u.hiringPeriods || [])) {
+      stats.hpSeen++;
+
+      // ¿ya existe?
+      const exists = await Periods.exists({
+        idUser: u._id,
+        startDate: n(hp.startDate),
+        endDate: n(hp.endDate),
+        position: n(hp.position),
+      });
+      if (exists) continue;
+
+      // Resolvemos dispositive antes de decidir crear
+      const disp = await resolveDispositiveIdForPeriod(hp, { manualMap });
+      if (!disp) {
+        stats.unresolvedDevice++;
+        if (logUnresolved && stats.samples.length < 20) {
+          stats.samples.push({
+            user: String(u._id),
+            startDate: hp.startDate,
+            position: String(hp.position || ''),
+            legacyDevice: hp.device || hp.dispositiveID || null,
+          });
+        }
+        // Puedes decidir crear igual con null, o saltar
+        // if (!apply) continue;  // dry-run salta
+        // else continue;         // si quieres NO crear sin dispositivo
+        continue;
+      }
+
+      if (!apply) continue; // dry-run: no escribir
+
+      try {
+        const { created } = await createPeriodIfMissing(u._id, { ...hp, dispositiveId: disp });
+        if (created) stats.created++;
+      } catch (e) {
+        stats.errors++;
+        console.log(`[Backfill ERROR] user=${u._id}`, e?.message || e);
+      }
+    }
+
+    if (stats.users % 200 === 0) {
+      console.log(`[Backfill] users=${stats.users} created=${stats.created} unresolved=${stats.unresolvedDevice}`);
+    }
+  }
+
+  console.log('==== BACKFILL PERIODS (from embedded) ====');
+  console.table({
+    dryRun: stats.dryRun,
+    users: stats.users,
+    hpSeen: stats.hpSeen,
+    created: stats.created,
+    unresolvedDevice: stats.unresolvedDevice,
+    errors: stats.errors,
+  });
+  if (stats.samples.length) console.log('Ejemplos no resueltos:', stats.samples);
+  return stats;
+}
+
+export async function backfillOneUser(userId, opts = { apply: true }) {
+  const u = await User.findById(userId, { _id: 1, hiringPeriods: 1 }).lean();
+  if (!u) throw new Error('Usuario no encontrado');
+
+  let created = 0, unresolved = 0, skipped = 0;
+
+  for (const hp of (u.hiringPeriods || [])) {
+    const exists = await Periods.exists({
+      idUser: u._id,
+      startDate: n(hp.startDate),
+      endDate: n(hp.endDate),
+      position: n(hp.position),
+    });
+    if (exists) { skipped++; continue; }
+
+    const disp = await resolveDispositiveIdForPeriod(hp, opts);
+    if (!disp) { unresolved++; continue; }
+
+    if (opts.apply) {
+      const { created: didCreate } = await createPeriodIfMissing(u._id, { ...hp, dispositiveId: disp }, opts);
+      if (didCreate) created++;
+    }
+  }
+
+  console.table({ userId: String(userId), created, unresolved, skipped });
+  return { created, unresolved, skipped };
 }
