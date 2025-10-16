@@ -1,7 +1,7 @@
 
 const { google }   = require('googleapis');
 const MailComposer = require('nodemailer/lib/mail-composer');
-const { User, Periods, UserChangeRequest, Program } = require('../models/indexModels');
+const { User, Periods, UserChangeRequest, Dispositive , Program } = require('../models/indexModels');
 const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText } = require('../templates/emailTemplates');
 const { default: mongoose } = require('mongoose');
 
@@ -294,38 +294,72 @@ async function notifyDeviceManagersOfChangeRequest({
     if (!worker) throw new Error('Trabajador no encontrado');
 
     // 2) Periodos activos (puede haber 1 o 2 si parcial)
-    const now = new Date();
-    const periods = await Periods.find({
-      idUser: worker._id,
-      active: true,
-      $or: [{ endDate: { $exists: false } }, { endDate: null }, { endDate: { $gte: now } }]
-    }, { device: 1 }).lean();
+const now = new Date();
+const periods = await Periods.find({
+  idUser: worker._id,
+  active: true,
+  $or: [{ endDate: { $exists: false } }, { endDate: null }, { endDate: { $gte: now } }]
+}, { dispositiveId: 1, device: 1 }).lean(); // ← incluimos device (legacy) como fallback
 
-    const deviceIds = Array.from(new Set(periods.map(p => String(p.device)).filter(Boolean)));
+// 3) Contexto de dispositivos desde colección Dispositive (nuevo modelo)
+//    - Primero recogemos los dispositiveId “nuevos” de Periods
+let dispIds = Array.from(new Set(
+  periods.map(p => p.dispositiveId).filter(Boolean).map(String)
+));
 
-    // 3) Programas con esos dispositivos
-    let deviceContexts = [];
-    if (deviceIds.length) {
-      const programs = await Program.find(
-        { 'devices._id': { $in: deviceIds.map(id => mongoose.Types.ObjectId.createFromHexString(id)) } },
-        { name: 1, acronym: 1, devices: 1 }
-      ).lean();
+// Fallback: si no hay nuevos, intenta resolver legacy `device` → program/dev name
+let deviceContexts = [];
 
-      const wanted = new Set(deviceIds);
-      for (const prg of programs) {
-        for (const dev of prg.devices || []) {
-          if (!wanted.has(String(dev._id))) continue;
-          deviceContexts.push({
-            programName: prg.name,
-            programAcronym: prg.acronym,
-            deviceId: String(dev._id),
-            deviceName: dev.name,
-            responsibleIds: (dev.responsible || []).map(String),
-            coordinatorIds: (dev.coordinators || []).map(String),
-          });
-        }
+if (dispIds.length) {
+  // Dispositivos + su programa
+  const dispositives = await Dispositive.find(
+    { _id: { $in: dispIds.map(id => mongoose.Types.ObjectId.createFromHexString(id)) } },
+    { _id: 1, name: 1, program: 1, responsible: 1, coordinators: 1 }
+  ).lean();
+
+  const programIds = Array.from(new Set(dispositives.map(d => String(d.program)).filter(Boolean)));
+  const programs = await Program.find(
+    { _id: { $in: programIds.map(id => mongoose.Types.ObjectId.createFromHexString(id)) } },
+    { _id: 1, name: 1, acronym: 1 }
+  ).lean();
+  const progMap = new Map(programs.map(p => [String(p._id), { name: p.name, acronym: p.acronym }]));
+
+  deviceContexts = dispositives.map(d => ({
+    programName:   progMap.get(String(d.program))?.name || '',
+    programAcronym:progMap.get(String(d.program))?.acronym || '',
+    deviceId:      String(d._id),
+    deviceName:    d.name,
+    responsibleIds:(d.responsible || []).map(String),
+    coordinatorIds:(d.coordinators || []).map(String),
+  }));
+} else {
+  // LEGACY (solo si aún tienes Periods con `device` y nada en `dispositiveId`)
+  const legacyIds = Array.from(new Set(
+    periods.map(p => p.device).filter(Boolean).map(String)
+  ));
+
+  if (legacyIds.length) {
+    const programs = await Program.find(
+      { 'devices._id': { $in: legacyIds.map(id => mongoose.Types.ObjectId.createFromHexString(id)) } },
+      { name: 1, acronym: 1, devices: 1 }
+    ).lean();
+
+    const wanted = new Set(legacyIds);
+    for (const prg of programs) {
+      for (const dev of prg.devices || []) {
+        if (!wanted.has(String(dev._id))) continue;
+        deviceContexts.push({
+          programName: prg.name,
+          programAcronym: prg.acronym,
+          deviceId: String(dev._id),          // legacy id (solo para mostrar)
+          deviceName: dev.name,
+          responsibleIds: (dev.responsible || []).map(String),
+          coordinatorIds: (dev.coordinators || []).map(String),
+        });
       }
     }
+  }
+}
 
     // 4) Destinatarios
     let recipients = [];
