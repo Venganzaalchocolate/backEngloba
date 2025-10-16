@@ -256,7 +256,7 @@ async function resolveDispositiveIdFromHP(hp) {
   if (!hp) return null;
 
   // Si ya trae un id válido nuevo:
-  const directCandidates = [hp.dispositiveID, hp.dispositiveId, hp.dispositive];
+  const directCandidates = [ hp.dispositiveId, hp.dispositive];
   for (const cand of directCandidates) {
     if (cand) {
       const ok = await Dispositive.exists({ _id: cand });
@@ -340,7 +340,7 @@ async function resolveSelectionProcessId(userId, hp) {
   if (hp.device) {
     wantedLegacySet = new Set([String(hp.device)]);
   } else {
-    const candNew = hp.dispositiveID || hp.dispositiveId || null;
+    const candNew = hp.dispositiveId || hp.dispositiveId || null;
     if (candNew) {
       wantedNewDispositiveId = String(candNew);
       const idx = await buildNewToLegacyDeviceIndex();
@@ -369,7 +369,7 @@ async function resolveSelectionProcessId(userId, hp) {
   if (directOfferIds.length) {
     const docs = await Offer.find(
       { _id: { $in: directOfferIds } },
-      { _id: 1, jobId: 1, device: 1, dispositiveId: 1, dispositiveID: 1, createdAt: 1, updatedAt: 1, datecreate: 1 }
+      { _id: 1, jobId: 1, device: 1, dispositiveId: 1, dispositiveId: 1, createdAt: 1, updatedAt: 1, datecreate: 1 }
     ).lean();
     offers.push(...docs);
   }
@@ -377,7 +377,7 @@ async function resolveSelectionProcessId(userId, hp) {
   // 2) ofertas que listan esos CVs
   const docsByCv = await Offer.find(
     { userCv: { $in: cvIds } },
-    { _id: 1, jobId: 1, device: 1, dispositiveId: 1, dispositiveID: 1, createdAt: 1, updatedAt: 1, datecreate: 1 }
+    { _id: 1, jobId: 1, device: 1, dispositiveId: 1, dispositiveId: 1, createdAt: 1, updatedAt: 1, datecreate: 1 }
   ).lean();
   offers.push(...docsByCv);
 
@@ -398,7 +398,7 @@ async function resolveSelectionProcessId(userId, hp) {
     offers = offers.filter(o => o.device && wantedLegacySet.has(String(o.device)));
     if (!offers.length) return null;
   } else if (wantedNewDispositiveId) {
-    offers = offers.filter(o => String(o.dispositiveID || o.dispositiveId || '') === wantedNewDispositiveId);
+    offers = offers.filter(o => String(o.dispositiveId || o.dispositiveId || '') === wantedNewDispositiveId);
     if (!offers.length) return null;
   }
 
@@ -438,7 +438,7 @@ export async function createPeriodIfMissing(userId, hp) {
 
   const doc = await Periods.create({
     ...filter,
-    dispositiveID: n(dispositiveId),
+    dispositiveId: n(dispositiveId),
     workShift: hp.workShift || undefined,
     selectionProcess: n(selectionProc),
     active: hp.active !== undefined ? hp.active : true,
@@ -464,7 +464,7 @@ export async function upsertPeriod(userId, hp) {
 
   const update = {
     $set: {
-      dispositiveID: n(dispositiveId),
+      dispositiveId: n(dispositiveId),
       workShift: hp.workShift || undefined,
       selectionProcess: n(selectionProc),
       active: hp.active !== undefined ? hp.active : true,
@@ -529,13 +529,13 @@ export async function repairExistingPeriods({ apply = false, limit = 0 } = {}) {
   let q = Periods.find(
     {
       $or: [
-        { dispositiveID: { $exists: false } },
-        { dispositiveID: null },
+        { dispositiveId: { $exists: false } },
+        { dispositiveId: null },
         { selectionProcess: { $exists: false } },
         { selectionProcess: null },
       ],
     },
-    { _id: 1, idUser: 1, startDate: 1, endDate: 1, position: 1, workShift: 1, selectionProcess: 1, dispositiveID: 1, device: 1 }
+    { _id: 1, idUser: 1, startDate: 1, endDate: 1, position: 1, workShift: 1, selectionProcess: 1, dispositiveId: 1, device: 1 }
   ).lean();
 
   if (limit > 0) q = q.limit(limit);
@@ -553,17 +553,17 @@ export async function repairExistingPeriods({ apply = false, limit = 0 } = {}) {
         position: p.position,
         workShift: p.workShift,
         selectionProcess: p.selectionProcess,
-        dispositiveID: p.dispositiveID,
+        dispositiveId: p.dispositiveId,
         device: p.device, // legacy
       };
 
       const [dispId, selProc] = await Promise.all([
-        p.dispositiveID ? p.dispositiveID : resolveDispositiveIdFromHP(hp),
+        p.dispositiveId ? p.dispositiveId : resolveDispositiveIdFromHP(hp),
         p.selectionProcess ? p.selectionProcess : resolveSelectionProcessId(p.idUser, hp),
       ]);
 
       const $set = {};
-      if (!p.dispositiveID && dispId) $set.dispositiveID = dispId;
+      if (!p.dispositiveId && dispId) $set.dispositiveId = dispId;
       if (!p.selectionProcess && selProc) $set.selectionProcess = selProc;
 
       if (Object.keys($set).length) {
@@ -650,7 +650,7 @@ export async function fullFreshMigration({
   console.table({ totalUsersScanned, usersProcessed, periodsCreated, leavesCreated, errors });
 
   // 3) REPAIR
-  console.log('\n[3/4] Reparación final (dispositiveID / selectionProcess)…');
+  console.log('\n[3/4] Reparación final (dispositiveId / selectionProcess)…');
   const rep = await repairExistingPeriods({ apply });
   console.log('[Repair] Hecho.');
 

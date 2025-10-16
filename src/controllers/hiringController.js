@@ -2,9 +2,9 @@
 const mongoose = require('mongoose');
 const { User, Periods, Leaves, Preferents, Dispositive } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
-const { actualizacionHiringyLeave, backfillSelectionProcessFromOffers, repairExistingPeriods, fullFreshMigration, migrateOffersNewDispositiveId, migrateUserCvNameFieldsToRefs } = require('./periodoTransicionController');
+const { actualizacionHiringyLeave, backfillSelectionProcessFromOffers, repairExistingPeriods, fullFreshMigration, migrateOffersNewdispositiveId, migrateUserCvNameFieldsToRefs } = require('./periodoTransicionController');
 // Opcional si lo usas en un script aparte:
-// const { backfillSelectionProcessFromOffers, backfillPeriodsDispositiveId } = require('./periodoTransicionController');
+// const { backfillSelectionProcessFromOffers, backfillPeriodsdispositiveId } = require('./periodoTransicionController');
 
 /* ---------------------------------------------------------
    Helpers
@@ -25,8 +25,8 @@ async function getProvinceIdsFromDispositive(dispositiveId) {
 async function closeMatchingPreferentsForPeriod(periodLike) {
   const userId = periodLike?.idUser ? toId(periodLike.idUser) : null;
   const jobId = periodLike?.position ? toId(periodLike.position) : null;
-  // ⚠️ ahora usamos dispositiveID
-  const dispId = periodLike?.dispositiveID ? toId(periodLike.dispositiveID) : null;
+  // ⚠️ ahora usamos dispositiveId
+  const dispId = periodLike?.dispositiveId ? toId(periodLike.dispositiveId) : null;
 
   if (!userId || !jobId || !dispId) return;
 
@@ -48,8 +48,8 @@ async function closeMatchingPreferentsForPeriod(periodLike) {
 async function ensureSpaceWithPreferents(periodLike, { excludePeriodId = null } = {}) {
   const userId = toId(periodLike?.idUser);
   const jobId = toId(periodLike?.position);
-  // ⚠️ ahora usamos dispositiveID
-  const dispId = toId(periodLike?.dispositiveID);
+  // ⚠️ ahora usamos dispositiveId
+  const dispId = toId(periodLike?.dispositiveId);
 
   if (!userId || !jobId || !dispId) return { closedCount: 0 };
 
@@ -198,7 +198,7 @@ function buildPeriodPayload(body) {
     position: toId(position),
     startDate: start,
     endDate: end ?? undefined,
-    dispositiveID: toId(dispositiveId),                 // ← guardamos aquí
+    dispositiveId: toId(dispositiveId),                 // ← guardamos aquí
     workShift: { type: workShift.type, nota: workShift.nota ?? undefined },
     selectionProcess: selectionProcess ? toId(selectionProcess) : undefined,
     active: active === false ? false : true,
@@ -298,7 +298,7 @@ async function updateHiring(req, res) {
   if (req.body.startDate !== undefined)         patch.startDate = req.body.startDate ? new Date(req.body.startDate) : undefined;
   if (req.body.endDate !== undefined)           patch.endDate = req.body.endDate ? new Date(req.body.endDate) : undefined;
   // ⚠️ nuevo campo
-  if (req.body.dispositiveId !== undefined)     patch.dispositiveID = req.body.dispositiveId ? toId(req.body.dispositiveId) : undefined;
+  if (req.body.dispositiveId !== undefined)     patch.dispositiveId = req.body.dispositiveId ? toId(req.body.dispositiveId) : undefined;
   if (req.body.selectionProcess !== undefined)  patch.selectionProcess = req.body.selectionProcess ? toId(req.body.selectionProcess) : undefined;
   if (req.body.active !== undefined)            patch.active = req.body.active;
 
@@ -402,7 +402,7 @@ async function listHirings(req, res) {
   if (position)  filters.position = toId(position);
   if (active !== undefined) filters.active = active;
 
-  if (dispositiveId) filters.dispositiveID = toId(dispositiveId);
+  if (dispositiveId) filters.dispositiveId = toId(dispositiveId);
 
   if (openOnly) {
     filters.$or = [{ endDate: { $exists: false } }, { endDate: null }];
@@ -507,7 +507,7 @@ async function closeHiring(req, res) {
 }
 
 const prueba=async()=>{
-  //await migrateOffersNewDispositiveId({ apply:true })
+  //await migrateOffersNewdispositiveId({ apply:true })
   // await migrateUserCvNameFieldsToRefs({ apply: true });
  
 

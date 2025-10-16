@@ -385,7 +385,7 @@ const auditMissingFieldsDocumentationDevice = async (req, res) => {
 };
 
 /* =========================================================
-   Leaves (ajuste: periodo usa dispositiveId/dispositiveID)
+   Leaves (ajuste: periodo usa dispositiveId/dispositiveId)
 ========================================================= */
 const auditMissingFieldsLeaveOnly = async (req, res) => {
   const { leaveFields = [], apafa = false } = req.body;
@@ -441,11 +441,11 @@ const auditMissingFieldsLeaveOnly = async (req, res) => {
   const validUserIdSet = new Set(users.map(u => u._id.toString()));
   const byUser = new Map(users.map(u => [u._id.toString(), { ...u, hiringPeriods: [], dispositiveNow: [] }]));
 
-  // OJO: ahora traemos dispositiveId/dispositiveID (y mantenemos 'device' en la salida por compatibilidad)
+  // OJO: ahora traemos dispositiveId/dispositiveId (y mantenemos 'device' en la salida por compatibilidad)
   const periodIds = [...new Set(leaves.map(l => l?.idPeriod).filter(Boolean).map(id => id.toString()))];
   const periods = await Periods.find(
     { _id: { $in: periodIds } },
-    { startDate: 1, endDate: 1, position: 1, category: 1, workShift: 1, dispositiveId: 1, dispositiveID: 1 }
+    { startDate: 1, endDate: 1, position: 1, category: 1, workShift: 1, dispositiveId: 1}
   ).lean();
   const periodMap = new Map(periods.map(p => [p._id.toString(), p]));
 
@@ -459,7 +459,7 @@ const auditMissingFieldsLeaveOnly = async (req, res) => {
     const userObj = byUser.get(uid);
     let periodEntry = userObj.hiringPeriods.find(hp => hp._id.toString() === p._id.toString());
     if (!periodEntry) {
-      const deviceId = p.dispositiveId || p.dispositiveID || null;
+      const deviceId =  p.dispositiveId || null;
       periodEntry = {
         _id: p._id,
         startDate: p.startDate,

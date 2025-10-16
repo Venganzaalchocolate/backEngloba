@@ -21,7 +21,7 @@ const PeriodSchema = new Schema({
     device: {
         type: Schema.Types.ObjectId,
     },
-    dispositiveID:{
+    dispositiveId:{
         type: Schema.Types.ObjectId,
         ref: 'Dispositive'
     },

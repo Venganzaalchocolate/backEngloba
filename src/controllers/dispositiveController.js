@@ -499,8 +499,9 @@ const getDispositiveResponsable = async (req, res) => {
     }
   }
 
-  return response(res, 200, result);
+  response(res, 200, result);
 };
+
 
 module.exports = {
   createDispositive: catchAsync(createDispositive),
@@ -510,5 +511,5 @@ module.exports = {
   handleCoordinators: catchAsync(handleCoordinators),
   handleResponsibles: catchAsync(handleResponsibles),
   listsResponsiblesAndCoordinators:catchAsync(listsResponsiblesAndCoordinators),
-  getDispositiveResponsable:catchAsync(getDispositiveResponsable)
+  getDispositiveResponsable:catchAsync(getDispositiveResponsable),
 };

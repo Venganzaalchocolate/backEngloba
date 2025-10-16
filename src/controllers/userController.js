@@ -152,13 +152,13 @@ const postCreateUser = async (req, res) => {
     throw new ClientError('Error al crear el usuario', 500);
   }
 
-  // 4) Hiring doc (usa dispositiveID)
+  // 4) Hiring doc (usa dispositiveId)
   const dispositiveId = toObjectId(inputHiring.dispositiveId, 'dispositiveId');
   const hiringDoc = {
     idUser: newUser._id,
     startDate: new Date(inputHiring.startDate),
     endDate: inputHiring.endDate ? new Date(inputHiring.endDate) : null,
-    dispositiveID: dispositiveId, // <-- migrado
+    dispositiveId: dispositiveId, // <-- migrado
     position: toObjectId(inputHiring.position, 'position'),
     workShift: { type: inputHiring.workShift.type },
     active: inputHiring.active !== false,
@@ -375,7 +375,7 @@ async function getUsersCurrentStatus(req, res) {
 };
 
 // =========================
-// LIST USERS (migrado a Dispositive / dispositiveID)
+// LIST USERS (migrado a Dispositive / dispositiveId)
 // =========================
 const getUsers = async (req, res) => {
   if (!req.body.page || !req.body.limit) {
@@ -431,14 +431,14 @@ const getUsers = async (req, res) => {
   let dispositiveIdsFromProvinces = null;
   let dispositiveIdsFromProgram   = null;
 
-  // provinces -> lista de dispositiveIDs de esa provincia
+  // provinces -> lista de dispositiveIds de esa provincia
   if (req.body.provinces && mongoose.Types.ObjectId.isValid(req.body.provinces)) {
     const byProv = await Dispositive.find({ province: toId(req.body.provinces) })
       .select('_id').lean();
     dispositiveIdsFromProvinces = byProv.map(d => String(d._id));
   }
 
-  // programId -> lista de dispositiveIDs del programa
+  // programId -> lista de dispositiveIds del programa
   if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
     const byProg = await Dispositive.find({ program: toId(req.body.programId) })
       .select('_id').lean();
@@ -485,7 +485,7 @@ const getUsers = async (req, res) => {
     };
 
     if (allowedDispositiveIds && allowedDispositiveIds.length) {
-      periodFilter.dispositiveID = { $in: allowedDispositiveIds.map(id => new mongoose.Types.ObjectId(id)) };
+      periodFilter.dispositiveId = { $in: allowedDispositiveIds.map(id => new mongoose.Types.ObjectId(id)) };
     }
     if (positionId) {
       periodFilter.position = new mongoose.Types.ObjectId(positionId);
@@ -519,7 +519,7 @@ const getUsers = async (req, res) => {
 };
 
 // =========================
-// getAllUsersWithOpenPeriods (migrado a Dispositive / dispositiveID)
+// getAllUsersWithOpenPeriods (migrado a Dispositive / dispositiveId)
 // =========================
 const getAllUsersWithOpenPeriods = async (req, res) => {
   const filters = {};
@@ -561,14 +561,14 @@ const getAllUsersWithOpenPeriods = async (req, res) => {
 
   let dispositiveIds = null;
 
-  // provinces -> dispositiveIDs
+  // provinces -> dispositiveIds
   if (req.body.provinces && mongoose.Types.ObjectId.isValid(req.body.provinces)) {
     const byProv = await Dispositive.find({ province: toId(req.body.provinces) })
       .select('_id').lean();
     dispositiveIds = (dispositiveIds || []).concat(byProv.map(d => String(d._id)));
   }
 
-  // programId -> dispositiveIDs
+  // programId -> dispositiveIds
   if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
     const byProg = await Dispositive.find({ program: toId(req.body.programId) })
       .select('_id').lean();
@@ -579,11 +579,11 @@ const getAllUsersWithOpenPeriods = async (req, res) => {
   }
 
   if (dispositiveIds?.length) {
-    hiringQuery.dispositiveID = { $in: dispositiveIds.map(id => new mongoose.Types.ObjectId(id)) };
+    hiringQuery.dispositiveId = { $in: dispositiveIds.map(id => new mongoose.Types.ObjectId(id)) };
   }
 
   if (req.body.dispositive && mongoose.Types.ObjectId.isValid(req.body.dispositive)) {
-    hiringQuery.dispositiveID = new mongoose.Types.ObjectId(req.body.dispositive);
+    hiringQuery.dispositiveId = new mongoose.Types.ObjectId(req.body.dispositive);
   }
 
   if (req.body.position && mongoose.Types.ObjectId.isValid(req.body.position)) {
@@ -592,7 +592,7 @@ const getAllUsersWithOpenPeriods = async (req, res) => {
 
   const openHirings = await Periods
     .find(hiringQuery)
-    .select('idUser dispositiveID position workShift startDate endDate')
+    .select('idUser dispositiveId position workShift startDate endDate')
     .lean();
 
   const userIds = [...new Set(openHirings.map(h => String(h.idUser)))];
@@ -1045,7 +1045,7 @@ const payroll = async (req, res) => {
 };
 
 // =========================
-// Rehire (migrado a Dispositive / dispositiveID)
+// Rehire (migrado a Dispositive / dispositiveId)
 // =========================
 const rehireUser = async (req, res) => {
   validateRequiredFields(req.body, ['dni', 'hiring']);
@@ -1097,12 +1097,12 @@ const rehireUser = async (req, res) => {
     }
   }
 
-  // Documento del nuevo Period (usa dispositiveID)
+  // Documento del nuevo Period (usa dispositiveId)
   const hiringDoc = {
     idUser: userDoc._id,
     startDate: new Date(hiringInput.startDate),
     endDate: hiringInput.endDate ? new Date(hiringInput.endDate) : null,
-    dispositiveID: toObjectId(hiringInput.dispositiveId, 'dispositiveId'),
+    dispositiveId: toObjectId(hiringInput.dispositiveId, 'dispositiveId'),
     position: toObjectId(hiringInput.position, 'position'),
     workShift: { type: workShiftType },
     active: hiringInput.active !== false,
@@ -1172,7 +1172,7 @@ const rehireUser = async (req, res) => {
       );
     }
 
-    const dsp = await Dispositive.findById(hiringDoc.dispositiveID)
+    const dsp = await Dispositive.findById(hiringDoc.dispositiveId)
       .select('groupWorkspace province')
       .lean();
 
