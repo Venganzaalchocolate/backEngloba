@@ -231,7 +231,26 @@ const postCreateUser = async (req, res) => {
     debug('Workspace/Preferents (non-blocking):', e?.name, e?.message);
   }
 
-  return response(res, 200, newUser);
+
+  const created = await createUserWS(newUser._id);
+  if (created?.email) {
+        newUser=await User.updateOne(
+          { _id: newUser._id },
+          { $set: { email: created.email }}
+        );
+  }
+
+  try {
+  const ws = await createUserWS(newUser._id);
+  if (ws?.email) {
+    newUser.email = String(ws.email).toLowerCase();
+    await newUser.save();         // mantiene la variable y el doc sincronizados
+  }
+} catch (e) {
+  console.log('no se ha podido crear el email corporativo'+ e);
+}
+
+  response(res, 200, newUser);
 };
 
 // =========================
