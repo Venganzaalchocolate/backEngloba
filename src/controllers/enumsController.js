@@ -21,21 +21,26 @@ function createSubcategoriesIndex(list = []) {
   return out;
 }
 
+// utils de índice (reemplaza createCategoryAndSubcategoryIndex por esta versión)
 function createCategoryAndSubcategoryIndex(list = []) {
-  // Provincias: indexa tanto categorías raíz como subcategorías
-  //   raízId -> { name, isRoot: true }
-  //   subId  -> { name: "Padre – Hija", parent: raizId, isSub: true }
+  // Indexa raíz y subs; si existe "public", lo preserva
   const out = {};
   for (const p of list) {
     const pid = String(p._id);
-    out[pid] = { name: p.name || '', isRoot: true };
+    out[pid] = { 
+      name: p.name || '', 
+      isRoot: true 
+    };
+    if (typeof p.public === 'boolean') out[pid].public = p.public;
+
     for (const sc of (p.subcategories || [])) {
       const sid = String(sc._id);
       out[sid] = {
-        name: sc.name,
+        name: sc.name || '',
         parent: p._id,
         isSub: true
       };
+      if (typeof sc.public === 'boolean') out[sid].public = sc.public;
     }
   }
   return out;

@@ -1328,3 +1328,65 @@ export async function backfillOneUser(userId, opts = { apply: true }) {
   console.table({ userId: String(userId), created, unresolved, skipped });
   return { created, unresolved, skipped };
 }
+
+const arrify = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+
+const normalizeEmail = (s) => String(s || '').trim().toLowerCase();
+const validEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+
+
+export async function getAllManagerEmails({
+  includePersonal = false,
+  onlyActiveUsers = false,
+  includeLegacyProgramDevices = false,
+} = {}) {
+  // 1) Recolectar IDs de usuario (responsables + coordinadores)
+  const userIdSet = new Set();
+
+  // Program (responsables / coordinadores)
+  const projProg = { _id: 0, responsible: 1, coordinators: 1 };
+  if (includeLegacyProgramDevices) projProg.devices = 1;
+  const programs = await Program.find({}, projProg).lean();
+
+  for (const p of programs) {
+    arrify(p.responsible).forEach((u) => userIdSet.add(String(u)));
+    arrify(p.coordinators).forEach((u) => userIdSet.add(String(u)));
+
+    // Legacy: responsables/coordinadores dentro de Program.devices
+    if (includeLegacyProgramDevices && Array.isArray(p.devices)) {
+      for (const d of p.devices) {
+        arrify(d?.responsible).forEach((u) => userIdSet.add(String(u)));
+        arrify(d?.coordinators).forEach((u) => userIdSet.add(String(u)));
+      }
+    }
+  }
+
+  // Dispositive (responsables / coordinadores)
+  const dispositives = await Dispositive.find({}, { _id: 0, responsible: 1, coordinators: 1 }).lean();
+  for (const d of dispositives) {
+    arrify(d.responsible).forEach((u) => userIdSet.add(String(u)));
+    arrify(d.coordinators).forEach((u) => userIdSet.add(String(u)));
+  }
+
+  const userIds = Array.from(userIdSet).map(toId);
+  if (!userIds.length) return [];
+
+  // 2) Cargar usuarios y construir emails
+  const userFilter = { _id: { $in: userIds } };
+  if (onlyActiveUsers) userFilter.active = { $ne: false }; // aplica solo si tu schema tiene 'active'
+  const users = await User.find(userFilter, { email: 1, email_personal: 1 }).lean();
+
+  const emails = new Set();
+  for (const u of users) {
+    const corp = normalizeEmail(u.email);
+    if (corp && validEmail(corp)) emails.add(corp);
+
+    if (includePersonal) {
+      const personal = normalizeEmail(u.email_personal);
+      if (personal && validEmail(personal)) emails.add(personal);
+    }
+  }
+
+  return Array.from(emails);
+}
+

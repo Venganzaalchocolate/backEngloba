@@ -503,6 +503,7 @@ const getDispositiveResponsable = async (req, res) => {
 };
 
 
+
 module.exports = {
   createDispositive: catchAsync(createDispositive),
   getDispositive: catchAsync(getDispositive),
