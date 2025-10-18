@@ -232,14 +232,6 @@ const postCreateUser = async (req, res) => {
   }
 
 
-  const created = await createUserWS(newUser._id);
-  if (created?.email) {
-        newUser=await User.updateOne(
-          { _id: newUser._id },
-          { $set: { email: created.email }}
-        );
-  }
-
   try {
   const ws = await createUserWS(newUser._id);
   if (ws?.email) {

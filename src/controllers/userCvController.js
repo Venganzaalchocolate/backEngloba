@@ -1,5 +1,5 @@
 const { default: mongoose } = require('mongoose');
-const { UserCv, User } = require('../models/indexModels');
+const { UserCv, User, Offer } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const { createAccentInsensitiveRegex } = require('../utils/utils');
 const { deleteFile } = require('./ovhController');
@@ -89,13 +89,29 @@ const postCreateUserCv = async (req, res) => {
 
   if (req.body.dni) dataUser.dni = req.body.dni.trim().toUpperCase();
   if (req.body.about) dataUser.about = req.body.about;
-  if (req.body.offer) dataUser.offer = req.body.offer;
+  if(req.body.offer) dataUser.offer=req.body.offer;
   if (req.body.job_exchange !== undefined) dataUser.job_exchange = !!req.body.job_exchange;
   if (req.body.disability !== undefined) dataUser.disability = +req.body.disability || 0;
   if (req.body.fostered !== undefined) dataUser.fostered = req.body.fostered === 'si' || req.body.fostered === true;
-  const newUserCv = new UserCv(dataUser);
-  const savedUserCv = await newUserCv.save();
-  response(res, 200, savedUserCv);
+
+  const newUserCv = await new UserCv(dataUser).save();
+
+  const offerId=toId(req.body.offer)
+  let updatedOffer = null;
+  if (offerId) {
+    updatedOffer = await Offer.findOneAndUpdate(
+      { _id: offerId },
+      { $addToSet: { solicitants: newUserCv._id } },
+      { new: true } // devuelve la oferta ya actualizada
+    );
+
+    if (!updatedOffer) {
+      // Si llega aquí, el _id no coincide con ninguna oferta
+      throw new ClientError('Oferta no encontrada', 404);
+    }
+  }
+
+  response(res, 200, newUserCv);
 };
 
 
@@ -196,11 +212,43 @@ const getUserCvID = async (req, res) => {
 
 // borrar un usuario
 const UserCvDeleteId = async (req, res) => {
-  const filter = { _id: req.body._id };
-  const deleteFileAux = await deleteFile(req.body._id);
+  const { _id } = req.body;
+  if (!_id || !mongoose.isValidObjectId(_id)) {
+    throw new ClientError('Id de usuario no válido', 400);
+  }
+
+  // 1) Borra ficheros asociados (tu lógica actual)
+  const deleteFileAux = await deleteFile(_id);
   if (!deleteFileAux) throw new ClientError('No se ha podido borrar el cv', 400);
-  await UserCv.deleteOne(filter);
-  response(res, 200, { userDelete: true });
+
+  // 2) Borra el UserCv
+  const del = await UserCv.deleteOne({ _id });
+  if (del.deletedCount === 0) throw new ClientError('CV no encontrado', 404);
+
+  // 3) Quita el id de TODAS las ofertas donde aparezca en solicitants
+  const idObj = new mongoose.Types.ObjectId(_id);
+  const offRes = await Offer.updateMany(
+  {
+    $or: [
+      { solicitants: { $in: [idObj, String(_id)] } },
+      { favoritesCv: { $in: [idObj, String(_id)] } },
+      { viewCv: { $in: [idObj, String(_id)] } },
+      { rejectCv: { $in: [idObj, String(_id)] } },
+      { userCv: { $in: [idObj, String(_id)] } },
+    ]
+  },
+  {
+    $pull: {
+      solicitants: { $in: [idObj, String(_id)] },
+      favoritesCv: { $in: [idObj, String(_id)] },
+      viewCv: { $in: [idObj, String(_id)] },
+      rejectCv: { $in: [idObj, String(_id)] },
+      userCv: { $in: [idObj, String(_id)] },
+    }
+  }
+);
+
+  return response(res, 200, { userDelete: true, offersUpdated: offRes.modifiedCount });
 };
 
 // modificar el usuario (SOLO nuevos campos *_Id)
@@ -282,6 +330,19 @@ const UserCvPut = async (req, res) => {
   if (!doc) throw new ClientError("No existe el usuario", 400);
 
   const enriched = await attachWorkedInEngloba(doc);
+  if (req.body.offer) {
+    try {
+     const updatedOffer = await Offer.findOneAndUpdate(
+    { _id: toId(req.body.offer) },
+    { $addToSet: { solicitants: doc._id } }, // no duplica
+    { new: true } // devuelve la oferta actualizada
+  ); 
+
+    } catch (error) {
+      console.log(error)
+    }
+  
+}
   response(res, 200, enriched);
 };
 
@@ -291,6 +352,10 @@ const getUsersCvsIDs = async (req, res) => {
   const enriched = await attachWorkedInEngloba(usuarios);
   response(res, 200, enriched);
 };
+
+
+
+
 
 module.exports = {
   postCreateUserCv: catchAsync(postCreateUserCv),

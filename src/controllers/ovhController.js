@@ -36,6 +36,7 @@ const retryOperation = async (fn, retries = RETRY_LIMIT) => {
     try {
       return await fn(); // Intenta ejecutar la función
     } catch (error) {
+      console.log(error)
       attempt++;
       if (attempt >= retries) return false; // Si se alcanzó el límite de reintentos, lanza el error
       const backoff = Math.pow(2, attempt) * BACKOFF_FACTOR; // Calcula el tiempo de espera basado en el número de intentos
@@ -102,7 +103,8 @@ const deleteAllFiles = async () => {
 const deleteFile = async (fileName) => {
   return retryOperation(async () => {
     const fileToDelete = `${fileName}.pdf`; // Construye el nombre del archivo a eliminar
-    await minioClient.statObject(containerName, fileToDelete); // Verifica si el archivo existe
+    const exist =await minioClient.statObject(containerName, fileToDelete); // Verifica si el archivo existe
+    console.log(exist)
     await minioClient.removeObject(containerName, fileToDelete); // Elimina el archivo
     console.log(`Archivo eliminado: ${fileToDelete}`); // Mensaje de confirmación
     return true; // Devuelve true si la eliminación fue exitosa
