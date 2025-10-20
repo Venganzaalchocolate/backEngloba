@@ -5,7 +5,7 @@ const { Schema } = mongoose;
 const commentSchema = mongoose.Schema({
     userCv: {
         type: Schema.Types.ObjectId,
-        ref: 'UserCv', // Referencia al modelo UserCv
+        ref: 'User', // Referencia al modelo UserCv
         required: true,
     },
     nameUser:{

@@ -723,6 +723,7 @@ async function patchWithBackoff(groupEmail, requestBody) {
         groupUniqueId: groupEmail,
         requestBody
       });
+      console.log('hecho')
       return;
     } catch (err) {
       const apiErr = err?.errors?.[0] || {};
@@ -751,10 +752,10 @@ async function updateAllGroupsSettings() {
   // for (const g of groups) {
   //   await patchWithBackoff(g.email, commonSettings);
   // }
-  await patchWithBackoff('cvvgjaen@engloba.org.es', commonSettings);
+  await patchWithBackoff('pimenorestapia.edu@engloba.org.es', commonSettings);
 }
 
-//updateAllGroupsSettings()
+// updateAllGroupsSettings()
 // // // // Ejecuta la tarea:
 // updateAllGroupsSettings().catch(console.error);
 
@@ -778,6 +779,7 @@ async function updateAllGroupsSettings() {
 // }
 //  prueba('pimenoresalameda.edu@engloba.org.es')
 
+
 module.exports = {
   addUserToGroup,
   deleteMemeberAllGroups,
@@ -789,4 +791,5 @@ module.exports = {
   createUserWS,
   deleteUserByEmailWS,
   ensureProgramGroup, ensureDeviceGroup,
+  infoGroup
 };

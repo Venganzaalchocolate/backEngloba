@@ -3,7 +3,7 @@ const { Provinces, Dispositive, Program } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { generateEmailHTML, sendEmail } = require('./emailControllerGoogle');
-const { ensureDeviceGroup } = require('./workspaceController');
+const { ensureDeviceGroup, infoGroup } = require('./workspaceController');
 
 const isValidId = (v) => mongoose.Types.ObjectId.isValid(v);
 const isDetach = (v) => v === null || v === '' || v === false;
@@ -501,8 +501,6 @@ const getDispositiveResponsable = async (req, res) => {
 
   response(res, 200, result);
 };
-
-
 
 module.exports = {
   createDispositive: catchAsync(createDispositive),

@@ -257,6 +257,8 @@ const UserCvPut = async (req, res) => {
   const updateText = {};
 
   if (req.body.name)       updateText.name = req.body.name;
+  if (req.body.firstName)       updateText.firstName = req.body.firstName;
+  if (req.body.lastName)       updateText.lastName = req.body.lastName;
   if (req.body.email)      updateText.email = req.body.email;
   if (req.body.dni)        updateText.dni = req.body.dni.trim().toUpperCase();
   if (req.body.phone)      updateText.phone = req.body.phone;
