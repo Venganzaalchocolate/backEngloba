@@ -380,11 +380,21 @@ const listsResponsiblesAndCoordinators = async (req, res) => {
       select: 'name acronym'
     })
     .lean();
+  // --- Programas (solo responsables, sin coordinadores ni campo program) ---
+  const programs = wantResponsibles
+    ? await Program.find({ responsible: { $exists: true, $ne: [] } })
+        .select('name province responsible')
+        .populate({
+          path: 'responsible',
+          select: 'firstName lastName email phone phoneJob.number phoneJob.extension'
+        })
+        .lean()
+    : [];
 
   const list = [];
 
   for (const d of dispositives) {
-    const programName = d.program?.name ?? '';
+    const programName = d.program?.acronym ?? d.program?.name;
     const deviceName  = d.name ?? '';
     const provinceName = d.province ? (provinceMap.get(String(d.province)) || null) : null;
 
@@ -427,6 +437,30 @@ const listsResponsiblesAndCoordinators = async (req, res) => {
     }
   }
 
+    // --- Datos desde Program ---
+  for (const p of programs) {
+    const programName  = p.acronym ?? p.name;
+
+    if (Array.isArray(p.responsible)) {
+      for (const u of p.responsible) {
+        list.push({
+          program:   programName,
+          device:    null, // No aplica
+          province:  null,
+          role:      'responsible-program',
+          firstName: u?.firstName  ?? '',
+          lastName:  u?.lastName   ?? '',
+          email:     u?.email      ?? '',
+          phone:     u?.phone      ?? '',
+          phoneJob: {
+            number:    u?.phoneJob?.number    ?? '',
+            extension: u?.phoneJob?.extension ?? ''
+          }
+        });
+      }
+    }
+  }
+ 
   response(res, 200, list);
 };
 
