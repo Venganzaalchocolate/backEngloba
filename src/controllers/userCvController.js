@@ -178,10 +178,11 @@ const getUserCvs = async (req, res) => {
   const totalPages = Math.ceil(totalDocs / limit);
 
   const users = await UserCv.find(filters)
-    .sort({ createdAt: -1 })
+    .sort({ date: -1 })
     .skip((page - 1) * limit)
     .limit(limit)
     .populate(commentsPopulate);
+    //hh
 
   const usersWithEnglobaInfo = await attachWorkedInEngloba(users);
   response(res, 200, { users: usersWithEnglobaInfo, totalPages });
@@ -189,14 +190,24 @@ const getUserCvs = async (req, res) => {
 
 // filtrar por dni/phone/id (sin cambios, devuelve nuevos campos igualmente)
 const getUserCvsFilter = async (req, res) => {
-
   let filter = {};
-  if (req.body.dni) filter = { dni: req.body.dni };
-  else if (req.body.phone) filter = { phone: req.body.phone };
-  else if (req.body.id) filter = { _id: req.body.id };
-
-  const usuarios = await UserCv.find(filter).populate(commentsPopulate);
-  const enriched = await attachWorkedInEngloba(usuarios);
+  let usuarios=[];
+  if (req.body.dni){
+    const dniUp=req.body.dni.trim().toUpperCase()
+    filter = { dni: dniUp };
+    usuarios = await UserCv.find(filter).populate(commentsPopulate);
+  }
+  
+  if (req.body.phone && usuarios.length==0) {
+    filter ={}
+    filter = { phone: req.body.phone };
+    usuarios = await UserCv.find(filter).populate(commentsPopulate);
+  } else if (req.body.id && usuarios.length==0) {
+    filter ={}
+    filter = { _id: req.body.id };
+    usuarios = await UserCv.find(filter).populate(commentsPopulate);
+  }
+  const enriched =(usuarios.length>0)?await attachWorkedInEngloba(usuarios):[];
   response(res, 200, enriched);
 };
 
@@ -219,7 +230,6 @@ const UserCvDeleteId = async (req, res) => {
 
   // 1) Borra ficheros asociados (tu lógica actual)
   const deleteFileAux = await deleteFile(_id);
-  if (!deleteFileAux) throw new ClientError('No se ha podido borrar el cv', 400);
 
   // 2) Borra el UserCv
   const del = await UserCv.deleteOne({ _id });
@@ -256,9 +266,10 @@ const UserCvPut = async (req, res) => {
   const filter = { _id: req.body._id };
   const updateText = {};
 
-  if (req.body.name)       updateText.name = req.body.name;
-  if (req.body.firstName)       updateText.firstName = req.body.firstName;
-  if (req.body.lastName)       updateText.lastName = req.body.lastName;
+  
+  if (req.body.firstName)  updateText.firstName = req.body.firstName;
+  if (req.body.lastName)   updateText.lastName = req.body.lastName;
+  if (req.body.firstName && req.body.lastName)       updateText.name = `${(req.body.firstName || '').toLowerCase()} ${(req.body.lastName || '').toLowerCase()}`.trim();
   if (req.body.email)      updateText.email = req.body.email;
   if (req.body.dni)        updateText.dni = req.body.dni.trim().toUpperCase();
   if (req.body.phone)      updateText.phone = req.body.phone;
@@ -274,6 +285,7 @@ const UserCvPut = async (req, res) => {
   if (req.body.job_exchange !== undefined) updateText.job_exchange = !!req.body.job_exchange;
   if (req.body.numberCV !== undefined)     updateText.numberCV = +req.body.numberCV || 1;
   if (req.body.gender)        updateText.gender = req.body.gender;
+  if (req.body.date) updateText.date = new Date(req.body.date);
 
   const dateNow = new Date();
 
@@ -356,8 +368,21 @@ const getUsersCvsIDs = async (req, res) => {
 };
 
 
+const getOldestUserCvWithoutDni = async () => {
+  const user = await UserCv.findOne({
+    $or: [
+      { dni: { $exists: false } },
+      { dni: { $eq: null } },
+      { dni: '' }
+    ]
+  })
+  .sort({ createdAt: 1 }) // 1 = más antiguo primero
+  .lean(); // opcional, devuelve objeto plano sin métodos de mongoose
 
+  console.log(user);
+};
 
+// getOldestUserCvWithoutDni()
 
 module.exports = {
   postCreateUserCv: catchAsync(postCreateUserCv),

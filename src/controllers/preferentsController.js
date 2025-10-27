@@ -32,7 +32,7 @@ const getPreferentById = async (req, res) => {
 
 
 const createPreferent = async (req, res) => {
-  const { userId, provinces = [], jobs = [], type, authorized, hiringsId } = req.body;
+  const { userId, provinces = [], jobs = [], type, authorized, hiringsId, startDate } = req.body;
 
   // Validaciones básicas
   if (!userId || !provinces.length || !jobs.length || !type || !authorized) {
@@ -81,6 +81,15 @@ const createPreferent = async (req, res) => {
     { user: toId(userId), active: true },
     { $set: { active: false } }
   );
+
+  const dataAux={
+    user: toId(userId),
+    provinces: provincesIds,
+    jobs: jobsIds,
+    type,
+    authorized: toId(authorized),
+    hiringsId: hiringIds, 
+  }
 
   // Crear y guardar
   const doc = await Preferents.create({

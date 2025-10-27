@@ -119,11 +119,15 @@ const getEnums = async (req, res) => {
       Finantial.find().lean(),
     ]);
 
+      const jobsIndex = createCategoryAndSubcategoryIndex(jobs);
+    const provincesIndex = createCategoryAndSubcategoryIndex(provinces);
+    const studiesIndex    = createCategoryAndSubcategoryIndex(studies);
+
     if (!jobs || !provinces || !work_schedule || !studies || !finantial) {
       throw new ClientError('No se han podido cargar todos los enums', 500);
     }
 
-    const enumValues = { jobs, provinces, work_schedule, studies, finantial };
+    const enumValues = { jobs, provinces, work_schedule, studies, finantial, jobsIndex, provincesIndex, studiesIndex };
 
     cache.set('enums', enumValues);
     response(res, 200, enumValues);
