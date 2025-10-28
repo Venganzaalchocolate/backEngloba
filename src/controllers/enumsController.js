@@ -64,6 +64,7 @@ function createProgramIndex(programs = []) {
       _id: p._id,
       name: p.name || '',
       acronym: p.acronym || '',
+      type:'program'
     });
   }
 
@@ -81,29 +82,13 @@ function createDispositiveIndex(dispositives = []) {
       _id: d._id,
       name: d.name || '',
       program: d.program ? String(d.program) : null,   // <<< necesario
-      province: d.province ? String(d.province) : null
+      province: d.province ? String(d.province) : null,
+      type:'dispositive'
     };
   }
   return out;
 }
 
-function createDispositivesByProgram(dispositives = []) {
-  const byProgram = {};
-  for (const d of dispositives) {
-    const pid = String(d.program || 'null');
-    if (!byProgram[pid]) byProgram[pid] = [];
-    byProgram[pid].push({
-      _id: d._id,
-      name: d.name || '',
-      province: d.province ? String(d.province) : null
-    });
-  }
-  // (opcional) ordena por nombre
-  for (const pid of Object.keys(byProgram)) {
-    byProgram[pid].sort((a,b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
-  }
-  return byProgram;
-}
 
 
 

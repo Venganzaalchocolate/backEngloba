@@ -93,12 +93,12 @@ const createDispositive = async (req, res) => {
 };
 
 /** Obtener un Dispositive por id (sin programId) */
-const getDispositive = async (req, res) => {
+const getDispositiveId = async (req, res) => {
   const { dispositiveId } = req.body;
   if (!dispositiveId) throw new ClientError('Falta dispositiveId', 400);
 
   const dispositive = await Dispositive.findById(dispositiveId)
-    .populate('responsible coordinators program')
+    .populate('responsible coordinators')
     .lean();
 
   if (!dispositive) throw new ClientError('Dispositivo no encontrado', 404);
@@ -536,13 +536,14 @@ const getDispositiveResponsable = async (req, res) => {
   response(res, 200, result);
 };
 
+
 module.exports = {
   createDispositive: catchAsync(createDispositive),
-  getDispositive: catchAsync(getDispositive),
   updateDispositive: catchAsync(updateDispositive),
   deleteDispositive: catchAsync(deleteDispositive),
   handleCoordinators: catchAsync(handleCoordinators),
   handleResponsibles: catchAsync(handleResponsibles),
   listsResponsiblesAndCoordinators:catchAsync(listsResponsiblesAndCoordinators),
   getDispositiveResponsable:catchAsync(getDispositiveResponsable),
+  getDispositiveId:catchAsync(getDispositiveId)
 };

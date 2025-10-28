@@ -362,27 +362,13 @@ const UserCvPut = async (req, res) => {
 
 const getUsersCvsIDs = async (req, res) => {
   const userIds = req.body.ids || [];
-  const usuarios = await UserCv.find({ _id: { $in: userIds } }).populate(commentsPopulate);
+  const usuarios = await UserCv.find({ _id: { $in: userIds } }).populate(commentsPopulate).sort({ date: -1 }) ;
   const enriched = await attachWorkedInEngloba(usuarios);
   response(res, 200, enriched);
 };
 
 
-const getOldestUserCvWithoutDni = async () => {
-  const user = await UserCv.findOne({
-    $or: [
-      { dni: { $exists: false } },
-      { dni: { $eq: null } },
-      { dni: '' }
-    ]
-  })
-  .sort({ createdAt: 1 }) // 1 = más antiguo primero
-  .lean(); // opcional, devuelve objeto plano sin métodos de mongoose
 
-  console.log(user);
-};
-
-// getOldestUserCvWithoutDni()
 
 module.exports = {
   postCreateUserCv: catchAsync(postCreateUserCv),

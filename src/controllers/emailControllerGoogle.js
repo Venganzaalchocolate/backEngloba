@@ -1,9 +1,10 @@
 
 const { google }   = require('googleapis');
 const MailComposer = require('nodemailer/lib/mail-composer');
-const { User, Periods, UserChangeRequest, Dispositive , Program } = require('../models/indexModels');
-const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText } = require('../templates/emailTemplates');
+const { User, Periods, UserChangeRequest, Dispositive , Program, UserCv } = require('../models/indexModels');
+const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail } = require('../templates/emailTemplates');
 const { default: mongoose } = require('mongoose');
+const { capitalizeWords } = require('../../../frontEngloba/src/lib/utils');
 
 /* ────────────────────────────────────────────────────────────────────────────
    1. Autenticación: cliente Gmail “impersonando” al remitente
@@ -98,7 +99,7 @@ async function sendEmail(to, subject, text, html, attachments = []) {
 
 
     //---------
-const TEST_TO  = 'comunicacion@engloba.org.es';  // <- ¡ojo! comprueba la ortografía
+const TEST_TO  = null;  // <- ¡ojo! comprueba la ortografía
 const TEST_FN  = 'Equipo';                       // nombre para el saludo (firstName)
 
 
@@ -505,6 +506,7 @@ function buildBasicPayload(reqDoc, worker, deviceContexts, actionUrl, logoUrl, s
     supportEmail
   };
 }
+
 
 // prueba();
 module.exports = {

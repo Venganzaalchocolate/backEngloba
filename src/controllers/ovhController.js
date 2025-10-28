@@ -1,6 +1,7 @@
 
 const Minio = require('minio');
 const { Readable } = require('stream');
+const { UserCv } = require('../models/indexModels');
 
 // Configuración de variables de entorno para el cliente de Minio
 const containerName = process.env.ARSYS_CONTAINERNAME;
@@ -110,6 +111,7 @@ const deleteFile = async (fileName) => {
     return true; // Devuelve true si la eliminación fue exitosa
   });
 };
+
 
 
 

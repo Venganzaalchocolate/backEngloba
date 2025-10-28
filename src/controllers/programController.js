@@ -1,5 +1,5 @@
 const { Program, Provinces, Dispositive } = require('../models/indexModels');
-const { catchAsync, response, ClientError } = require('../utils/indexUtils');
+const { catchAsync, response, ClientError, toId } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { generateEmailHTML, sendEmail } = require('./emailControllerGoogle');
 const { ensureProgramGroup, ensureDeviceGroup } = require('./workspaceController');
@@ -715,9 +715,16 @@ const listsResponsiblesAndCoordinators = async (req, res) => {
     });
   });
 
-  return response(res, 200, list);
+  response(res, 200, list);
 };
 
+
+const getProgramId=async (req, res)=>{
+  if(!req.body.programId)  throw new ClientError("Falta el Id del Programa", 400);
+  const id=toId(req.body.programId)
+  const data=await Program.findById(id).populate('responsible')
+  response(res, 200, data)
+}
 //-----------------------------------------------
 //-----------------------------------------------
 //-------------CONTACTOS ENGLOBA-----------------
@@ -960,4 +967,5 @@ module.exports = {
   getProgramID: catchAsync(getProgramID),
   ProgramDeleteId: catchAsync(ProgramDeleteId),
   ProgramPut: catchAsync(ProgramPut),
+  getProgramId:catchAsync(getProgramId)
 }

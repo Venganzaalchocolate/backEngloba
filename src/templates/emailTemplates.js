@@ -1,3 +1,10 @@
+function capitalizeWords(str = '') {
+  if (typeof str !== 'string') return '';
+  return str
+    .toLowerCase()
+    .replace(/(^|\s)\p{L}/gu, (match) => match.toUpperCase());
+}
+
 export function buildSesameOpsPlainText(name = '', supportEmail = 'web@engloba.org.es') {
   return (
 `Hola ${name},
@@ -725,6 +732,88 @@ export function buildChangeRequestNotificationHtml(opts = {}) {
 
     <div class="footer">
       Este mensaje se generó automáticamente desde el panel de solicitudes.
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+export function buildMissingDniPlainText(name = '', phone = '', supportEmail = 'comunicacion@engloba.org.es') {
+  return (
+`Hola ${name},
+
+Hace un tiempo nos enviaste tu currículum a Asociación Engloba.
+
+Desde entonces hemos actualizado nuestro sistema de gestión y ahora necesitamos que todos los candidatos dispongan de un número de DNI o NIE asociado a su ficha.
+
+Si sigues interesado/a en participar en nuestros procesos de selección, por favor vuelve a enviar tu currículum a través del siguiente enlace, usando el mismo número de teléfono (${phone}) con tus datos actualizados:
+
+https://engloba.org.es/trabajaconnosotros
+
+Muchas gracias por tu colaboración y disculpa las molestias.
+
+Un cordial saludo,  
+Equipo de Recursos Humanos  
+Asociación Engloba  
+${supportEmail}`
+  );
+}
+
+
+export function buildMissingDniHtmlEmail(name = '', phone = '', {
+  logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
+  supportEmail = 'comunicacion@engloba.org.es'
+} = {}) {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Actualiza tu currículum en Asociación Engloba</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#f3f4f8;font-family:'Roboto',Arial,sans-serif;color:#333;line-height:1.6}
+  .card{max-width:640px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+  .header{background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);color:#fff;text-align:center;padding:28px 24px}
+  .header h1{font-size:24px;margin:6px 0 0}
+  .logo{max-width:120px;height:auto;margin-bottom:8px}
+  .content{padding:36px 40px;font-size:16px}
+  .content p{margin:18px 0}
+  .btn{display:inline-block;padding:12px 24px;border-radius:40px;background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);
+       color:#fff;text-decoration:none;font-weight:700}
+  .footer{background:#bec3f4;text-align:center;padding:18px 16px;font-size:13px;color:#333}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      ${logoUrl ? `<img src="${logoUrl}" alt="Logo Engloba" class="logo" />` : ''}
+      <h1>Actualiza tu currículum</h1>
+    </div>
+    <div class="content">
+      <p>Buenos días,  ${capitalizeWords(name)}:</p>
+
+      <p>Hace un tiempo nos enviaste tu currículum a <strong>Asociación Engloba</strong>.</p>
+
+      <p>Desde entonces hemos mejorado nuestro sistema de gestión y ahora necesitamos que todos los candidatos incluyan su <strong>DNI o NIE</strong> en la ficha personal.</p>
+
+      <p>Si aún estás interesado/a en participar en nuestros procesos de selección, por favor vuelve a enviar tu currículum actualizado usando el mismo número de teléfono <strong>${phone}</strong>:</p>
+
+      <p style="text-align:center;margin:24px 0;">
+        <a href="https://app.engloba.org.es/trabajaconnosotros" target="_blank" class="btn" style="color:#fff;text-decoration:none;font-weight:700">Actualizar currículum ▸</a>
+      </p>
+
+      <p>Gracias por tu colaboración y disculpa las molestias.</p>
+
+      <p>Un cordial saludo,<br><strong>Equipo de Recursos Humanos</strong><br>Asociación Engloba</p>
+
+      <p style="font-size:14px;color:#555;margin-top:16px;">
+        Contacto: <a href="mailto:${supportEmail}" style="color:#4f529f;text-decoration:none;">${supportEmail}</a>
+      </p>
+    </div>
+
+    <div class="footer">
+      © ${new Date().getFullYear()} Asociación Engloba
     </div>
   </div>
 </body>

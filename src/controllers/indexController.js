@@ -20,8 +20,8 @@ const {createHiring,updateHiring,closeHiring,softDeleteHiring,hardDeleteHiring,l
 const { postCancelChangeRequest, postRejectChangeRequest, postApproveChangeRequest, getPendingChangeRequests, getMyChangeRequests, postCreateChangeRequest } = require("./userChangeRequestController");
 const { moveDriveFile, adoptDriveFileIntoFiledrive } = require("./googleController");
 
-const { getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId} = require("./programController");
-const { createDispositive, getDispositive, updateDispositive, deleteDispositive, handleCoordinators, handleResponsibles, listsResponsiblesAndCoordinators, getDispositiveResponsable } = require("./dispositiveController");
+const { getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, getProgramId} = require("./programController");
+const { getDispositiveId, createDispositive, updateDispositive, deleteDispositive, handleCoordinators, handleResponsibles, listsResponsiblesAndCoordinators, getDispositiveResponsable } = require("./dispositiveController");
 
 
 
@@ -35,7 +35,7 @@ module.exports = {
     createFileDrive,updateFileDrive, deleteFileDrive,uploadFile, listBucketContents, getFile, deleteFile, getFileDrive, getPresignedPut, getPresignedGet, moveDriveFile, adoptDriveFileIntoFiledrive,
     postUploadFile, deleteIdFile, getCvPresignPut,getCvPresignGet,
     postCreateBag, getBags, getBagID,bagDeactivateId, BagPut,getBagsFilter, BagPutDeleteUser,
-    getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId,
+    getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId,getProgramId,
     offerList,offerCreate,offerUpdate,offerHardDelete,offerId,
     getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers,
     sendEmail, generateEmailHTML,
@@ -48,7 +48,7 @@ module.exports = {
     createLeave,updateLeave,closeLeave, softDeleteLeave, hardDeleteLeave, listLeaves, getLeaveById,
     createHiring,updateHiring,closeHiring,softDeleteHiring,hardDeleteHiring,listHirings,getHiringById,getLastHiringForUser,
     postCreateChangeRequest,getMyChangeRequests,getPendingChangeRequests,postApproveChangeRequest,postRejectChangeRequest,postCancelChangeRequest,
-    createDispositive,getDispositive,updateDispositive,deleteDispositive,handleCoordinators,handleResponsibles,listsResponsiblesAndCoordinators, getDispositiveResponsable,
+    createDispositive,updateDispositive,deleteDispositive,handleCoordinators,handleResponsibles,listsResponsiblesAndCoordinators, getDispositiveResponsable,getDispositiveId
 
     
 }
