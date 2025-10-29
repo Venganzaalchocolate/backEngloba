@@ -506,28 +506,8 @@ async function closeHiring(req, res) {
   return response(res, 200, out);
 }
 
-const prueba=async()=>{
-  // await backfillPeriodsFromEmbedded({ apply: true});
-  //await migrateOffersNewdispositiveId({ apply:true })
-  //await migrateUserCvNameFieldsToRefs({ apply: true });
 
 
-}
-//   await actualizacionHiringyLeave({
-//   mode: 'sync',
-// });
-//  await backfillSelectionProcessFromOffers({ apply : true})
-
-// await fullFreshMigration({
-//   apply: true,           // ejecuta cambios (no dry-run)
-//   idsField: 'devicesId', // si tu Program usa otro campo, cámbialo aquí
-//   removeEmbedded: false, // deja Program.devices legacy intacto (recomendado para trazabilidad)
-//   updateExisting: false, // no sobreescribe datos de Dispositive si ya existían
-//   programLimit: 0,       // 0 = todos los programas
-//   userLimit: 0,          // 0 = todos los usuarios con hiringPeriods
-// });
- 
-prueba();
 module.exports = {
   createHiring: catchAsync(createHiring),
   updateHiring: catchAsync(updateHiring),

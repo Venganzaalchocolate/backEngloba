@@ -146,3 +146,5 @@ dist
 credenciales.json
 
 sent_missing_dni.json
+
+datos/

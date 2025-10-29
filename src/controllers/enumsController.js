@@ -46,14 +46,6 @@ function createCategoryAndSubcategoryIndex(list = []) {
   return out;
 }
 
-function createCategoriesIndex(list = []) {
-  // Tipos simples (sin subcategorías)
-  const out = {};
-  for (const it of list) {
-    out[String(it._id)] = { name: it.name || '' };
-  }
-  return out;
-}
 
 function createProgramIndex(programs = []) {
   // Mantiene la estructura legacy: por cada programa, lista sus "devices"
@@ -104,7 +96,7 @@ const getEnums = async (req, res) => {
       Finantial.find().lean(),
     ]);
 
-      const jobsIndex = createCategoryAndSubcategoryIndex(jobs);
+    const jobsIndex = createCategoryAndSubcategoryIndex(jobs);
     const provincesIndex = createCategoryAndSubcategoryIndex(provinces);
     const studiesIndex    = createCategoryAndSubcategoryIndex(studies);
 

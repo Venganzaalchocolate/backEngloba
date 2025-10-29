@@ -94,18 +94,18 @@ const programSchema = new Schema({
         type:[Schema.Types.ObjectId],
         ref: 'Filedrive'
     },
-    devices: [deviceSchema],
+    // devices: [deviceSchema],
     cronology:[cronologySchema],
-    essentialDocumentationProgram:{
-        type:[Schema.Types.ObjectId],
-        ref: 'Documentation',
-        default:[]
-    },
-    essentialDocumentationDevice:{
-        type:[Schema.Types.ObjectId],
-        ref: 'Documentation',
-        default:[]
-    },
+    // essentialDocumentationProgram:{
+    //     type:[Schema.Types.ObjectId],
+    //     ref: 'Documentation',
+    //     default:[]
+    // },
+    // essentialDocumentationDevice:{
+    //     type:[Schema.Types.ObjectId],
+    //     ref: 'Documentation',
+    //     default:[]
+    // },
     about: {
         description: { 
             type: String

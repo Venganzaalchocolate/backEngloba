@@ -30,6 +30,18 @@ const documentation = mongoose.Schema({
     requiresSignature:{
         type: Boolean,
         default:false
+    },
+    programs: { 
+        type: [Schema.Types.ObjectId], 
+        ref: 'Program', 
+        index: true,
+        default:[] 
+    },
+    dispositives: { 
+        type: [Schema.Types.ObjectId], 
+        ref: 'Dispositive', 
+        index: true,
+        default:[]  
     }
 }, { timestamps: true });
 

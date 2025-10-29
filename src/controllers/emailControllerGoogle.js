@@ -24,7 +24,7 @@ function getGmailClient(asUser) {
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
-   2. Plantilla HTML (exactamente la que tenías)
+   2. Plantilla HTML 
    ────────────────────────────────────────────────────────────────────────── */
 function generateEmailHTML({
   logoUrl      = '',

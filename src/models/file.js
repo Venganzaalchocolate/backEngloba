@@ -52,7 +52,8 @@ const fileSchema = new Schema({
         type:String,
         enum:['Varios', 'Seguros', 'PRL', 'Funcionamiento', 'Registros', 'Sanidad'],
         default:'Varios'
-    }
+    },
+    
 }, { timestamps: true });
 
 module.exports=mongoose.model('Filedrive', fileSchema)
