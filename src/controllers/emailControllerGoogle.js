@@ -372,10 +372,10 @@ if (dispIds.length) {
       if (managerIds.length) {
         const managers = await User.find(
           { _id: { $in: managerIds } },
-          { email: 1, email_personal: 1 }
+          { email: 1 }
         ).lean();
         recipients = Array.from(new Set(
-          managers.flatMap(u => [u.email, u.email_personal]
+          managers.flatMap(u => [u.email]
             .filter(Boolean)
             .map(e => e.trim().toLowerCase()))
         ));
