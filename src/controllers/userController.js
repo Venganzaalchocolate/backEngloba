@@ -683,7 +683,7 @@ const getUserName = async (req, res) => {
 
   const users = await User.find(
     { _id: { $in: uniqueIds } },
-    { firstName: 1, lastName: 1 }
+    { firstName: 1, lastName: 1, email:1, phoneJob:1 }
   );
 
   response(res, 200, users);
@@ -1211,6 +1211,66 @@ const rehireUser = async (req, res) => {
   return response(res, 200, { user: updatedUser, period: createdPeriod });
 };
 
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Convierte un término en un patrón que ignore acentos y ñ
+const accentToClass = (s) =>
+  s
+    // normaliza espacios múltiples (por si acaso)
+    .replace(/\s+/g, " ")
+    // para cada letra, sustituye por su clase acentual
+    .replace(/a/gi, (m) => (m === m.toUpperCase() ? "[AÁÀÄÂ]" : "[aáàäâ]"))
+    .replace(/e/gi, (m) => (m === m.toUpperCase() ? "[EÉÈËÊ]" : "[eéèëê]"))
+    .replace(/i/gi, (m) => (m === m.toUpperCase() ? "[IÍÌÏÎ]" : "[iíìïî]"))
+    .replace(/o/gi, (m) => (m === m.toUpperCase() ? "[OÓÒÖÔ]" : "[oóòöô]"))
+    .replace(/u/gi, (m) => (m === m.toUpperCase() ? "[UÚÙÜÛ]" : "[uúùüû]"))
+    .replace(/n/gi, (m) => (m === m.toUpperCase() ? "[NÑ]" : "[nñ]"));
+
+const toAccentInsensitiveRegex = (term) => {
+  const escaped = escapeRegex(term);
+  const withClasses = accentToClass(escaped);
+  // "i" para case-insensitive, aunque ya cubrimos mayúsculas en clases
+  return new RegExp(withClasses, "i");
+};
+
+const getBasicUserSearch = async (req, res) => {
+    const q = (req.body.query || "").trim();
+    if (q.length < 2) return response(res, 200, { users: [] });
+
+    // Normaliza espacios y quita acentos SOLO para dividir términos;
+    // el matching real lo hará el regex acentual.
+    const normalized = q
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const terms = normalized.split(" ");
+
+    // construimos un regex por término
+    const regexTerms = terms.map(toAccentInsensitiveRegex);
+
+    // cada término debe aparecer en alguno de los campos
+    const filters = {
+    $and: [
+      ...regexTerms.map((rx) => ({
+        $or: [
+          { firstName: { $regex: rx } },
+          { lastName: { $regex: rx } },
+          { email: { $regex: rx } },
+        ],
+      })),
+      { employmentStatus: { $ne: "ya no trabaja con nosotros" } }, // 👈 añadido aquí
+    ],
+  };
+
+    const users = await User.find(filters)
+      .limit(100)
+      .select("_id firstName lastName email")
+      .lean();
+
+    return response(res, 200, { users });
+};
 
 
 module.exports = {
@@ -1225,5 +1285,6 @@ module.exports = {
   getFileUser: catchAsync(getFileUser),
   getUserName: catchAsync(getUserName),
   getAllUsersWithOpenPeriods: catchAsync(getAllUsersWithOpenPeriods),
-  getUsersCurrentStatus: catchAsync(getUsersCurrentStatus)
+  getUsersCurrentStatus: catchAsync(getUsersCurrentStatus),
+  getBasicUserSearch:catchAsync(getBasicUserSearch)
 };

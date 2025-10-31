@@ -39,7 +39,7 @@ const createDispositive = async (req, res) => {
 
   const payload = {
     name,
-    active: active === 'no' ? false : true,
+    active: active,
     address: address || '',
     email: email || '',
     phone: phone || '',
@@ -98,7 +98,16 @@ const getDispositiveId = async (req, res) => {
   if (!dispositiveId) throw new ClientError('Falta dispositiveId', 400);
 
   const dispositive = await Dispositive.findById(dispositiveId)
-    .populate('responsible coordinators')
+     .populate([
+    {
+      path: "responsible",
+      select: "firstName lastName email phoneJob", // solo estos campos
+    },
+    {
+      path: "coordinators",
+      select: "firstName lastName email phoneJob", // también puedes limitar diferente
+    },
+  ])
     .lean();
 
   if (!dispositive) throw new ClientError('Dispositivo no encontrado', 404);
@@ -120,7 +129,7 @@ const updateDispositive = async (req, res) => {
   if (!current) throw new ClientError('Dispositivo no encontrado', 404);
 
   const update = {};
-  if (active !== undefined) update.active = !!active;
+  if (active !== undefined) update.active = active;
   if (name !== undefined) update.name = name;
   if (address !== undefined) update.address = address;
   if (email !== undefined) update.email = email;

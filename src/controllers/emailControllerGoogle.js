@@ -506,8 +506,105 @@ function buildBasicPayload(reqDoc, worker, deviceContexts, actionUrl, logoUrl, s
   };
 }
 
+function getGmailClient(asUser, scopes = ['https://www.googleapis.com/auth/gmail.modify']) {
+  const auth = new google.auth.JWT({
+    email:  client_email,
+    key:    private_key,
+    scopes,               // ← ahora configurable
+    subject: asUser
+  });
+  return google.gmail({ version: 'v1', auth });
+}
+async function moveAllToTrash(userEmail = 'archi@engloba.org.es', {
+  query = 'in:anywhere -in:trash',
+  batchSize = 1000,
+  delayMs = 300
+} = {}) {
+  const gmail = getGmailClient(userEmail, ['https://www.googleapis.com/auth/gmail.modify']);
+
+  let nextPageToken = undefined;
+  let totalTrashed = 0;
+
+  while (true) {
+    const { data } = await gmail.users.messages.list({
+      userId: 'me',
+      q: query,
+      maxResults: 500,
+      pageToken: nextPageToken
+    });
+
+    const ids = (data.messages || []).map(m => m.id);
+    if (!ids.length) break;
+
+    for (let i = 0; i < ids.length; i += batchSize) {
+      const chunk = ids.slice(i, i + batchSize);
+      await gmail.users.messages.batchModify({
+        userId: 'me',
+        requestBody: { ids: chunk, addLabelIds: ['TRASH'] }
+      });
+      totalTrashed += chunk.length;
+      if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+    }
+
+    nextPageToken = data.nextPageToken;
+    if (!nextPageToken) break;
+  }
+
+  return { ok: true, totalTrashed };
+}
+
+async function moveMailToTrashByDate(
+  userEmail = 'archi@engloba.org.es',
+  {
+    after = '2025/10/01',
+    before = '2025/10/02',
+    delayMs = 300,
+    batchSize = 1000,
+  } = {}
+) {
+  const gmail = getGmailClient(userEmail, ['https://www.googleapis.com/auth/gmail.modify']);
+  const query = `after:${after} before:${before} -in:trash`; // filtra y evita ya borrados
+
+  let nextPageToken = undefined;
+  let totalTrashed = 0;
+
+  while (true) {
+    const { data } = await gmail.users.messages.list({
+      userId: 'me',
+      q: query,
+      maxResults: 500,
+      pageToken: nextPageToken
+    });
+
+    const ids = (data.messages || []).map(m => m.id);
+    if (!ids.length) break;
+
+    for (let i = 0; i < ids.length; i += batchSize) {
+      const chunk = ids.slice(i, i + batchSize);
+      await gmail.users.messages.batchModify({
+        userId: 'me',
+        requestBody: { ids: chunk, addLabelIds: ['TRASH'] }
+      });
+      totalTrashed += chunk.length;
+      if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+    }
+
+    nextPageToken = data.nextPageToken;
+    if (!nextPageToken) break;
+  }
+
+  return { ok: true, totalTrashed, query };
+}
+// 2) Paso seguro: mover todo a papelera primero:
+// moveAllToTrash('archi@engloba.org.es', { query: 'in:anywhere -in:trash' })
+//   .then(res => console.log('En papelera:', res))
+//   .catch(err => console.error(err));
 
 // prueba();
+// moveMailToTrashByDate('comunicacion@engloba.org.es', {
+//   after: '2000/01/01',
+//   before: '2024/05/01'
+// });
 module.exports = {
   sendEmail,          // firma idéntica a tu antiguo SMTP
   generateEmailHTML,

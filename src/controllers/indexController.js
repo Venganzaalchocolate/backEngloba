@@ -1,4 +1,4 @@
-const {postCreateUser, getUserID, getUsers, UserDeleteId, userPut, getUsersFilter, payroll, getFileUser, getUserName, getAllUsersWithOpenPeriods, rehireUser, getUsersCurrentStatus}=require("./userController");
+const {postCreateUser, getUserID, getUsers, UserDeleteId, userPut, getUsersFilter, payroll, getFileUser, getUserName, getAllUsersWithOpenPeriods, rehireUser, getUsersCurrentStatus, getBasicUserSearch}=require("./userController");
 const { login, validToken, verifyCode } = require("./loginController");
 const {tokenValid, tokenValidAdmin} = require("./authController");
 const { getUserCvsFilter, postCreateUserCv, getUsersCvsIDs, getUserCvs, UserCvDeleteId, UserCvPut, getUserCvID } = require("./userCvController");
@@ -31,7 +31,7 @@ module.exports = {
     getAllUsersWithOpenPeriods, postCreateUser, getUserID, getUsers, UserDeleteId, userPut,getUsersFilter,rehireUser,getUsersCurrentStatus,
     login, validToken,verifyCode,
     tokenValid, tokenValidAdmin,
-    getUserCvsFilter, postCreateUserCv, getUsersCvsIDs, getUserCvs, UserCvDeleteId, UserCvPut, payroll, getFileUser,getUserCvID, getUserName,
+    getUserCvsFilter, postCreateUserCv, getUsersCvsIDs, getUserCvs, UserCvDeleteId, UserCvPut, payroll, getFileUser,getUserCvID, getUserName,getBasicUserSearch,
     createFileDrive,updateFileDrive, deleteFileDrive,uploadFile, listBucketContents, getFile, deleteFile, getFileDrive, getPresignedPut, getPresignedGet, moveDriveFile, adoptDriveFileIntoFiledrive,
     postUploadFile, deleteIdFile, getCvPresignPut,getCvPresignGet,
     postCreateBag, getBags, getBagID,bagDeactivateId, BagPut,getBagsFilter, BagPutDeleteUser,
