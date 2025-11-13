@@ -2,6 +2,14 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
+const cronologySchema=new Schema({
+    open:{
+        type: Date,
+    },
+    closed:{
+        type:Date
+    }
+})
 const dispositiveSchema = new Schema({
   active: { type: Boolean, default: true },
   name: { type: String, required: true },
@@ -14,7 +22,7 @@ const dispositiveSchema = new Schema({
   files: [{ type: Schema.Types.ObjectId, ref: 'Filedrive' }],
   groupWorkspace: String,
   subGroupWorkspace: { type: [String], default: [] },
-
+  cronology:[cronologySchema],
   program: { type: Schema.Types.ObjectId, ref: 'Program', index: true }, // NUEVO
 }, { timestamps: true });
 

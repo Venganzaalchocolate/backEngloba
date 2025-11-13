@@ -13,7 +13,7 @@ const documentation = mongoose.Schema({
     },
     model:{
         type:String,
-        enum:['User', 'UserCv', 'Program', 'Finantial', 'Estadistics'],
+        enum:['User', 'UserCv', 'Program', 'Finantial', 'Estadistics', 'Dispositive'],
         required: true
     },
     visible:{
@@ -30,6 +30,9 @@ const documentation = mongoose.Schema({
     requiresSignature:{
         type: Boolean,
         default:false
+    },
+    modeloPDF:{
+        type:String
     },
     programs: { 
         type: [Schema.Types.ObjectId], 

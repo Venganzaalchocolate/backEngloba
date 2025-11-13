@@ -190,6 +190,15 @@ const getUserCvs = async (req, res) => {
 
 // filtrar por dni/phone/id (sin cambios, devuelve nuevos campos igualmente)
 const getUserCvsFilter = async (req, res) => {
+  /*
+  {
+    $or: [
+      { dni: { $exists: false } },
+      { dni: null },
+      { dni: '' }
+    ]
+  }
+  */
   let filter = {};
   let usuarios=[];
   if (req.body.dni){
@@ -366,7 +375,6 @@ const getUsersCvsIDs = async (req, res) => {
   const enriched = await attachWorkedInEngloba(usuarios);
   response(res, 200, enriched);
 };
-
 
 
 

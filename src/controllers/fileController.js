@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 const { uploadFileToDrive, deleteFileById, getFileById, updateFileInDrive } = require('./googleController');
-const { User, Program, Jobs, Leavetype, Filedrive } = require('../models/indexModels');
+const { User, Program, Jobs, Leavetype, Filedrive, Dispositive } = require('../models/indexModels'); // 👈 añadimos Dispositive
 
 const getCvPresignPut = async (req, res) => {
   const { id } = req.body;              // id del UserCv de tu BD
@@ -91,11 +91,6 @@ const getFileDrive = async (req, res, next) => {
 
 
 const createFileDrive = async (req, res, next) => {
-  try {
-    
-  } catch (error) {
-    
-  }
   const {
     originModel, idModel, originDocumentation,
     fileName, fileLabel, date, notes, description, cronology, category
@@ -156,27 +151,26 @@ const createFileDrive = async (req, res, next) => {
           { $push: { files: { filesId: newFile._id } } },
           { new: true, session }
         ).populate('files.filesId');
-      } else if (originModel.toLowerCase() === 'device') {
-        // Para dispositivos, se espera que venga también deviceId en el body
-        const { deviceId } = req.body;
-        if (!deviceId) throw new ClientError('Falta deviceId para asociar el archivo a un dispositivo', 400);
-        updated = await Program.findOneAndUpdate(
-          { _id: idModel, "devices._id": deviceId},
-          { $push:{"devices.$.files":newFile._id}},
+      } else if (originModel.toLowerCase() === 'dispositive') {
+        // ✅ Ahora los dispositivos son independientes
+        updated = await Dispositive.findByIdAndUpdate(
+          idModel,
+          { $push: { files: newFile._id } },
           { new: true, session }
-        ).populate({ path: 'devices.files' });
+        ).populate('files');
       }
     });
   } catch (err) {
-    if (uploadResult?.id) await deleteFileFromDrive(uploadResult.id);
+    if (uploadResult?.id) await deleteFileById(uploadResult.id);
     throw err;
   } finally {
     session.endSession();
   }
+
   response(res, 200, updated);
 };
 
-
+// ======================================================
 
 const updateFileDrive = async (req, res, next) => {
   const {
@@ -192,20 +186,17 @@ const updateFileDrive = async (req, res, next) => {
     idModel,
     category
   } = req.body;
-  // Para el caso de dispositivos, esperamos que venga deviceId
-  const { deviceId } = req.body;
-  const newFile = req.file; // Archivo opcional para actualización
+  const newFile = req.file;
 
   if (!fileId)
     throw new ClientError('Falta fileId para actualizar el archivo', 400);
 
   const session = await mongoose.startSession();
-  let updatedParent = null; // Se usará si se actualiza la referencia en el documento padre
-  let fileDoc; // Documento de Filedrive a actualizar
+  let updatedParent = null;
+  let fileDoc;
 
   try {
     await session.withTransaction(async () => {
-      // Buscar el documento de Filedrive a actualizar
       fileDoc = await Filedrive.findById(fileId).session(session);
       if (!fileDoc)
         throw new ClientError('No se encontró el archivo a actualizar', 404);
@@ -215,7 +206,7 @@ const updateFileDrive = async (req, res, next) => {
       if (notes !== undefined) fileDoc.notes = notes;
       if (date) fileDoc.date = new Date(date);
       if (cronology) fileDoc.cronology = cronology;
-      if (category) fileDoc.category=category;
+      if (category) fileDoc.category = category;
 
       if (originDocumentation) {
         fileDoc.originDocumentation = new mongoose.Types.ObjectId(originDocumentation);
@@ -224,17 +215,19 @@ const updateFileDrive = async (req, res, next) => {
         if (fileLabel !== undefined) fileDoc.fileLabel = fileLabel;
       }
 
-      // Si se envía un nuevo archivo, actualizarlo en Drive
+      // Si hay archivo nuevo
       if (newFile) {
         const updateResult = await updateFileInDrive(newFile, fileDoc.idDrive);
         if (!updateResult)
           throw new ClientError('Error al actualizar el archivo en Drive', 500);
       }
 
-      // Si se envían originModel e idModel (y, para Device, deviceId) y difieren de los actuales,
-      // se actualiza la referencia en el archivo y en el documento padre.
-      if (originModel && idModel && (originModel.toLowerCase() !== fileDoc.originModel.toLowerCase() ||
-          idModel !== fileDoc.idModel.toString())) {
+      // Si cambia de modelo o id padre
+      if (
+        originModel && idModel &&
+        (originModel.toLowerCase() !== fileDoc.originModel.toLowerCase() ||
+         idModel !== fileDoc.idModel.toString())
+      ) {
         fileDoc.originModel = originModel;
         fileDoc.idModel = new mongoose.Types.ObjectId(idModel);
 
@@ -250,34 +243,27 @@ const updateFileDrive = async (req, res, next) => {
             { $addToSet: { files: { filesId: fileDoc._id } } },
             { new: true, session }
           ).populate('files.filesId');
-        } else if (originModel.toLowerCase() === 'device') {
-          if (!deviceId)
-            throw new ClientError('Falta deviceId para actualizar la referencia del archivo en el dispositivo', 400);
-          updatedParent = await Program.findOneAndUpdate(
-            { _id: idModel, "devices._id": deviceId },
-            { $addToSet: { "devices.$.files": fileDoc._id } },
+        } else if (originModel.toLowerCase() === 'dispositive') {
+          updatedParent = await Dispositive.findByIdAndUpdate(
+            idModel,
+            { $addToSet: { files: fileDoc._id } },
             { new: true, session }
-          ).populate('devices.files');
+          ).populate('files');
         }
       }
 
-      // Guardar los cambios en Filedrive
       await fileDoc.save({ session });
     });
 
     session.endSession();
 
-    // Si updatedParent no se estableció dentro de la transacción, se obtiene el documento padre actual
     if (!updatedParent) {
       if (fileDoc.originModel.toLowerCase() === 'program') {
         updatedParent = await Program.findById(fileDoc.idModel).populate('files');
       } else if (fileDoc.originModel.toLowerCase() === 'user') {
         updatedParent = await User.findById(fileDoc.idModel).populate('files.filesId');
-      } else if (fileDoc.originModel.toLowerCase() === 'device') {
-        if (!deviceId)
-          throw new ClientError('Falta deviceId para obtener el dispositivo actualizado', 400);
-        updatedParent = await Program.findOne({ _id: fileDoc.idModel, "devices._id": deviceId })
-          .populate('devices.files');
+      } else if (fileDoc.originModel.toLowerCase() === 'dispositive') {
+        updatedParent = await Dispositive.findById(fileDoc.idModel).populate('files');
       }
     }
 
@@ -288,7 +274,7 @@ const updateFileDrive = async (req, res, next) => {
   }
 };
 
-
+// ======================================================
 
 const deleteFileDrive = async (req, res, next) => {
   const idFile = req.body.fileId;
@@ -296,17 +282,16 @@ const deleteFileDrive = async (req, res, next) => {
 
   let updatedParent = null;
 
-  // Buscar el documento en Filedrive
   const fileDoc = await Filedrive.findById(idFile);
   if (!fileDoc) throw new ClientError('No se encontró el File a eliminar', 404);
 
-  // Borrar el archivo en Google Drive si existe idDrive
+  // Eliminar en Drive
   if (fileDoc.idDrive) {
     const success = await deleteFileById(fileDoc.idDrive);
     if (!success) throw new ClientError('Error al eliminar archivo en Drive', 500);
   }
 
-  // Quitar la referencia del archivo en el documento padre según originModel
+  // Quitar del padre
   if (fileDoc.originModel.toLowerCase() === 'program') {
     updatedParent = await Program.findByIdAndUpdate(
       fileDoc.idModel,
@@ -319,23 +304,18 @@ const deleteFileDrive = async (req, res, next) => {
       { $pull: { files: { filesId: fileDoc._id } } },
       { new: true }
     ).populate('files.filesId');
-  } else if (fileDoc.originModel.toLowerCase() === 'device') {
-    const { deviceId } = req.body;
-    if (!deviceId) throw new ClientError('Falta deviceId para eliminar la referencia del archivo en el dispositivo', 400);
-    updatedParent = await Program.findOneAndUpdate(
-      { _id: fileDoc.idModel, "devices._id": deviceId },
-      { $pull: { "devices.$.files": fileDoc._id } },
+  } else if (fileDoc.originModel.toLowerCase() === 'dispositive') {
+    // ✅ ahora es independiente
+    updatedParent = await Dispositive.findByIdAndUpdate(
+      fileDoc.idModel,
+      { $pull: { files: fileDoc._id } },
       { new: true }
-    ).populate('devices.files');
+    ).populate('files');
   }
 
-  // Eliminar el documento de Filedrive de MongoDB
   await Filedrive.findByIdAndDelete(idFile);
-
   response(res, 200, updatedParent);
 };
-
-
 
 
 module.exports = {

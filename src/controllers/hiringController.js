@@ -1,6 +1,6 @@
 // controllers/hiringController.js (CommonJS)
 const mongoose = require('mongoose');
-const { User, Periods, Leaves, Preferents, Dispositive } = require('../models/indexModels');
+const { User, Periods, Leaves, Preferents, Dispositive, Jobs } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const { actualizacionHiringyLeave, backfillSelectionProcessFromOffers, repairExistingPeriods, fullFreshMigration, migrateOffersNewdispositiveId, migrateUserCvNameFieldsToRefs, backfillPeriodsFromEmbedded, getAllManagerEmails } = require('./periodoTransicionController');
 // Opcional si lo usas en un script aparte:
@@ -505,7 +505,6 @@ async function closeHiring(req, res) {
   const out = await loadAndSerializeById(hiringId);
   return response(res, 200, out);
 }
-
 
 
 module.exports = {

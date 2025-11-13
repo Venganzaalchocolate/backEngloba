@@ -1,4 +1,4 @@
-const { Filedrive, UserChangeRequest } = require('../models/indexModels');
+const { Filedrive, UserChangeRequest, Documentation, Dispositive } = require('../models/indexModels');
 const mongoose = require('mongoose');
 const { catchAsync, ClientError } = require('../utils/catchAsync');
 const { response } = require('../utils/response');
@@ -103,15 +103,169 @@ const getDocumentationUnified = async (req, res) => {
     // Y SIEMPRE añadir los “pendientes” (o también los finalizados a modo de historial):
     out.push(...normalizeUploads(cr.uploads || []));
   }
-
   // Si quieres, puedes eliminar duplicados por idDrive aquí
   response(res, 200, out);
-
 };
+
+const getDocumentationProgramDispositive = async (req, res) => {
+  const { type, id } = req.body || {};
+
+  // 🔹 Si estamos en un Programa → incluir tanto los docs de Program como los de Dispositive
+  let filter;
+  if (type === "Program") {
+    filter = { model: { $in: ["Program", "Dispositive"] } };
+  } else if (type === "Dispositive") {
+    filter = { model: "Dispositive" };
+  } else {
+    filter = { model: { $in: ["Program", "Dispositive"] } };
+  }
+
+  const list = await Documentation.find(filter).lean();
+
+  // 🔹 Documentación vinculada al id
+  let linkedDocs = [];
+  if (id) {
+    const field =
+      type === "Program"
+        ? "programs"
+        : type === "Dispositive"
+        ? "dispositives"
+        : null;
+
+    if (field) {
+      linkedDocs = await Documentation.find({ [field]: id }).lean();
+    }
+  }
+
+  response(res, 200, { list, linkedDocs });
+};
+
+
+/**
+ * Añade o quita documentación de programas o dispositivos.
+ * Reglas:
+ *  - Si el documento es de tipo Program → actúa solo sobre programId.
+ *  - Si el documento es de tipo Dispositive:
+ *     - si viene programId → aplica a todos los dispositivos de ese programa.
+ *     - si viene dispositiveId → aplica solo a ese dispositivo.
+ */
+const addProgramOrDispositiveToDocumentation = async (req, res) => {
+  const { documentationId, programId, dispositiveId, action } = req.body || {};
+
+  if (!documentationId) return response(res, 400, { error: "Falta documentationId" });
+  if (!["add", "remove"].includes(action)) {
+    return response(res, 400, { error: "Acción inválida. Usa 'add' o 'remove'." });
+  }
+
+  const doc = await Documentation.findById(documentationId);
+  if (!doc) return response(res, 404, { error: "Documento no encontrado" });
+
+  const session = await mongoose.startSession();
+  await session.withTransaction(async () => {
+    const update = {};
+    const mode = action === "add" ? "$addToSet" : "$pull";
+
+    // === 🔹 Caso 1: Añadir o quitar a un PROGRAMA ===
+    if (programId) {
+      if (!mongoose.isValidObjectId(programId))
+        throw new ClientError("programId inválido", 400);
+
+      // Si es documento de programa, solo lo añadimos a programs[]
+      if (doc.model === "Program") {
+        update[mode] = { programs: programId };
+      }
+
+      // Si es documento de dispositivo, lo aplicamos globalmente al programa
+      else if (doc.model === "Dispositive") {
+        update[mode] = { programs: programId };
+
+        // Buscar todos los dispositivos del programa
+        const dispositives = await Dispositive.find({ program: programId }, "_id").lean();
+        const dispositiveIds = dispositives.map((d) => d._id);
+
+        if (dispositiveIds.length > 0) {
+          if (action === "add") {
+            update["$addToSet"] = {
+              ...update["$addToSet"],
+              dispositives: { $each: dispositiveIds },
+            };
+          } else {
+            update["$pull"] = {
+              ...update["$pull"],
+              dispositives: { $in: dispositiveIds },
+            };
+          }
+        }
+      }
+    }
+
+    // === 🔹 Caso 2: Añadir o quitar a un DISPOSITIVO individual ===
+    else if (dispositiveId) {
+      if (!mongoose.isValidObjectId(dispositiveId))
+        throw new ClientError("dispositiveId inválido", 400);
+
+      update[mode] = { dispositives: dispositiveId };
+    }
+
+    // === Ejecutar la actualización ===
+    const updated = await Documentation.findByIdAndUpdate(
+      documentationId,
+      update,
+      { new: true, session }
+    ).lean();
+
+    response(res, 200, updated);
+  });
+
+  session.endSession();
+};
+
+
+
+// ======================================================
+// 📦 Sincronizar Documentación de Programa con sus Dispositivos
+// ======================================================
+const syncProgramDocsToDevices = async (req, res) => {
+  const { programId, documentationId, action } = req.body || {};
+
+  if (!programId || !documentationId)
+    throw new ClientError("Faltan datos obligatorios", 400);
+  if (!["add", "remove"].includes(action))
+    throw new ClientError("Acción inválida", 400);
+
+  // Buscar dispositivos asociados al programa
+  const dispositives = await Dispositive.find({ program: programId }).select("_id name").lean();
+  if (!dispositives.length) {
+    return response(res, 200, { message: "El programa no tiene dispositivos asociados." });
+  }
+
+  // Actualizar el campo 'dispositives' en el documento de Documentation
+  const update =
+    action === "remove"
+      ? { $pull: { dispositives: { $in: dispositives.map(d => d._id) } } }
+      : { $addToSet: { dispositives: { $each: dispositives.map(d => d._id) } } };
+
+  const updatedDoc = await Documentation.findByIdAndUpdate(
+    documentationId,
+    update,
+    { new: true }
+  ).lean();
+
+  response(res, 200, {
+    message:
+      action === "remove"
+        ? `Documento eliminado de ${dispositives.length} dispositivos.`
+        : `Documento añadido a ${dispositives.length} dispositivos.`,
+    updatedDoc,
+  });
+};
+
 
 module.exports = {
     getDocumentation: catchAsync(getDocumentation),
-    getDocumentationUnified:catchAsync(getDocumentationUnified)
-    
+    getDocumentationUnified:catchAsync(getDocumentationUnified),
+    getDocumentationProgramDispositive:catchAsync(getDocumentationProgramDispositive),
+    addProgramOrDispositiveToDocumentation:catchAsync(addProgramOrDispositiveToDocumentation),
+    syncProgramDocsToDevices:catchAsync(syncProgramDocsToDevices)
   };
   

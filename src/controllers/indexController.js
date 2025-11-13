@@ -9,7 +9,7 @@ const { postCreateBag, getBags, getBagID, bagDeactivateId, BagPut, getBagsFilter
 const { offerList,offerCreate,offerUpdate,offerHardDelete,offerId } = require("./offerController");
 const { getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers } = require("./enumsController");
 const {sendEmail, generateEmailHTML}=require("./emailControllerGoogle");
-const { getDocumentation,getDocumentationUnified } = require("./documentationController");
+const { getDocumentation,getDocumentationUnified, getDocumentationProgramDispositive, addProgramOrDispositiveToDocumentation, syncProgramDocsToDevices } = require("./documentationController");
 const { confirmSignature, requestSignature } = require("./pdfSignController");
 const { auditMissingFieldsInfoUser, auditMissingFieldsProgram, auditMissingFieldsDevice,auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram, auditMissingFieldsDocumentationDevice, auditMissingFieldsContractAndLeave } = require("./auditorController");
 const { getCvOverview, getCvMonthly, getCvDistribution, getCvConversion, auditWorkersStats, getWorkersStats} = require("./statisticsController");
@@ -39,7 +39,7 @@ module.exports = {
     offerList,offerCreate,offerUpdate,offerHardDelete,offerId,
     getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers,
     sendEmail, generateEmailHTML,
-    getDocumentation, getDocumentationUnified,
+    getDocumentation, getDocumentationUnified,getDocumentationProgramDispositive,addProgramOrDispositiveToDocumentation,syncProgramDocsToDevices,
     requestSignature,confirmSignature,
     auditMissingFieldsInfoUser,auditMissingFieldsProgram,auditMissingFieldsDevice,auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram,auditMissingFieldsDocumentationDevice,auditMissingFieldsContractAndLeave,
     getCvOverview,getCvMonthly,getCvDistribution, getCvConversion,auditWorkersStats, getWorkersStats,

@@ -1,5 +1,5 @@
 // controllers/dispositiveController.js
-const { Provinces, Dispositive, Program } = require('../models/indexModels');
+const { Provinces, Dispositive, Program, Documentation } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { generateEmailHTML, sendEmail } = require('./emailControllerGoogle');
@@ -22,44 +22,41 @@ const createDispositive = async (req, res) => {
     email,
     phone,
     province,
-    program,          // ← preferido
-    programId,        // ← compat
+    program,
+    programId,
   } = req.body;
 
-  if (!name) throw new ClientError('Falta el nombre del dispositivo', 400);
+  if (!name) throw new ClientError("Falta el nombre del dispositivo", 400);
 
   const programRef = program ?? programId ?? null;
   let programDoc = null;
 
+  // 🧩 Validar programa
   if (programRef) {
-    if (!isValidId(programRef)) throw new ClientError('program inválido', 400);
+    if (!isValidId(programRef)) throw new ClientError("program inválido", 400);
     programDoc = await Program.findById(programRef);
-    if (!programDoc) throw new ClientError('No existe el programa', 404);
+    if (!programDoc)
+      throw new ClientError("No existe el programa especificado", 404);
   }
 
+  // 🧱 Crear dispositivo base
   const payload = {
     name,
     active: active,
-    address: address || '',
-    email: email || '',
-    phone: phone || '',
+    address: address || "",
+    email: email || "",
+    phone: phone || "",
     responsible: [],
     coordinators: [],
     province: isValidId(province) ? province : null,
     files: [],
-    program: programDoc ? programDoc._id : undefined, // puede quedar undefined/null
+    program: programDoc ? programDoc._id : undefined,
   };
 
-  let created;
-  try {
-    created = await Dispositive.create(payload);
-  } catch (err) {
-    if (isDupKey(err)) {
-      throw new ClientError('Ya existe un dispositivo con ese nombre en el programa', 409);
-    }
-    throw err;
-  }
+  // 🚀 Crear dispositivo
+  const created = await Dispositive.create(payload);
 
+  // 🧩 Asociar al programa padre
   if (programDoc) {
     await Program.updateOne(
       { _id: programDoc._id },
@@ -67,30 +64,66 @@ const createDispositive = async (req, res) => {
     );
   }
 
-  try {
-    await ensureDeviceGroup(created, programDoc || undefined);
-  } catch (e) {
-    console.log(e);
+  // ⚙️ Asegurar grupo Workspace
+  if (programDoc) await ensureDeviceGroup(created, programDoc);
+
+  // 🧾 Propagar documentación tipo “Dispositive” del programa
+  if (programDoc) {
+    const programObjectId = new mongoose.Types.ObjectId(programDoc._id);
+
+    const docs = await Documentation.find({
+      model: "Dispositive",
+      $or: [
+        { programs: { $in: [programObjectId] } },
+        { programs: { $in: [String(programDoc._id)] } },
+      ],
+    })
+      .select("_id")
+      .lean();
+
+    if (docs.length) {
+      for (const d of docs) {
+        await Documentation.updateOne(
+          { _id: d._id },
+          { $addToSet: { dispositives: created._id } }
+        );
+      }
+    }
   }
 
-  // Email informativo (opcional)
+  // 📬 Email informativo (no crítico)
   const asunto = "Creación de un nuevo dispositivo";
-  const textoPlano = `Programa padre: ${programDoc ? programDoc.name : '—'}
-            Nombre del Dispositivo: ${created.name}
-            Creador: ${req.body?.userCreate}
-            `;
+  const textoPlano = `Programa padre: ${programDoc ? programDoc.name : "—"}
+Nombre del Dispositivo: ${created.name}
+Creador: ${req.body?.userCreate || "—"}`;
   const htmlContent = generateEmailHTML({
     logoUrl: "https://app.engloba.org.es/graphic/logotipo_blanco.png",
     title: "Creación de un nuevo dispositivo",
-    greetingName: 'Persona maravillosa',
-    bodyText: 'Se ha creado un nuevo dispositivo',
+    greetingName: "Persona maravillosa",
+    bodyText: "Se ha creado un nuevo dispositivo",
     highlightText: textoPlano,
-    footerText: "Gracias por usar nuestra plataforma. Si tienes dudas, contáctanos."
+    footerText:
+      "Gracias por usar nuestra plataforma. Si tienes dudas, contáctanos.",
   });
-  try { await sendEmail(['comunicacion@engloba.org.es', 'web@engloba.org.es'], asunto, textoPlano, htmlContent); } catch (_) {}
 
-  return response(res, 200, { dispositive: created, programId: created.program || null });
+  try {
+    await sendEmail(
+      ["comunicacion@engloba.org.es", "web@engloba.org.es"],
+      asunto,
+      textoPlano,
+      htmlContent
+    );
+  } catch (_) {}
+
+  // ✅ Respuesta final
+  return response(res, 200, {
+    dispositive: created,
+    programId: created.program || null,
+  });
 };
+
+
+
 
 /** Obtener un Dispositive por id (sin programId) */
 const getDispositiveId = async (req, res) => {
@@ -107,6 +140,13 @@ const getDispositiveId = async (req, res) => {
       path: "coordinators",
       select: "firstName lastName email phoneJob", // también puedes limitar diferente
     },
+    {
+        path: "files",
+        populate: {
+          path: "originDocumentation",
+          select: "name duration requiresSignature categoryFiles", // 👈 datos esenciales
+        },
+      }
   ])
     .lean();
 
@@ -122,29 +162,31 @@ const getDispositiveId = async (req, res) => {
  * - Si llega program = null/''/false: desvincula del programa y lo saca de devicesId
  */
 const updateDispositive = async (req, res) => {
-  const { dispositiveId, active, name, address, email, phone, province, program } = req.body;
-  if (!dispositiveId) throw new ClientError('Falta dispositiveId', 400);
+  const { dispositiveId, active, name, address, email, phone, province, program, cronology, type} = req.body;
+if (!dispositiveId) throw new ClientError('Falta dispositiveId', 400);
 
   const current = await Dispositive.findById(dispositiveId);
   if (!current) throw new ClientError('Dispositivo no encontrado', 404);
 
   const update = {};
+  const query = { _id: dispositiveId };
+  let unset = null;
+  let newProgramId = null;
+  const oldProgramId = current.program ? String(current.program) : null;
+
+  // Campos generales
   if (active !== undefined) update.active = active;
   if (name !== undefined) update.name = name;
   if (address !== undefined) update.address = address;
   if (email !== undefined) update.email = email;
   if (phone !== undefined) update.phone = phone;
-  if (province !== undefined) update.province = isValidId(province) ? province : null;
+  if (province !== undefined)
+    update.province = isValidId(province) ? province : null;
 
-  const oldProgramId = current.program ? String(current.program) : null;
-
-  // construir update de programa ($set o $unset)
-  let unset = null;
-  let newProgramId = null;
-
+  // Programa
   if (program !== undefined) {
     if (isDetach(program)) {
-      unset = { program: "" };
+      unset = { program: '' };
     } else {
       if (!isValidId(program)) throw new ClientError('program inválido', 400);
       newProgramId = String(program);
@@ -156,13 +198,41 @@ const updateDispositive = async (req, res) => {
     }
   }
 
+  // 🧩 CRONOLOGY
+  const updateObj = {};
+  if (cronology !== undefined) {
+    if (!type || !['add', 'delete', 'edit'].includes(type))
+      throw new ClientError('Falta el tipo o es inválido para cronology', 400);
+
+    if (type === 'add') {
+      Object.assign(updateObj, { $addToSet: { cronology } });
+    } else if (type === 'delete') {
+      if (!cronology._id)
+        throw new ClientError('Falta _id para eliminar cronology', 400);
+      Object.assign(updateObj, { $pull: { cronology: { _id: cronology._id } } });
+    } else if (type === 'edit') {
+      if (!cronology._id)
+        throw new ClientError('Falta _id para editar cronology', 400);
+      Object.assign(updateObj, { $set: { 'cronology.$': cronology } });
+      query['cronology._id'] = cronology._id;
+    }
+  }
+
+  // Combinar los $set/$unset generados arriba con updateObj de cronology
+  if (Object.keys(update).length) {
+    Object.assign(updateObj, { $set: { ...(updateObj.$set || {}), ...update } });
+  }
+  if (unset) {
+    Object.assign(updateObj, { $unset: unset });
+  }
+
+  // 🧠 Ejecutar actualización
   let updated;
   try {
-    updated = await Dispositive.findByIdAndUpdate(
-      dispositiveId,
-      { ...(Object.keys(update).length ? { $set: update } : {}), ...(unset ? { $unset: unset } : {}) },
-      { new: true, runValidators: true }
-    );
+    updated = await Dispositive.findOneAndUpdate(query, updateObj, {
+      new: true,
+      runValidators: true,
+    });
   } catch (err) {
     if (isDupKey(err)) {
       throw new ClientError('Ya existe un dispositivo con ese nombre en el programa', 409);
@@ -170,7 +240,7 @@ const updateDispositive = async (req, res) => {
     throw err;
   }
 
-  // Sincronizar Program.devicesId si cambió de programa o se desvinculó
+  // 🔄 Sincronizar Program.devicesId si cambió de programa o se desvinculó
   if (newProgramId && newProgramId !== oldProgramId) {
     if (oldProgramId) {
       await Program.updateOne({ _id: oldProgramId }, { $pull: { devicesId: updated._id } });
