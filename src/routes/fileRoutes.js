@@ -18,7 +18,9 @@ const {
   confirmSignature,
   requestSignature,
   getCvPresignPut,
-  getCvPresignGet
+  getCvPresignGet,
+  zipMultipleFiles,
+  zipPayrolls
 } = require('../controllers/indexController');
 
 // Multer en memoria (CV, FileDrive)
@@ -40,5 +42,9 @@ router.post('/cv/presign-get',  tokenValid, getCvPresignGet);
 // NUEVAS RUTAS PARA FIRMA DE PDF
 router.post('/pdf/request-sign', tokenValid, requestSignature);
 router.post('/pdf/confirm-sign', tokenValid, confirmSignature);
+
+router.post("/zip-files", tokenValid, zipMultipleFiles);
+router.post("/zip-payrolls", tokenValid, zipPayrolls);
+
 
 module.exports = router;

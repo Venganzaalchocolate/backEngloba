@@ -45,7 +45,18 @@ const documentation = mongoose.Schema({
         ref: 'Dispositive', 
         index: true,
         default:[]  
-    }
+    },
+    // Dentro de documentationSchema (o como se llame):
+dynamicTemplate: {
+  type: Schema.Types.ObjectId,
+  ref: 'DynamicDocTemplate',
+},
+
+dynamicRequired: {
+  type: Boolean,
+  default: false,
+},
+
 }, { timestamps: true });
 
 module.exports=mongoose.model('Documentation', documentation)

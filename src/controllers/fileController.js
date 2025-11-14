@@ -1,11 +1,108 @@
 
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const { uploadFile, getFileCv, deleteFile, getPresignedPut, getPresignedGet } = require('./ovhController');
-const fs = require('fs');
-const path = require('path');
 const mongoose = require('mongoose');
-const { uploadFileToDrive, deleteFileById, getFileById, updateFileInDrive } = require('./googleController');
-const { User, Program, Jobs, Leavetype, Filedrive, Dispositive } = require('../models/indexModels'); // 👈 añadimos Dispositive
+const { uploadFileToDrive, deleteFileById, getFileById, updateFileInDrive, appendFilesToArchiveOptimized } = require('./googleController');
+const { User, Program, Jobs, Leavetype, Filedrive, Dispositive, Documentation } = require('../models/indexModels'); // 👈 añadimos Dispositive
+const archiver = require("archiver");
+
+const sanitize = (text) =>
+  String(text || "")
+    .normalize("NFD")                          // quitar acentos
+    .replace(/[\u0300-\u036f]/g, "")           // limpiar caracteres combinados
+    .replace(/[^a-zA-Z0-9_\-]/g, "_")          // solo permitir A-Z 0-9 _ -
+    .replace(/_+/g, "_")                       // evitar ___ repetidos
+    .trim()
+    .slice(0, 60);      
+
+    
+
+const zipPayrolls = async (req, res) => {
+  const { userId } = req.body;
+
+  if (!userId) throw new ClientError("Falta userId", 400);
+
+  const user = await User.findById(userId).lean();
+  if (!user || !user.payrolls || user.payrolls.length === 0)
+    throw new ClientError("El usuario no tiene nóminas", 404);
+
+  const archive = archiver("zip", { zlib: { level: 9 } });
+
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename=nominas_${sanitize(user.firstName)}_${sanitize(user.lastName)}.zip`
+  );
+
+  archive.pipe(res);
+
+  // Preparamos una lista de "fileDocs" para la función optimizada
+  const payrollDocs = user.payrolls.map(p => ({
+    idDrive: p.pdf,
+    fileLabel: `Nomina_${p.payrollYear}_${String(p.payrollMonth).padStart(2, "0")}`,
+    description: null,
+    originDocumentation: null
+  }));
+
+  // 🚀 Descargas concurrentes (más rápido y estable)
+  await appendFilesToArchiveOptimized(payrollDocs, archive, 5);
+
+  await archive.finalize();
+};
+
+const zipMultipleFiles = async (req, res) => {
+  const { fileIds } = req.body;
+
+  if (!Array.isArray(fileIds) || fileIds.length === 0) {
+    throw new ClientError("fileIds debe ser un array con IDs", 400);
+  }
+
+  // 1️⃣ Obtener Filedrive
+  const files = await Filedrive.find({ _id: { $in: fileIds } }).lean();
+  if (!files || files.length === 0) {
+    throw new ClientError("No se encontraron archivos para esos IDs", 404);
+  }
+
+  // 2️⃣ Preparar ZIP
+  const archive = archiver("zip", { zlib: { level: 9 } });
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Disposition", `attachment; filename=Documentos.zip`);
+  archive.pipe(res);
+
+  // 3️⃣ Preparamos docs para la función optimizada
+  const listDocs = [];
+
+  for (const fileDoc of files) {
+    let baseName = "documento";
+
+    // fileLabel
+    if (fileDoc.fileLabel) baseName = fileDoc.fileLabel;
+
+    // description
+    else if (fileDoc.description) baseName = fileDoc.description;
+
+    // documentación oficial
+    if (fileDoc.originDocumentation) {
+      const doc = await Documentation.findById(fileDoc.originDocumentation).select("name");
+      if (doc?.name) baseName = doc.name;
+    }
+
+    listDocs.push({
+      idDrive: fileDoc.idDrive,
+      fileLabel: sanitize(baseName),
+      description: null,
+      originDocumentation: null
+    });
+  }
+
+  // 🚀 Descarga concurrente optimizada (hasta 5 en paralelo)
+  await appendFilesToArchiveOptimized(listDocs, archive, 5);
+
+  // 4️⃣ Finalizar ZIP
+  await archive.finalize();
+};
+
+
 
 const getCvPresignPut = async (req, res) => {
   const { id } = req.body;              // id del UserCv de tu BD
@@ -328,4 +425,7 @@ module.exports = {
   getFileDrive: catchAsync(getFileDrive),
   getCvPresignPut: catchAsync(getCvPresignPut),
   getCvPresignGet: catchAsync(getCvPresignGet),
+  zipMultipleFiles: catchAsync(zipMultipleFiles),
+  zipPayrolls:catchAsync(zipPayrolls)
+
 };

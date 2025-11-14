@@ -3,7 +3,7 @@ const { login, validToken, verifyCode } = require("./loginController");
 const {tokenValid, tokenValidAdmin} = require("./authController");
 const { getUserCvsFilter, postCreateUserCv, getUsersCvsIDs, getUserCvs, UserCvDeleteId, UserCvPut, getUserCvID } = require("./userCvController");
 const { uploadFile, listBucketContents, getFileCv, deleteFile, getPresignedPut, getPresignedGet } = require("./ovhController");
-const { postUploadFile, getFile, deleteIdFile, createFileDrive, updateFileDrive, deleteFileDrive, getFileDrive, getCvPresignPut,getCvPresignGet} = require("./fileController");
+const { postUploadFile, getFile, deleteIdFile, createFileDrive, updateFileDrive, deleteFileDrive, getFileDrive, getCvPresignPut,getCvPresignGet, zipMultipleFiles, zipPayrolls} = require("./fileController");
 const { postCreateBag, getBags, getBagID, bagDeactivateId, BagPut, getBagsFilter, BagPutDeleteUser } = require("./bagController");
 
 const { offerList,offerCreate,offerUpdate,offerHardDelete,offerId } = require("./offerController");
@@ -33,7 +33,7 @@ module.exports = {
     tokenValid, tokenValidAdmin,
     getUserCvsFilter, postCreateUserCv, getUsersCvsIDs, getUserCvs, UserCvDeleteId, UserCvPut, payroll, getFileUser,getUserCvID, getUserName,getBasicUserSearch,
     createFileDrive,updateFileDrive, deleteFileDrive,uploadFile, listBucketContents, getFile, deleteFile, getFileDrive, getPresignedPut, getPresignedGet, moveDriveFile, adoptDriveFileIntoFiledrive,
-    postUploadFile, deleteIdFile, getCvPresignPut,getCvPresignGet,
+    zipPayrolls, zipMultipleFiles, postUploadFile, deleteIdFile, getCvPresignPut,getCvPresignGet,
     postCreateBag, getBags, getBagID,bagDeactivateId, BagPut,getBagsFilter, BagPutDeleteUser,
     getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId,getProgramId,
     offerList,offerCreate,offerUpdate,offerHardDelete,offerId,
