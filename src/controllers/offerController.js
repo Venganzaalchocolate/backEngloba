@@ -3,7 +3,6 @@ const { Types } = require('mongoose');
 const { Offer } = require('../models/indexModels');
 // IMPORTAMOS DESDE TUS UTILS
 const { catchAsync, response, ClientError, validateRequiredFields, toId } = require('../utils/indexUtils');
-const { migracionOfertasStudies, migrateSolicitants } = require('./periodoTransicionController');
 
 // -------------------- Helpers --------------------
 
