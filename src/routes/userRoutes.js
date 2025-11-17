@@ -24,8 +24,7 @@ router.post("/payroll", upload.single('pdf'), payroll)
 router.post("/usersname", tokenValid, getUserName)
 router.post('/user', tokenValid, getUserID)
 router.post('/searchusername', tokenValid, getBasicUserSearch);
-
-router.put("/modifyuser", upload.any(), tokenValid, userPut);
+router.post("/modifyuser", tokenValid, userPut);
 
 router.post('/createemployer', upload.any(), postCreateUser);
 

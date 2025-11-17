@@ -285,6 +285,10 @@ const UserSchema = new Schema({
     studies:{
         type:[Schema.Types.ObjectId],
         ref: 'Studies'
+    },
+    tracking:{
+        type:Boolean,
+        default:false
     }
 }, { timestamps: true });
 

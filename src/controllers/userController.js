@@ -75,7 +75,7 @@ const postCreateUser = async (req, res) => {
     studies,
     phoneJobNumber,
     phoneJobExtension,
-    hiringPeriods
+    hiringPeriods,
   } = req.body;
 
   // 1) User payload
@@ -96,6 +96,8 @@ const postCreateUser = async (req, res) => {
     throw new ClientError('Fecha de nacimiento no válida', 400);
   }
   userData.birthday = bday;
+
+  
 
   if (disability) userData.disability = disability;
   if (fostered === 'si') userData.fostered = true;
@@ -150,6 +152,7 @@ const postCreateUser = async (req, res) => {
       throw new ClientError(`'${dupValue}' está duplicado, no se pudo crear el usuario, ya que debe ser único`, 400);
     }
     throw new ClientError('Error al crear el usuario', 500);
+
   }
 
   // 4) Hiring doc (usa dispositiveId)
@@ -767,157 +770,122 @@ const UserDeleteId = async (req, res) => {
 // userPut (igual salvo lógica previa intacta)
 // =========================
 const userPut = async (req, res) => {
-  const files = req.files;
-
   if (!req.body._id) {
-    throw new ClientError('El ID de usuario es requerido', 400);
+    throw new ClientError("El ID de usuario es requerido", 400);
   }
-  let updateFields = {};
 
-  if (req.body.employmentStatus){
-    const userAux = await User
-      .findById(req.body._id)
-      .select({ firstName: 1, lastName: 1, email: 1 });
+  const updateFields = {};
+  const userId = req.body._id;
 
-    if (req.body.employmentStatus === 'ya no trabaja con nosotros') {
-      const open = await hasOpenHiring(req.body._id);
+  // =============== EMPLOYMENT STATUS (requiere lógica especial) ===============
+  if (req.body.employmentStatus) {
+    const userAux = await User.findById(userId).select("email");
+
+    if (req.body.employmentStatus === "ya no trabaja con nosotros") {
+      const open = await hasOpenHiring(userId);
       if (open) {
         throw new ClientError(
-          `Para cambiar el estado laboral a "Ya no trabaja con nosotros" se deben cerrar todos los periodos de contratación`,
+          `Para cambiar el estado laboral a "Ya no trabaja con nosotros" debes cerrar todos los periodos abiertos`,
           400
         );
       }
       if (userAux.email) await deleteUserByEmailWS(userAux.email);
-      updateFields.email = '';
-      updateFields.employmentStatus = 'ya no trabaja con nosotros';
+
+      updateFields.employmentStatus = "ya no trabaja con nosotros";
+      updateFields.email = "";
     } else {
       updateFields.employmentStatus = req.body.employmentStatus;
-      if (!userAux.email){
-        const created = await createUserWS(userAux._id);
-        updateFields.email = created.email;
+
+      if (!userAux.email) {
+        const ws = await createUserWS(userId);
+        updateFields.email = ws.email;
       }
     }
   }
 
-  if (req.body.vacationDays) {
-    updateFields.vacationDays = parseField(req.body.vacationDays, 'vacationDays').map((date) => {
-      const parsedDate = new Date(date);
-      if (isNaN(parsedDate)) throw new ClientError(`Fecha no válida en vacationDays: ${date}`, 400);
-      return parsedDate;
-    });
-  }
-
-  if (req.body.personalDays) {
-    updateFields.personalDays = parseField(req.body.personalDays, 'personalDays').map((date) => {
-      const parsedDate = new Date(date);
-      if (isNaN(parsedDate)) throw new ClientError(`Fecha no válida en personalDays: ${date}`, 400);
-      return parsedDate;
-    });
-  }
-
-  updateFields = { ...updateFields };
-
+  // =============== CAMPOS BÁSICOS ===============
   if (req.body.firstName) updateFields.firstName = toTitleCase(req.body.firstName);
   if (req.body.lastName) updateFields.lastName = toTitleCase(req.body.lastName);
-  if (req.body.email_personal) updateFields.email_personal = req.body.email_personal.toLowerCase();
+  if (req.body.email_personal)
+    updateFields.email_personal = req.body.email_personal.toLowerCase();
   if (req.body.role) updateFields.role = req.body.role;
   if (req.body.phone) updateFields.phone = req.body.phone;
-  if (req.body.dni) updateFields.dni = req.body.dni.replace(/\s+/g, "").trim().toUpperCase();
-  if (req.body.employmentStatus) updateFields.employmentStatus = req.body.employmentStatus;
-  if (req.body.socialSecurityNumber) updateFields.socialSecurityNumber = req.body.socialSecurityNumber;
-  if (req.body.bankAccountNumber) updateFields.bankAccountNumber = req.body.bankAccountNumber;
+  if (req.body.dni)
+    updateFields.dni = req.body.dni.replace(/\s+/g, "").trim().toUpperCase();
+  if (req.body.socialSecurityNumber)
+    updateFields.socialSecurityNumber = req.body.socialSecurityNumber;
+  if (req.body.bankAccountNumber)
+    updateFields.bankAccountNumber = req.body.bankAccountNumber;
 
-  if (req.body.disPercentage) updateFields.disability = { percentage: req.body.disPercentage };
-
+  // =============== BIRTHDAY ===============
   if (req.body.birthday) {
-    const parsedDate = new Date(req.body.birthday);
-    if (isNaN(parsedDate)) {
-      throw new ClientError(`Fecha de nacimiento no válida`, 400);
-    } else {
-      updateFields.birthday = parsedDate;
-    }
+    const parsed = new Date(req.body.birthday);
+    if (isNaN(parsed)) throw new ClientError("Fecha de nacimiento no válida", 400);
+    updateFields.birthday = parsed;
   }
 
-  if (req.body.disNotes) updateFields.disability = { ...(updateFields.disability || {}), notes: req.body.disNotes };
-  if (req.body.gender) updateFields.gender = req.body.gender;
+  // =============== DISCAPACIDAD ===============
+  if (req.body.disPercentage || req.body.disNotes) {
+    updateFields.disability = {};
+    if (req.body.disPercentage)
+      updateFields.disability.percentage = req.body.disPercentage;
+    if (req.body.disNotes) updateFields.disability.notes = req.body.disNotes;
+  }
+
+  // =============== FOSTERED / APAFA / PDP / TRACKING ===============
   if (req.body.fostered === "si") updateFields.fostered = true;
-  else if (req.body.fostered === "no") updateFields.fostered = false;
-  if (req.body.apafa === "si") updateFields.apafa = true;
-  else if (req.body.apafa === "no") updateFields.apafa = false;
-  if (req.body.consetmentDataProtection === "si") updateFields.consetmentDataProtection = true;
-  else if (req.body.consetmentDataProtection === "no") updateFields.consetmentDataProtection = false;
+  if (req.body.fostered === "no") updateFields.fostered = false;
 
+  if (req.body.apafa === "si") updateFields.apafa = true;
+  if (req.body.apafa === "no") updateFields.apafa = false;
+
+  if (req.body.consetmentDataProtection === "si")
+    updateFields.consetmentDataProtection = true;
+  if (req.body.consetmentDataProtection === "no")
+    updateFields.consetmentDataProtection = false;
+
+  if (req.body.tracking === "si") updateFields.tracking = true;
+  if (req.body.tracking === "no") updateFields.tracking = false;
+
+  // =============== STUDIES ===============
   if (req.body.studies) {
-    updateFields.studies = parseField(req.body.studies, 'studies').map((s) => new mongoose.Types.ObjectId(s));
+    const studiesParsed = parseField(req.body.studies, "studies");
+    updateFields.studies = studiesParsed.map((s) => new mongoose.Types.ObjectId(s));
   }
 
+  // =============== PHONEJOB ===============
   if (req.body.phoneJobNumber || req.body.phoneJobExtension) {
     updateFields.phoneJob = {};
-    if (req.body.phoneJobNumber) updateFields.phoneJob.number = req.body.phoneJobNumber;
-    if (req.body.phoneJobExtension) updateFields.phoneJob.extension = req.body.phoneJobExtension;
+    if (req.body.phoneJobNumber)
+      updateFields.phoneJob.number = req.body.phoneJobNumber;
+    if (req.body.phoneJobExtension)
+      updateFields.phoneJob.extension = req.body.phoneJobExtension;
   }
 
-  if (files && files.length > 0) {
-    const folderId = process.env.GOOGLE_DRIVE_APPFILE;
-    const user = await User.findById(req.body._id).select('files');
-    const existingFiles = user.files || [];
-    const newFiles = [];
-
-    for (const file of files) {
-      const uniqueFileName = `${req.body._id}-${file.fieldname}.pdf`;
-      const fileTag = file.fieldname;
-      const description = `Archivo subido para ${fileTag}`;
-      const nameDateFile = file.fieldname + '-date';
-      let date = null;
-
-      if (req.body[nameDateFile]) {
-        const timestamp = Date.parse(req.body[nameDateFile]);
-        if (!isNaN(timestamp)) date = new Date(req.body[nameDateFile]);
-      }
-
-      try {
-        const fileDriveData = await uploadFileToDrive(file, folderId, uniqueFileName);
-        newFiles.push({
-          fileName: fileDriveData.id,
-          fileTag,
-          description,
-          date,
-        });
-      } catch {
-        throw new ClientError(`Error al procesar el archivo ${file.fieldname}`, 500);
-      }
-    }
-
-    const combinedFiles = [
-      ...existingFiles.filter((file) => !newFiles.some((n) => n.fileTag === file.fileTag)),
-      ...newFiles,
-    ];
-
-    updateFields.files = combinedFiles;
-  }
-
+  // =============== ACTUALIZACIÓN FINAL ===============
   try {
     const updatedUser = await User.findOneAndUpdate(
-      { _id: req.body._id },
+      { _id: userId },
       { $set: updateFields },
       { new: true, runValidators: true }
     ).populate({
-      path: 'files.filesId',
-      model: 'Filedrive',
+      path: "files.filesId",
+      model: "Filedrive",
     });
 
-    response(res, 200, updatedUser);
+    return response(res, 200, updatedUser);
   } catch (error) {
     if (error.code === 11000) {
       const [[, dupValue]] = Object.entries(error.keyValue);
       throw new ClientError(
-        `'${dupValue}' ya existe. No se pudo actualizar el usuario ya que debe ser único.`,
+        `'${dupValue}' ya existe. No se pudo actualizar el usuario porque debe ser único`,
         400
       );
     }
-    throw new ClientError('Error al actualizar el usuario', 500);
+    throw new ClientError("Error al actualizar el usuario", 500);
   }
 };
+
 
 // =========================
 // Payroll (igual)
