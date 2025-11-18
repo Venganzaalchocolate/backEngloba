@@ -97,21 +97,51 @@ async function ensureSpaceWithPreferents(periodLike, { excludePeriodId = null } 
 
 // Reglas de aperturas simultáneas
 async function validateOpenConstraints(idUser, candidate, excludeId = null) {
+  const userId = new mongoose.Types.ObjectId(idUser);
+
+  // 1) Cargar todos los periodos ABIERTOS del usuario (excepto el que actualizamos)
   const openNow = await Periods.find({
-    idUser: toId(idUser),
+    idUser: userId,
     active: { $ne: false },
     $or: [{ endDate: { $exists: false } }, { endDate: null }],
   }).lean();
 
-  const list = openNow.filter(p => String(p._id) !== String(excludeId || ''));
-  if (isOpen(candidate)) list.push(candidate);
+  const openList = openNow.filter(p => String(p._id) !== String(excludeId || ''));
 
-  const ftCount = list.filter(p => p?.workShift?.type === 'completa').length;
-  const ptCount = list.filter(p => p?.workShift?.type === 'parcial').length;
+  // 2) Si el "candidate" también va a quedar abierto, añadirlo a la lista
+  const willBeOpen =
+    candidate.active !== false &&
+    (candidate.endDate === null || candidate.endDate === undefined);
 
-  if (ftCount > 1) throw new ClientError('Máximo 1 periodo abierto a jornada completa', 400);
-  if (ftCount === 1 && ptCount > 0) throw new ClientError('No se puede mezclar jornada completa con parciales abiertos', 400);
-  if (ptCount > 2) throw new ClientError('Máximo 2 periodos abiertos a jornada parcial', 400);
+  if (willBeOpen) openList.push(candidate);
+
+  // 3) Contar completos y parciales abiertos
+  const fullOpens = openList.filter(p => p?.workShift?.type === 'completa').length;
+  const partOpens = openList.filter(p => p?.workShift?.type === 'parcial').length;
+
+  // 4) Reglas
+  if (fullOpens > 1) {
+    throw new ClientError(
+      'Máximo 1 periodo abierto a jornada completa por usuario',
+      400
+    );
+  }
+
+  if (fullOpens === 1 && partOpens > 0) {
+    throw new ClientError(
+      'No se puede mezclar un periodo abierto a jornada completa con periodos abiertos a jornada parcial',
+      400
+    );
+  }
+
+  if (partOpens > 2) {
+    throw new ClientError(
+      'Máximo 2 periodos abiertos de jornada parcial por usuario',
+      400
+    );
+  }
+
+  return true;
 }
 
 /**
@@ -170,7 +200,6 @@ function buildPeriodPayload(body) {
     position,
     startDate,
     endDate,
-    // device,           // legacy ignorado aquí
     dispositiveId,       // ← NUEVO nombre en body
     workShift,           // { type: 'completa'|'parcial', nota? }
     selectionProcess,    // opcional
@@ -402,7 +431,10 @@ async function listHirings(req, res) {
   if (position)  filters.position = toId(position);
   if (active !== undefined) filters.active = active;
 
-  if (dispositiveId) filters.dispositiveId = toId(dispositiveId);
+  if (dispositiveId !== undefined && dispositiveId !== null && dispositiveId !== '') {
+  filters.dispositiveId = toId(dispositiveId);
+}
+
 
   if (openOnly) {
     filters.$or = [{ endDate: { $exists: false } }, { endDate: null }];
@@ -506,6 +538,83 @@ async function closeHiring(req, res) {
   return response(res, 200, out);
 }
 
+// REUBICAR PERSONAL (mass transfer)
+async function relocateHirings(req, res) {
+  const { originDispositiveId, targetDispositiveId, startDateNewPeriod } = req.body;
+
+  if (!originDispositiveId || !targetDispositiveId) {
+    throw new ClientError('originDispositiveId y targetDispositiveId son requeridos', 400);
+  }
+
+  const originId = toId(originDispositiveId);
+  const targetId = toId(targetDispositiveId);
+
+  const startNew = startDateNewPeriod
+    ? new Date(startDateNewPeriod)
+    : new Date();
+
+  if (Number.isNaN(startNew.getTime()))
+    throw new ClientError('startDateNewPeriod no válida', 400);
+
+  // 1) Buscar periodos abiertos en el dispositivo origen
+  const openPeriods = await Periods.find({
+    dispositiveId: originId,
+    active: { $ne: false },
+    $or: [{ endDate: { $exists: false } }, { endDate: null }],
+  }).lean();
+
+  if (!openPeriods.length) {
+    return response(res, 200, {
+      moved: 0,
+      created: [],
+      msg: 'No había periodos abiertos en el dispositivo origen.'
+    });
+  }
+
+  const createdList = [];
+
+  for (const p of openPeriods) {
+    const periodId = p._id;
+
+    // 2) Cerrar el periodo actual
+    await Periods.findByIdAndUpdate(
+      periodId,
+      { $set: { endDate: startNew } },
+      { new: false }
+    );
+
+    // 3) Construir el nuevo periodo
+    const newPayload = {
+      idUser: p.idUser,
+      position: p.position,
+      startDate: startNew,
+      endDate: null,
+      dispositiveId: targetId,
+      workShift: p.workShift,
+      selectionProcess: p.selectionProcess ?? undefined,
+      active: true,
+      replacement: p.replacement ? {
+        user: p.replacement.user ?? undefined,
+        leave: p.replacement.leave ?? undefined,
+      } : undefined,
+    };
+
+    // 4) Crear nuevo hiring
+    const created = await Periods.create(newPayload);
+    createdList.push(created._id);
+
+    // 5) Cerrar Preferents que coincidan con el nuevo periodo
+    await closeMatchingPreferentsForPeriod(newPayload);
+  }
+
+  return response(res, 200, {
+    moved: openPeriods.length,
+    created: createdList,
+    msg: 'Reubicación completada'
+  });
+}
+
+
 
 module.exports = {
   createHiring: catchAsync(createHiring),
@@ -515,5 +624,6 @@ module.exports = {
   hardDeleteHiring: catchAsync(hardDeleteHiring),
   listHirings: catchAsync(listHirings),
   getHiringById: catchAsync(getHiringById),
-  getLastHiringForUser: catchAsync(getLastHiringForUser)
+  getLastHiringForUser: catchAsync(getLastHiringForUser),
+  relocateHirings:catchAsync(relocateHirings)
 };

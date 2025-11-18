@@ -1,3 +1,4 @@
+const { Periods } = require("../models/indexModels");
 const { ClientError } = require("./clientError");
 const mongoose = require("mongoose");
 
@@ -107,11 +108,60 @@ const validateRequiredFields = (body, fields) => {
 const toId = (v) => (v ? new mongoose.Types.ObjectId(v) : v);
 
 
+// Obtiene el último periodo ACTIVO de un usuario
+// Obtiene el periodo ACTIVO en una fecha concreta (por defecto hoy)
+async function getCurrentPeriod(userId, refDate = new Date()) {
+  return Periods.findOne({
+    idUser: userId,
+    startDate: { $lte: refDate },
+    $or: [
+      { endDate: null },
+      { endDate: { $gte: refDate } }
+    ]
+  })
+    .sort({ startDate: -1 })
+    .lean();
+}
+
+const getCurrentPeriods = async (userId, refDate = new Date()) => {
+  const periods = await Periods.find({
+    idUser: userId,
+    startDate: { $lte: refDate },
+    $or: [
+      { endDate: null },
+      { endDate: { $gte: refDate } }
+    ]
+  })
+    .sort({ startDate: -1 })
+    .populate({
+      path: 'dispositiveId',
+      select: 'name program responsible coordinators',
+      populate: {
+        path: 'program',
+        select: 'name acronym responsible'
+      }
+    })
+    .lean();
+
+  if (!periods.length) return null;
+
+  return periods; // puede haber 1 o 2
+};
+
+
+async function getAllPeriods(userId) {
+  return Periods.find({ idUser: userId })
+    .sort({ startDate: 1 })
+    .lean();
+}
 module.exports = {
     dateAndHour,
     getSpainCurrentDate,
     createAccentInsensitiveRegex,
     parseAndValidateDates,
     validateRequiredFields,
-    toId
+    toId,
+    getCurrentPeriod,
+    getCurrentPeriods,
+    getAllPeriods
 };

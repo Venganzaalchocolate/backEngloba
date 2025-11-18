@@ -1,41 +1,6 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
-// Esquema para Periodos de Excedencia o Baja Laboral
-const LeavePeriodSchema = new Schema({
-    // Tipo de excedencia (voluntaria, cuidado de hijo a cargo, cargo público, baja laboral)
-    leaveType: {
-        type: Schema.Types.ObjectId,
-        ref: 'Leavetype',
-        required: true
-    },
-    // Fecha de inicio de la excedencia o baja laboral
-    startLeaveDate: {
-        type: Date,
-        required: true
-    },
-    // Fecha prevista de fin de la excedencia o baja laboral
-    expectedEndLeaveDate: {
-        type: Date
-    },
-    // Fecha real de fin de la excedencia o baja laboral
-    actualEndLeaveDate: {
-        type: Date
-    },
-    active: {
-        type: Boolean
-    },
-    idPeriod:{
-        type:Schema.Types.ObjectId,
-        ref: 'Period'
-    },
-    idUser:{
-        type:Schema.Types.ObjectId,
-        ref: 'User'
-    }
-});
-
-
 const fileSchema = new Schema({
     filesId:{
         type:Schema.Types.ObjectId,
@@ -46,92 +11,6 @@ fileName:  {type: String},
   description: {type: String},
   date: {type: String}
 });
-
-// Esquema para Periodos de Contratación
-const PeriodSchema = new Schema({
-    // Cargo que desempeña el empleado durante el periodo de contratación
-    position: {
-        type: Schema.Types.ObjectId,
-        required: true,
-    },
-    // Categoría del puesto del empleado
-    category: {
-        type: String,
-        enum:['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15'],
-    },
-    // Fecha de inicio del periodo de contratación
-    startDate: {
-        type: Date,
-        required: true
-    },
-    // Fecha de fin del periodo de contratación
-    endDate: {
-        type: Date
-    },
-    // Dispositivo asignado al empleado (referencia a otra colección)
-    device: {
-        type: Schema.Types.ObjectId,
-    },
-    // Jornada laboral del empleado (total o parcial)
-    workShift: {
-        nota: {
-            type: String,
-        },
-        type: {
-            type: String,
-            enum: ['completa', 'parcial'],
-            required: true 
-        }
-    },
-    // Proceso de selección asociado al periodo de contratación (referencia a otra colección)
-    selectionProcess: { 
-        type: Schema.Types.ObjectId,
-        ref: 'Offer'
-    },
-
-    leavePeriods:[LeavePeriodSchema],
-    active: {
-        type: Boolean,
-        default:true
-    },
-    reason:{
-        replacement:{
-            type: Boolean,
-            default:false
-        },
-        user:{
-           type:Schema.Types.ObjectId,
-            ref:'User' 
-        },
-        notes:{
-            nameUser:{
-                type:String
-            },
-            dniUser:{
-                type:String
-            },
-            cause:{
-                type:Schema.Types.ObjectId,
-                ref:'Leavetype'
-            },
-            startLeaveDate: {
-                type: Date,
-            },
-            // Fecha prevista de fin de la excedencia o baja laboral
-            expectedEndLeaveDate: {
-                type: Date
-            },
-
-        }
-        
-    },
-    idUser:{
-    type:Schema.Types.ObjectId,
-    ref: 'User'
-    }
-
-});
-
 
 
 // Esquema para Nóminas
@@ -249,12 +128,7 @@ const UserSchema = new Schema({
         enum: ['ya no trabaja con nosotros', 'activo', 'en proceso de contratación'],
         default:  'en proceso de contratación'
     },
-    dispositiveNow:{
-            type: [PeriodSchema], // ID del dispositivo
-            default:[]
-    },
-    // Periodos de contratación del empleado
-    hiringPeriods: [PeriodSchema],
+    
     // Número de Seguridad Social del empleado
     socialSecurityNumber: {
         type: String,

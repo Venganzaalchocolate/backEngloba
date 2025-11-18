@@ -11,12 +11,12 @@ const { getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEm
 const {sendEmail, generateEmailHTML}=require("./emailControllerGoogle");
 const { getDocumentation,getDocumentationUnified, getDocumentationProgramDispositive, addProgramOrDispositiveToDocumentation, syncProgramDocsToDevices } = require("./documentationController");
 const { confirmSignature, requestSignature } = require("./pdfSignController");
-const { auditMissingFieldsInfoUser, auditMissingFieldsProgram, auditMissingFieldsDevice,auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram, auditMissingFieldsDocumentationDevice, auditMissingFieldsContractAndLeave } = require("./auditorController");
+const {auditInfoDevices, auditInfoPrograms, auditInfoUsers, auditActiveLeaves } = require("./auditorController");
 const { getCvOverview, getCvMonthly, getCvDistribution, getCvConversion, auditWorkersStats, getWorkersStats} = require("./statisticsController");
 const {deleteGroupWS, deleteMemberGroupWS,addGroupWS, createGroupWS, infoGroupWS,addUserToGroup, createUserWS, deleteUserByEmailWS, deleteMemeberAllGroups } = require("./workspaceController");
 const { getPreferents, getPreferentById, createPreferent, updatePreferent, deletePreferent, filterPreferents } = require("./preferentsController");
 const {createLeave,updateLeave,closeLeave, softDeleteLeave, hardDeleteLeave, listLeaves, getLeaveById}= require("./leaveController");
-const {createHiring,updateHiring,closeHiring,softDeleteHiring,hardDeleteHiring,listHirings,getHiringById, getLastHiringForUser}= require("./hiringController");
+const {createHiring,updateHiring,closeHiring,softDeleteHiring,hardDeleteHiring,listHirings,getHiringById, getLastHiringForUser, relocateHirings}= require("./hiringController");
 const { postCancelChangeRequest, postRejectChangeRequest, postApproveChangeRequest, getPendingChangeRequests, getMyChangeRequests, postCreateChangeRequest } = require("./userChangeRequestController");
 const { moveDriveFile, adoptDriveFileIntoFiledrive } = require("./googleController");
 
@@ -41,12 +41,12 @@ module.exports = {
     sendEmail, generateEmailHTML,
     getDocumentation, getDocumentationUnified,getDocumentationProgramDispositive,addProgramOrDispositiveToDocumentation,syncProgramDocsToDevices,
     requestSignature,confirmSignature,
-    auditMissingFieldsInfoUser,auditMissingFieldsProgram,auditMissingFieldsDevice,auditMissingFieldsDocumentationUser, auditMissingFieldsDocumentationProgram,auditMissingFieldsDocumentationDevice,auditMissingFieldsContractAndLeave,
+    auditInfoUsers,auditInfoPrograms, auditInfoDevices,auditActiveLeaves,
     getCvOverview,getCvMonthly,getCvDistribution, getCvConversion,auditWorkersStats, getWorkersStats,
     deleteGroupWS, deleteMemberGroupWS,addGroupWS, createGroupWS, infoGroupWS, addUserToGroup,createUserWS, deleteUserByEmailWS,deleteMemeberAllGroups,
     getPreferents,getPreferentById,createPreferent,updatePreferent,deletePreferent,filterPreferents,
     createLeave,updateLeave,closeLeave, softDeleteLeave, hardDeleteLeave, listLeaves, getLeaveById,
-    createHiring,updateHiring,closeHiring,softDeleteHiring,hardDeleteHiring,listHirings,getHiringById,getLastHiringForUser,
+    createHiring,updateHiring,closeHiring,softDeleteHiring,hardDeleteHiring,listHirings,getHiringById,getLastHiringForUser,relocateHirings,
     postCreateChangeRequest,getMyChangeRequests,getPendingChangeRequests,postApproveChangeRequest,postRejectChangeRequest,postCancelChangeRequest,
     createDispositive,updateDispositive,deleteDispositive,handleCoordinators,handleResponsibles,listsResponsiblesAndCoordinators, getDispositiveResponsable,getDispositiveId
 

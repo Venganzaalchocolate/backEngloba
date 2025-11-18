@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router()
 // Controlador específico de Hiring (ESM, default export con métodos)
-const {createHiring,updateHiring,closeHiring,softDeleteHiring,hardDeleteHiring,listHirings,getHiringById,tokenValid, getLastHiringForUser} = require('../controllers/indexController')
+const {createHiring,updateHiring,closeHiring,softDeleteHiring,hardDeleteHiring,listHirings,getHiringById,tokenValid, getLastHiringForUser, relocateHirings} = require('../controllers/indexController')
 
 
 
@@ -37,6 +37,8 @@ router.post('/hiringlist', tokenValid, listHirings);
 // Obtener un periodo por ID
 router.post('/hiringget', tokenValid, getHiringById);
 
-router.post('/lasthiringforuser', tokenValid, getLastHiringForUser)
+router.post('/lasthiringforuser', tokenValid, getLastHiringForUser);
+
+router.post('/relocatehirings', tokenValid, relocateHirings);
 
 module.exports = router;
