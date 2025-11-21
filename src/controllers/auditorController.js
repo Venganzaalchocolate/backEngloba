@@ -1072,13 +1072,279 @@ const auditDocsDispo = async (req, res) => {
   response(res, 200, { missing, expired });
 };
 
+const auditPayrolls = async (req, res) => {
+let {
+    selectedFields = [],
+    apafa = "no",
+    traking = "no",
+    employment = "activos",
+    time = { months: [], years: [] },
+    page = 1,
+    limit = 30,
+  } = req.body || {};
 
+  if (!Array.isArray(selectedFields) || selectedFields.length === 0) {
+    throw new ClientError(
+      "Debes seleccionar al menos un criterio de auditoría (nóminas sin firmar / sin nóminas).",
+      400
+    );
+  }
+
+  if (!time || !Array.isArray(time.months) || !Array.isArray(time.years)) {
+    throw new ClientError(
+      "El filtro de tiempo es inválido. Debes enviar { months:[], years:[] }.",
+      400
+    );
+  }
+
+  if (time.months.length === 0 || time.years.length === 0) {
+    throw new ClientError(
+      "Debes seleccionar al menos un mes y un año para la auditoría.",
+      400
+    );
+  }
+
+  page = Number(page) || 1;
+  limit = Number(limit) || 30;
+  if (page < 1) page = 1;
+  if (limit < 1) limit = 30;
+
+  const timeMonths = time.months.map(Number);
+  const timeYears = time.years.map(Number);
+  const fullPeriodsCount = timeMonths.length * timeYears.length;
+
+  const auditNotPayroll = selectedFields.includes("notPayroll");
+  const auditNotSign = selectedFields.includes("notSign");
+
+  // 1) Filtro base de usuarios
+  const matchBase = {
+    ...buildEmploymentFilter(employment),
+  };
+
+  if (apafa === "si") matchBase.apafa = true;
+  else if (apafa === "no") matchBase.apafa = false;
+
+  if (traking === "si") matchBase.tracking = true;
+  else if (traking === "no") matchBase.tracking = false;
+
+  // 2) Construimos condicion de match según selectedFields
+  const matchConditions = [];
+  if (auditNotSign) {
+    matchConditions.push({ notSignedCount: { $gt: 0 } });
+  }
+  if (auditNotPayroll) {
+    matchConditions.push({ existingPeriodsCount: { $lt: fullPeriodsCount } });
+  }
+
+  const matchAudit =
+    matchConditions.length > 1
+      ? { $or: matchConditions }
+      : matchConditions[0] || {};
+
+  // 3) Pipeline de agregación
+  const pipeline = [
+    { $match: matchBase },
+    {
+      $project: {
+        dni: 1,
+        firstName: 1,
+        lastName: 1,
+        email: 1,
+        apafa: 1,
+        tracking: 1,
+        employmentStatus: 1,
+        payrolls: 1,
+      },
+    },
+    // Filtramos las nóminas en el rango de meses/años
+    {
+      $addFields: {
+        payrollsInRange: {
+          $filter: {
+            input: "$payrolls",
+            as: "p",
+            cond: {
+              $and: [
+                { $in: ["$$p.payrollMonth", timeMonths] },
+                { $in: ["$$p.payrollYear", timeYears] },
+              ],
+            },
+          },
+        },
+      },
+    },
+    // Calculamos nóminas sin firmar y periodos existentes
+{
+  $addFields: {
+    // Nóminas SIN FIRMAR = nóminas que NO cumplen:
+    //   sign no vacío Y datetimeSign no nulo
+    notSignedPayrolls: {
+      $filter: {
+        input: "$payrollsInRange",
+        as: "p",
+        cond: {
+          $not: [
+            {
+              $and: [
+                // sign tiene texto (no null / no vacío)
+                {
+                  $gt: [
+                    {
+                      $strLenCP: {
+                        $ifNull: ["$$p.sign", ""], // si falta, lo tratamos como ""
+                      },
+                    },
+                    0,
+                  ],
+                },
+                // y datetimeSign existe y no es null
+                { $ne: ["$$p.datetimeSign", null] },
+              ],
+            },
+          ],
+        },
+      },
+    },
+
+    existingPeriods: {
+      $map: {
+        input: "$payrollsInRange",
+        as: "p",
+        in: {
+          month: "$$p.payrollMonth",
+          year: "$$p.payrollYear",
+        },
+      },
+    },
+  },
+},
+
+    {
+      $addFields: {
+        notSignedCount: { $size: "$notSignedPayrolls" },
+        uniquePeriodKeys: {
+          $setUnion: [
+            {
+              $map: {
+                input: "$existingPeriods",
+                as: "e",
+                in: {
+                  $concat: [
+                    { $toString: "$$e.year" },
+                    "-",
+                    { $toString: "$$e.month" },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      },
+    },
+    {
+      $addFields: {
+        existingPeriodsCount: { $size: "$uniquePeriodKeys" },
+      },
+    },
+    // Nos quedamos solo con usuarios que tienen algún problema según selectedFields
+    ...(Object.keys(matchAudit).length ? [{ $match: matchAudit }] : []),
+    // Preparamos campos finales y listas sencillas de periodos sin firmar
+    {
+      $project: {
+        _id:1,
+        dni: 1,
+        firstName: 1,
+        lastName: 1,
+        email: 1,
+        apafa: 1,
+        tracking: 1,
+        employmentStatus: 1,
+        existingPeriods: 1,
+        notSignedPayrolls: {
+          $map: {
+            input: "$notSignedPayrolls",
+            as: "p",
+            in: {
+              month: "$$p.payrollMonth",
+              year: "$$p.payrollYear",
+            },
+          },
+        },
+        notSignedCount: 1,
+        existingPeriodsCount: 1,
+      },
+    },
+    // Paginación real en Mongo
+    {
+      $facet: {
+        metadata: [{ $count: "total" }],
+        data: [
+          { $skip: (page - 1) * limit },
+          { $limit: limit },
+        ],
+      },
+    },
+  ];
+
+  const aggResult = await User.aggregate(pipeline);
+
+  const metadata = aggResult[0]?.metadata?.[0] || { total: 0 };
+  const totalResults = metadata.total || 0;
+  const totalPages = totalResults > 0 ? Math.ceil(totalResults / limit) : 1;
+  const docs = aggResult[0]?.data || [];
+
+  // 4) En Node calculamos exactamente qué periodos faltan para cada usuario
+  const allPeriods = [];
+  for (const year of timeYears) {
+    for (const month of timeMonths) {
+      allPeriods.push({ year, month });
+    }
+  }
+
+  const results = docs.map((u) => {
+    const existing = u.existingPeriods || [];
+    const notSignedPayrolls = u.notSignedPayrolls || [];
+
+    const missingPayrolls = auditNotPayroll
+      ? allPeriods.filter(
+          (p) =>
+            !existing.some(
+              (e) => e.year === p.year && e.month === p.month
+            )
+        )
+      : [];
+
+    const notSigned = auditNotSign ? notSignedPayrolls : [];
+
+    return {
+      _id: u._id,
+      dni: u.dni,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      email: u.email,
+      apafa: u.apafa,
+      tracking: u.tracking,
+      employmentStatus: u.employmentStatus,
+      missingPayrolls,
+      notSignedPayrolls: notSigned,
+    };
+  });
+  response(res, 200, {
+    results,
+    totalResults,
+    totalPages,
+    page,
+  });
+};
+
+// 
 module.exports = {
   auditInfoUsers: catchAsync(auditInfoUsers),
   auditInfoPrograms: catchAsync(auditInfoPrograms),
   auditInfoDevices: catchAsync(auditInfoDevices),
   auditActiveLeaves: catchAsync(auditActiveLeaves),
   auditDocsProgram:catchAsync(auditDocsProgram),
-  auditDocsDispo:catchAsync(auditDocsDispo)
+  auditDocsDispo:catchAsync(auditDocsDispo),
+  auditPayrolls:catchAsync(auditPayrolls)
 
 };
