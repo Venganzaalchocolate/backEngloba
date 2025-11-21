@@ -147,6 +147,7 @@ const UserSchema = new Schema({
     // uploadFileSigned: pdf
     vacationDays:[Date],
     personalDays:[Date],
+    
     files: [fileSchema],
     notes:{
         type: String,

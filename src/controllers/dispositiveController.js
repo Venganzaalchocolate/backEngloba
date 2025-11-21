@@ -1,6 +1,6 @@
 // controllers/dispositiveController.js
-const { Provinces, Dispositive, Program, Documentation } = require('../models/indexModels');
-const { catchAsync, response, ClientError } = require('../utils/indexUtils');
+const { Provinces, Dispositive, Program, Documentation, Filedrive } = require('../models/indexModels');
+const { catchAsync, response, ClientError, toId } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { generateEmailHTML, sendEmail } = require('./emailControllerGoogle');
 const { ensureDeviceGroup, infoGroup } = require('./workspaceController');
@@ -128,29 +128,40 @@ Creador: ${req.body?.userCreate || "—"}`;
 /** Obtener un Dispositive por id (sin programId) */
 const getDispositiveId = async (req, res) => {
   const { dispositiveId } = req.body;
-  if (!dispositiveId) throw new ClientError('Falta dispositiveId', 400);
 
-  const dispositive = await Dispositive.findById(dispositiveId)
-     .populate([
-    {
-      path: "responsible",
-      select: "firstName lastName email phoneJob", // solo estos campos
-    },
-    {
-      path: "coordinators",
-      select: "firstName lastName email phoneJob", // también puedes limitar diferente
-    },
-    {
-        path: "files",
-        populate: {
-          path: "originDocumentation",
-          select: "name duration requiresSignature categoryFiles", // 👈 datos esenciales
-        },
-      }
-  ])
+  if (!dispositiveId) {
+    throw new ClientError("Falta dispositiveId", 400);
+  }
+
+  const id = toId(dispositiveId);
+
+  // 1) Obtener todos los archivos asociados directamente al dispositivo
+  const files = await Filedrive.find({ idModel: id })
+ 
+  // 2) Obtener el dispositivo con responsables + coordinadores
+  let dispositive = await Dispositive.findById(id)
+    .populate([
+      {
+        path: "responsible",
+        select: "firstName lastName email phoneJob",
+      },
+      {
+        path: "coordinators",
+        select: "firstName lastName email phoneJob",
+      },
+      {
+        path: "program",
+        select: "name acronym area _id", // opcional pero útil
+      },
+    ])
     .lean();
 
-  if (!dispositive) throw new ClientError('Dispositivo no encontrado', 404);
+  if (!dispositive) {
+    throw new ClientError("Dispositivo no encontrado", 404);
+  }
+
+  // 3) Añadir los archivos en la respuesta final
+  dispositive.files = files;
 
   response(res, 200, dispositive);
 };

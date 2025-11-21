@@ -1,4 +1,4 @@
-const { Program, Provinces, Dispositive } = require('../models/indexModels');
+const { Program, Provinces, Dispositive, Filedrive } = require('../models/indexModels');
 const { catchAsync, response, ClientError, toId } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { generateEmailHTML, sendEmail } = require('./emailControllerGoogle');
@@ -142,18 +142,35 @@ const ProgramPut = async (req, res) => {
 
 
 
-const getProgramId=async (req, res)=>{
-  if(!req.body.programId)  throw new ClientError("Falta el Id del Programa", 400);
-  const id=toId(req.body.programId)
-  const data=await Program.findById(id) .populate([
+
+const getProgramId = async (req, res) => {
+  if (!req.body.programId) {
+    throw new ClientError("Falta el Id del Programa", 400);
+  }
+
+  const id = toId(req.body.programId);
+
+  // 1) Obtener todos los archivos de ese programa
+  const files = await Filedrive.find({ idModel: id });
+
+  // 2) Obtener datos del programa + responsables
+  let data = await Program.findById(id).populate([
     {
       path: "responsible",
-      select: "firstName lastName email phoneJob", // solo estos campos
+      select: "firstName lastName email phoneJob",
     }
-  ])
-  response(res, 200, data)
-}
+  ]);
 
+  if (!data) {
+    throw new ClientError("Programa no encontrado", 404);
+  }
+
+  // 3) Añadir los archivos a la respuesta
+  data = data.toObject();
+  data.files = files;
+
+  response(res, 200, data);
+};
 
 
 

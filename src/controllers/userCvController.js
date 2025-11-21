@@ -272,7 +272,8 @@ const UserCvDeleteId = async (req, res) => {
 
 // modificar el usuario (SOLO nuevos campos *_Id)
 const UserCvPut = async (req, res) => {
-  const filter = { _id: req.body._id };
+
+    const filter = { _id: req.body._id };
   const updateText = {};
 
   
@@ -367,6 +368,7 @@ const UserCvPut = async (req, res) => {
   
 }
   response(res, 200, enriched);
+  
 };
 
 const getUsersCvsIDs = async (req, res) => {
