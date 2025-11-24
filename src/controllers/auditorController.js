@@ -1072,17 +1072,68 @@ const auditDocsDispo = async (req, res) => {
   response(res, 200, { missing, expired });
 };
 
+// Función auxiliar: mes anterior (para la regla nómina = trabajo del mes anterior)
+function getPreviousMonth(year, month) {
+  // month: 1–12
+  if (month === 1) {
+    return { year: year - 1, month: 12 };
+  }
+  return { year, month: month - 1 };
+}
+
+// Función auxiliar: calcula todos los meses (year-month) en los que la persona estuvo contratada
+function buildActiveMonthsSet(periods) {
+  const set = new Set();
+
+  for (const p of periods) {
+    if (!p.startDate) continue;
+
+    const start = new Date(p.startDate);
+    const end = p.endDate ? new Date(p.endDate) : new Date();
+
+    let year = start.getFullYear();
+    let month = start.getMonth() + 1; // 1–12
+
+    const endYear = end.getFullYear();
+    const endMonth = end.getMonth() + 1;
+
+    while (year < endYear || (year === endYear && month <= endMonth)) {
+      set.add(`${year}-${month}`);
+      month++;
+      if (month > 12) {
+        month = 1;
+        year++;
+      }
+    }
+  }
+
+  return set;
+}
+
+// Función auxiliar: decide si una nómina está firmada según tus reglas
+function isPayrollSigned(payroll) {
+  const sign = (payroll.sign || "").toString().trim();
+  const hasSignText = sign.length > 0;
+  const hasDatetime = payroll.datetimeSign != null;
+  return hasSignText && hasDatetime;
+}
+
+// =========================================================
+//   AUDITORÍA DE NÓMINAS CON REGLA "MES ANTERIOR"
+// =========================================================
+
 const auditPayrolls = async (req, res) => {
-let {
+  let {
     selectedFields = [],
     apafa = "no",
-    traking = "no",
+    traking = "no",        // se mantiene el nombre tal y como lo estás usando
     employment = "activos",
     time = { months: [], years: [] },
     page = 1,
     limit = 30,
   } = req.body || {};
 
+  // --------- Validaciones básicas ---------
   if (!Array.isArray(selectedFields) || selectedFields.length === 0) {
     throw new ClientError(
       "Debes seleccionar al menos un criterio de auditoría (nóminas sin firmar / sin nóminas).",
@@ -1109,17 +1160,16 @@ let {
   if (page < 1) page = 1;
   if (limit < 1) limit = 30;
 
-  const timeMonths = time.months.map(Number);
-  const timeYears = time.years.map(Number);
-  const fullPeriodsCount = timeMonths.length * timeYears.length;
+  const payrollMonths = time.months.map(Number); // meses de NÓMINA (no laborales)
+  const payrollYears = time.years.map(Number);
 
   const auditNotPayroll = selectedFields.includes("notPayroll");
   const auditNotSign = selectedFields.includes("notSign");
 
-  // 1) Filtro base de usuarios
-  const matchBase = {
-    ...buildEmploymentFilter(employment),
-  };
+  // =========================================================
+  // 1) Construyo el filtro base de usuarios (empleo, apafa, tracking)
+  // =========================================================
+  const matchBase = { ...buildEmploymentFilter(employment) };
 
   if (apafa === "si") matchBase.apafa = true;
   else if (apafa === "no") matchBase.apafa = false;
@@ -1127,196 +1177,145 @@ let {
   if (traking === "si") matchBase.tracking = true;
   else if (traking === "no") matchBase.tracking = false;
 
-  // 2) Construimos condicion de match según selectedFields
-  const matchConditions = [];
-  if (auditNotSign) {
-    matchConditions.push({ notSignedCount: { $gt: 0 } });
+  // Solo nos interesan empleados (role: 'employee'), si aplica en tu modelo:
+  // matchBase.role = 'employee'; // descomenta si quieres forzar esto
+
+  // =========================================================
+  // 2) Obtengo los usuarios base (sin aún filtrar por problemas de nómina)
+  // =========================================================
+  const users = await User.find(matchBase, {
+    dni: 1,
+    firstName: 1,
+    lastName: 1,
+    email: 1,
+    apafa: 1,
+    tracking: 1,
+    employmentStatus: 1,
+    payrolls: 1,
+  }).lean();
+
+  if (users.length === 0) {
+    return response(res, 200, {
+      results: [],
+      totalResults: 0,
+      totalPages: 1,
+      page,
+    });
   }
-  if (auditNotPayroll) {
-    matchConditions.push({ existingPeriodsCount: { $lt: fullPeriodsCount } });
+
+  const userIds = users.map((u) => u._id);
+
+  // =========================================================
+  // 3) Obtengo todos los periods de esos usuarios de golpe
+  // =========================================================
+  const periods = await Periods.find(
+    { idUser: { $in: userIds } },
+    { idUser: 1, startDate: 1, endDate: 1 }
+  ).lean();
+
+  const periodsByUser = {};
+  for (const p of periods) {
+    const uid = p.idUser.toString();
+    if (!periodsByUser[uid]) periodsByUser[uid] = [];
+    periodsByUser[uid].push(p);
   }
 
-  const matchAudit =
-    matchConditions.length > 1
-      ? { $or: matchConditions }
-      : matchConditions[0] || {};
-
-  // 3) Pipeline de agregación
-  const pipeline = [
-    { $match: matchBase },
-    {
-      $project: {
-        dni: 1,
-        firstName: 1,
-        lastName: 1,
-        email: 1,
-        apafa: 1,
-        tracking: 1,
-        employmentStatus: 1,
-        payrolls: 1,
-      },
-    },
-    // Filtramos las nóminas en el rango de meses/años
-    {
-      $addFields: {
-        payrollsInRange: {
-          $filter: {
-            input: "$payrolls",
-            as: "p",
-            cond: {
-              $and: [
-                { $in: ["$$p.payrollMonth", timeMonths] },
-                { $in: ["$$p.payrollYear", timeYears] },
-              ],
-            },
-          },
-        },
-      },
-    },
-    // Calculamos nóminas sin firmar y periodos existentes
-{
-  $addFields: {
-    // Nóminas SIN FIRMAR = nóminas que NO cumplen:
-    //   sign no vacío Y datetimeSign no nulo
-    notSignedPayrolls: {
-      $filter: {
-        input: "$payrollsInRange",
-        as: "p",
-        cond: {
-          $not: [
-            {
-              $and: [
-                // sign tiene texto (no null / no vacío)
-                {
-                  $gt: [
-                    {
-                      $strLenCP: {
-                        $ifNull: ["$$p.sign", ""], // si falta, lo tratamos como ""
-                      },
-                    },
-                    0,
-                  ],
-                },
-                // y datetimeSign existe y no es null
-                { $ne: ["$$p.datetimeSign", null] },
-              ],
-            },
-          ],
-        },
-      },
-    },
-
-    existingPeriods: {
-      $map: {
-        input: "$payrollsInRange",
-        as: "p",
-        in: {
-          month: "$$p.payrollMonth",
-          year: "$$p.payrollYear",
-        },
-      },
-    },
-  },
-},
-
-    {
-      $addFields: {
-        notSignedCount: { $size: "$notSignedPayrolls" },
-        uniquePeriodKeys: {
-          $setUnion: [
-            {
-              $map: {
-                input: "$existingPeriods",
-                as: "e",
-                in: {
-                  $concat: [
-                    { $toString: "$$e.year" },
-                    "-",
-                    { $toString: "$$e.month" },
-                  ],
-                },
-              },
-            },
-          ],
-        },
-      },
-    },
-    {
-      $addFields: {
-        existingPeriodsCount: { $size: "$uniquePeriodKeys" },
-      },
-    },
-    // Nos quedamos solo con usuarios que tienen algún problema según selectedFields
-    ...(Object.keys(matchAudit).length ? [{ $match: matchAudit }] : []),
-    // Preparamos campos finales y listas sencillas de periodos sin firmar
-    {
-      $project: {
-        _id:1,
-        dni: 1,
-        firstName: 1,
-        lastName: 1,
-        email: 1,
-        apafa: 1,
-        tracking: 1,
-        employmentStatus: 1,
-        existingPeriods: 1,
-        notSignedPayrolls: {
-          $map: {
-            input: "$notSignedPayrolls",
-            as: "p",
-            in: {
-              month: "$$p.payrollMonth",
-              year: "$$p.payrollYear",
-            },
-          },
-        },
-        notSignedCount: 1,
-        existingPeriodsCount: 1,
-      },
-    },
-    // Paginación real en Mongo
-    {
-      $facet: {
-        metadata: [{ $count: "total" }],
-        data: [
-          { $skip: (page - 1) * limit },
-          { $limit: limit },
-        ],
-      },
-    },
-  ];
-
-  const aggResult = await User.aggregate(pipeline);
-
-  const metadata = aggResult[0]?.metadata?.[0] || { total: 0 };
-  const totalResults = metadata.total || 0;
-  const totalPages = totalResults > 0 ? Math.ceil(totalResults / limit) : 1;
-  const docs = aggResult[0]?.data || [];
-
-  // 4) En Node calculamos exactamente qué periodos faltan para cada usuario
-  const allPeriods = [];
-  for (const year of timeYears) {
-    for (const month of timeMonths) {
-      allPeriods.push({ year, month });
+  // =========================================================
+  // 4) Construyo la lista de combinaciones de meses de NÓMINA
+  //    EJ: years=[2025], months=[10,11] → (2025,10) y (2025,11)
+  // =========================================================
+  const payrollPeriods = [];
+  for (const year of payrollYears) {
+    for (const month of payrollMonths) {
+      payrollPeriods.push({ year, month });
     }
   }
 
-  const results = docs.map((u) => {
-    const existing = u.existingPeriods || [];
-    const notSignedPayrolls = u.notSignedPayrolls || [];
+  // =========================================================
+  // 5) Recorro usuario por usuario y calculo:
+  //    - En qué meses laborales estuvo contratado
+  //    - Para qué meses de nómina "debería" tener nómina
+  //    - Qué nóminas faltan (notPayroll)
+  //    - Qué nóminas están sin firmar (notSign)
+  // =========================================================
 
-    const missingPayrolls = auditNotPayroll
-      ? allPeriods.filter(
-          (p) =>
-            !existing.some(
-              (e) => e.year === p.year && e.month === p.month
-            )
-        )
-      : [];
+  const resultsAll = [];
 
-    const notSigned = auditNotSign ? notSignedPayrolls : [];
+  for (const u of users) {
+    const uid = u._id.toString();
+    const userPeriods = periodsByUser[uid] || [];
 
-    return {
+    // Si no tiene ningún periodo de contratación, no esperamos nóminas
+    if (userPeriods.length === 0) {
+      continue;
+    }
+
+    // Conjunto de meses (año-mes) en los que ha estado contratado
+    const activeMonthsSet = buildActiveMonthsSet(userPeriods);
+
+    // Nóminas del usuario en el rango de meses de nómina seleccionados
+    const payrollsInRange = (u.payrolls || []).filter((p) => {
+      const pm = Number(p.payrollMonth);
+      const py = Number(p.payrollYear);
+      return payrollMonths.includes(pm) && payrollYears.includes(py);
+    });
+
+    // Índice rápido de nóminas por año-mes nómina
+    const payrollIndex = new Map();
+    for (const p of payrollsInRange) {
+      const pm = Number(p.payrollMonth);
+      const py = Number(p.payrollYear);
+      payrollIndex.set(`${py}-${pm}`, p);
+    }
+
+    const missingPayrolls = [];
+    const notSignedPayrolls = [];
+
+    // --- Para cada mes de nómina seleccionado ---
+    for (const { year: py, month: pm } of payrollPeriods) {
+      // 1) Calculamos el mes laboral anterior
+      const { year: laborYear, month: laborMonth } = getPreviousMonth(py, pm);
+
+      // 2) ¿La persona estaba contratada en ese mes laboral?
+      const laborKey = `${laborYear}-${laborMonth}`;
+      const wasActiveThatLaborMonth = activeMonthsSet.has(laborKey);
+
+      if (!wasActiveThatLaborMonth) {
+        // No estaba contratada en el mes de trabajo → NO esperamos nómina para ese mes de nómina
+        continue;
+      }
+
+      // 3) Si estaba contratada, esperamos nómina de (py, pm)
+      const payrollKey = `${py}-${pm}`;
+      const payroll = payrollIndex.get(payrollKey);
+
+      // 3a) Caso: no hay nómina → "notPayroll"
+      if (!payroll) {
+        if (auditNotPayroll) {
+          missingPayrolls.push({ year: py, month: pm });
+        }
+        // aunque falte nómina, no hay que mirar firma (porque no existe documento)
+        continue;
+      }
+
+      // 3b) Hay nómina → comprobamos firma si procede
+      if (auditNotSign && !isPayrollSigned(payroll)) {
+        notSignedPayrolls.push({ year: py, month: pm });
+      }
+    }
+
+    // =====================================================
+    // 6) Decido si este usuario entra en el resultado final
+    // =====================================================
+
+    const hasMissing = auditNotPayroll ? missingPayrolls.length > 0 : false;
+    const hasNotSigned = auditNotSign ? notSignedPayrolls.length > 0 : false;
+
+    // Si no tiene ningún problema según lo seleccionado, lo excluyo
+    if (!hasMissing && !hasNotSigned) continue;
+
+    // Si llega aquí, sí hay algo que reportar
+    resultsAll.push({
       _id: u._id,
       dni: u.dni,
       firstName: u.firstName,
@@ -1326,10 +1325,20 @@ let {
       tracking: u.tracking,
       employmentStatus: u.employmentStatus,
       missingPayrolls,
-      notSignedPayrolls: notSigned,
-    };
-  });
-  response(res, 200, {
+      notSignedPayrolls,
+    });
+  }
+
+  // =========================================================
+  // 7) Paginación REAL sobre los resultados con problema
+  // =========================================================
+  const totalResults = resultsAll.length;
+  const totalPages = totalResults > 0 ? Math.ceil(totalResults / limit) : 1;
+  const start = (page - 1) * limit;
+  const end = start + limit;
+  const results = resultsAll.slice(start, end);
+
+  return response(res, 200, {
     results,
     totalResults,
     totalPages,
