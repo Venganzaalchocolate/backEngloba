@@ -245,6 +245,7 @@ async function getLeaveById(req, res) {
   return response(res, 200, doc);
 }
 
+
 module.exports = {
   createLeave: catchAsync(createLeave),
   updateLeave: catchAsync(updateLeave),

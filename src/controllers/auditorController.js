@@ -1071,6 +1071,311 @@ const auditDocsDispo = async (req, res) => {
 
   response(res, 200, { missing, expired });
 };
+
+const auditDocsUser = async (req, res) => {
+  let {
+    docs = [],
+    batchSize = 200,
+    employment = "activos",
+    apafa = "todos",
+    tracking = "todos",
+  } = req.body;
+
+  if (!Array.isArray(docs) || docs.length === 0) {
+    throw new ClientError(
+      "Debes seleccionar al menos un documento para auditar usuarios",
+      400
+    );
+  }
+
+  docs = docs.map(toId);
+
+  /* --------------------------------------------------------
+     1) FILTRO DE USUARIOS
+  -------------------------------------------------------- */
+  const userFilter = {};
+
+  if (employment === "activos") {
+    userFilter.employmentStatus = {
+      $in: ["activo", "en proceso de contratación"],
+    };
+  } else if (employment === "inactivos") {
+    userFilter.employmentStatus = "ya no trabaja con nosotros";
+  }
+
+  if (apafa === "si") userFilter.apafa = true;
+  if (apafa === "no") userFilter.apafa = false;
+
+  if (tracking === "si") userFilter.tracking = true;
+  if (tracking === "no") userFilter.tracking = false;
+
+  const totalUsers = await User.countDocuments(userFilter);
+
+  /* --------------------------------------------------------
+     2) DOCUMENTACIÓN
+  -------------------------------------------------------- */
+  const docsList = await Documentation.find({ _id: { $in: docs } })
+    .select("name date duration")
+    .lean();
+
+  const now = new Date();
+
+  /* --------------------------------------------------------
+     3) RECORRER TODOS LOS USUARIOS Y QUEDARSE SOLO CON LOS QUE TIENEN ERRORES
+  -------------------------------------------------------- */
+  let processedUsers = 0;
+  const usersWithErrorsBase = [];
+
+  while (processedUsers < totalUsers) {
+    const usersBatch = await User.find(userFilter)
+      .select("_id firstName lastName dni email phone phoneJob")
+      .skip(processedUsers)
+      .limit(batchSize)
+      .lean();
+
+    if (usersBatch.length === 0) break;
+
+    const userIds = usersBatch.map((u) => u._id);
+
+    const filesBatch = await Filedrive.find({
+      originDocumentation: { $in: docs },
+      idModel: { $in: userIds },
+    }).lean();
+
+    for (const user of usersBatch) {
+      const missing = [];
+      const expired = [];
+
+      for (const doc of docsList) {
+        const fd = filesBatch.filter(
+          (f) =>
+            f.idModel.equals(user._id) &&
+            f.originDocumentation.equals(doc._id)
+        );
+
+        // 1) Missing
+        if (fd.length === 0) {
+          missing.push({
+            documentationId: doc._id,
+            documentationName: doc.name,
+          });
+          continue;
+        }
+
+        // 2) Expirado
+        if (doc.date && doc.duration) {
+          const last = fd.reduce(
+            (a, b) => (!a || b.date > a.date ? b : a),
+            null
+          );
+
+          const daysPassed = Math.floor(
+            (now - last.date) / (1000 * 60 * 60 * 24)
+          );
+
+          if (daysPassed > doc.duration) {
+            expired.push({
+              documentationId: doc._id,
+              documentationName: doc.name,
+              lastFileId: last._id,
+              lastFileDate: last.date,
+              daysPassed,
+              durationDays: doc.duration,
+            });
+          }
+        }
+      }
+
+      if (missing.length === 0 && expired.length === 0) continue;
+
+      usersWithErrorsBase.push({
+        ...user,
+        missingDocs: missing,
+        expiredDocs: expired,
+      });
+    }
+
+    processedUsers += usersBatch.length;
+  }
+
+  /* --------------------------------------------------------
+     4) AÑADIR CURRENT HIRING (MISMA ESTRUCTURA QUE auditInfoUsers)
+  -------------------------------------------------------- */
+  let usersWithErrors = usersWithErrorsBase;
+
+  if (usersWithErrorsBase.length > 0) {
+    const ids = usersWithErrorsBase.map((u) => u._id);
+
+    const pipeline = [
+      { $match: { _id: { $in: ids } } },
+      {
+        $lookup: {
+          from: "periods",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$idUser", "$$userId"] },
+                    { $lte: ["$startDate", now] },
+                    {
+                      $or: [
+                        { $eq: ["$endDate", null] },
+                        { $gte: ["$endDate", now] },
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+
+            // DISPOSITIVO
+            {
+              $lookup: {
+                from: "dispositives",
+                localField: "dispositiveId",
+                foreignField: "_id",
+                as: "device",
+              },
+            },
+            {
+              $unwind: {
+                path: "$device",
+                preserveNullAndEmptyArrays: true,
+              },
+            },
+
+            // RESPONSABLES DISPOSITIVO
+            {
+              $lookup: {
+                from: "users",
+                localField: "device.responsible",
+                foreignField: "_id",
+                as: "responsibleUsers",
+              },
+            },
+
+            // COORDINADORES DISPOSITIVO
+            {
+              $lookup: {
+                from: "users",
+                localField: "device.coordinators",
+                foreignField: "_id",
+                as: "coordinatorUsers",
+              },
+            },
+
+            // PROGRAMA
+            {
+              $lookup: {
+                from: "programs",
+                localField: "device.program",
+                foreignField: "_id",
+                as: "program",
+              },
+            },
+            {
+              $unwind: {
+                path: "$program",
+                preserveNullAndEmptyArrays: true,
+              },
+            },
+
+            // RESPONSABLES PROGRAMA
+            {
+              $lookup: {
+                from: "users",
+                localField: "program.responsible",
+                foreignField: "_id",
+                as: "programResponsibleUsers",
+              },
+            },
+
+            {
+              $project: {
+                _id: 1,
+                startDate: 1,
+                endDate: 1,
+                position: 1,
+                category: 1,
+                workShift: 1,
+
+                dispositiveId: 1,
+                deviceName: "$device.name",
+
+                programId: "$program._id",
+                programName: "$program.name",
+
+                responsibles: {
+                  $map: {
+                    input: "$responsibleUsers",
+                    as: "r",
+                    in: {
+                      _id: "$$r._id",
+                      name: { $concat: ["$$r.firstName", " ", "$$r.lastName"] },
+                    },
+                  },
+                },
+
+                coordinators: {
+                  $map: {
+                    input: "$coordinatorUsers",
+                    as: "c",
+                    in: {
+                      _id: "$$c._id",
+                      name: { $concat: ["$$c.firstName", " ", "$$c.lastName"] },
+                    },
+                  },
+                },
+
+                programResponsibles: {
+                  $map: {
+                    input: "$programResponsibleUsers",
+                    as: "pr",
+                    in: {
+                      _id: "$$pr._id",
+                      name: {
+                        $concat: ["$$pr.firstName", " ", "$$pr.lastName"],
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          ],
+          as: "currentHiring",
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          currentHiring: 1,
+        },
+      },
+    ];
+
+    const hiringData = await User.aggregate(pipeline);
+
+    usersWithErrors = usersWithErrorsBase.map((u) => {
+      const h = hiringData.find((x) => x._id.toString() === u._id.toString());
+      return {
+        ...u,
+        currentHiring: h?.currentHiring || [],
+      };
+    });
+  }
+
+  /* --------------------------------------------------------
+     5) RESPUESTA FINAL (SIN PAGINACIÓN)
+  -------------------------------------------------------- */
+  return response(res, 200, {
+    totalUsersWithErrors: usersWithErrors.length,
+    users: usersWithErrors,
+  });
+};
+
+
 // Regla: nómina del mes M → trabajo del mes M-1
 function getPreviousMonth(year, month) {
   if (month === 1) return { year: year - 1, month: 12 };
@@ -1200,6 +1505,8 @@ const auditPayrolls = async (req, res) => {
     firstName: 1,
     lastName: 1,
     email: 1,
+    phone:1,
+    phoneJob:1,
     apafa: 1,
     tracking: 1,
     employmentStatus: 1,
@@ -1296,7 +1603,7 @@ const auditPayrolls = async (req, res) => {
     let missingPayrolls = [];
     let notSignedPayrolls = [];
     let excludeUser = false;
-
+    
     // Analizar cada nómina solicitada
     for (const { year: py, month: pm } of payrollPeriods) {
 
@@ -1345,6 +1652,8 @@ const auditPayrolls = async (req, res) => {
       lastName: u.lastName,
       email: u.email,
       apafa: u.apafa,
+      phone:u.phone,
+      phoneJobe:u.phoneJob,
       tracking: u.tracking,
       employmentStatus: u.employmentStatus,
       missingPayrolls,
@@ -1382,6 +1691,7 @@ module.exports = {
   auditActiveLeaves: catchAsync(auditActiveLeaves),
   auditDocsProgram:catchAsync(auditDocsProgram),
   auditDocsDispo:catchAsync(auditDocsDispo),
-  auditPayrolls:catchAsync(auditPayrolls)
+  auditPayrolls:catchAsync(auditPayrolls),
+  auditDocsUser:catchAsync(auditDocsUser)
 
 };

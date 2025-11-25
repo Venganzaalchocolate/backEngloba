@@ -11,7 +11,7 @@ const { getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEm
 const {sendEmail, generateEmailHTML}=require("./emailControllerGoogle");
 const { getDocumentation,getDocumentationUnified, getDocumentationProgramDispositive, addProgramOrDispositiveToDocumentation, syncProgramDocsToDevices } = require("./documentationController");
 const { confirmSignature, requestSignature } = require("./pdfSignController");
-const {auditInfoDevices, auditInfoPrograms, auditInfoUsers, auditActiveLeaves, auditDocsProgram, auditDocsDispo, auditPayrolls} = require("./auditorController");
+const {auditInfoDevices, auditInfoPrograms, auditInfoUsers, auditActiveLeaves, auditDocsProgram, auditDocsDispo, auditPayrolls, auditDocsUser} = require("./auditorController");
 const { getCvOverview, getCvMonthly, getCvDistribution, getCvConversion, auditWorkersStats, getWorkersStats} = require("./statisticsController");
 const {deleteGroupWS, deleteMemberGroupWS,addGroupWS, createGroupWS, infoGroupWS,addUserToGroup, createUserWS, deleteUserByEmailWS, deleteMemeberAllGroups } = require("./workspaceController");
 const { getPreferents, getPreferentById, createPreferent, updatePreferent, deletePreferent, filterPreferents } = require("./preferentsController");
@@ -41,7 +41,7 @@ module.exports = {
     sendEmail, generateEmailHTML,
     getDocumentation, getDocumentationUnified,getDocumentationProgramDispositive,addProgramOrDispositiveToDocumentation,syncProgramDocsToDevices,
     requestSignature,confirmSignature,
-    auditInfoUsers,auditInfoPrograms, auditInfoDevices,auditActiveLeaves, auditDocsProgram, auditDocsDispo,auditPayrolls,
+    auditDocsUser,auditInfoUsers,auditInfoPrograms, auditInfoDevices,auditActiveLeaves, auditDocsProgram, auditDocsDispo,auditPayrolls,
     getCvOverview,getCvMonthly,getCvDistribution, getCvConversion,auditWorkersStats, getWorkersStats,
     deleteGroupWS, deleteMemberGroupWS,addGroupWS, createGroupWS, infoGroupWS, addUserToGroup,createUserWS, deleteUserByEmailWS,deleteMemeberAllGroups,
     getPreferents,getPreferentById,createPreferent,updatePreferent,deletePreferent,filterPreferents,

@@ -26,7 +26,7 @@ const LeavePeriodSchema = new Schema({
     },
     idPeriod:{
         type:Schema.Types.ObjectId,
-        ref: 'Period',
+        ref: 'Periods',
         index: true
     },
     idUser:{

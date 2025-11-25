@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router()
-const { tokenValid, auditInfoUsers, auditInfoPrograms, auditInfoDevices, auditActiveLeaves, auditDocsProgram,auditDocsDispo, auditPayrolls } = require('../controllers/indexController')
+const { tokenValid, auditInfoUsers, auditInfoPrograms, auditInfoDevices, auditActiveLeaves, auditDocsProgram,auditDocsDispo, auditPayrolls, auditDocsUser } = require('../controllers/indexController')
 
 
 
@@ -13,6 +13,7 @@ router.post('/auditinfodevice', tokenValid, auditInfoDevices);
 router.post('/auditactiveleaves', tokenValid, auditActiveLeaves)
 router.post('/auditdocsprogram', tokenValid, auditDocsProgram)
 router.post('/auditdocsdispo', tokenValid, auditDocsDispo)
+router.post('/auditdocsuser', tokenValid, auditDocsUser)
 router.post('/auditpayrolls', tokenValid, auditPayrolls)
 
 
