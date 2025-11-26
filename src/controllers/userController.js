@@ -238,8 +238,10 @@ const postCreateUser = async (req, res) => {
   try {
   const ws = await createUserWS(newUser._id);
   if (ws?.email) {
-    newUser.email = String(ws.email).toLowerCase();
+    const email_cor=String(ws.email).toLowerCase();
+    newUser.email = email_cor
     await newUser.save();         // mantiene la variable y el doc sincronizados
+    await sendWelcomeEmail(newUser, email_cor)
   }
 } catch (e) {
   console.log('no se ha podido crear el email corporativo'+ e);

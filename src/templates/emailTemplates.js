@@ -819,3 +819,363 @@ export function buildMissingDniHtmlEmail(name = '', phone = '', {
 </body>
 </html>`;
 }
+
+// BIENVENIDA NUEVOS TRABAJADORES
+// ===============================
+
+export function buildWelcomeWorkerPlainText(
+  name = '',
+  corpEmail = '',
+  {
+    supportEmail = 'comunicacion@engloba.org.es',
+    signatureTutorialUrl = 'https://drive.google.com/file/d/1GdrepisAPPiW9eAl8-S2t3-knKceC6ia/view?usp=sharing'
+  } = {}
+) {
+  return (
+`Hola ${name},
+
+¡Bienvenid@ a Asociación Engloba!
+
+— Tu cuenta de acceso —
+• Correo corporativo: ${corpEmail}
+• Contraseña (solo la primera vez que incies sesión): Temporal123*
+• Acceso a Gmail: https://mail.google.com
+
+
+— Primeros pasos —
+1) Entra en Gmail con tu cuenta (${corpEmail}).
+2) Cambia tu contraseña cuando el sistema te lo pida.
+3) Activa la verificación en dos pasos:
+   https://myaccount.google.com/security
+
+— Firma de correo electrónico —
+Para mantener la imagen corporativa unificada, configura tu firma en Gmail.
+
+1) Sigue el vídeo tutorial:
+   ${signatureTutorialUrl}
+
+2) Usa Mozilla Firefox para abrir el archivo de firma:
+   https://www.mozilla.org/es-ES/firefox/new/
+
+3) Descarga la firma del área en la que trabajas
+   (Desarrollo Comunitario, Igualdad, Infancia y Juventud,
+   LGTBIQ+, Mayores, Discapacidad, Migraciones, etc.).
+
+4) Ábrela con Firefox, pulsa Ctrl + A y luego Ctrl + C.
+
+5) En Gmail:
+   Configuración → Ver toda la configuración → Firma
+   • Crea una firma nueva y pega el contenido (Ctrl + V).
+   • Guarda los cambios y márcala como predeterminada.
+
+Si tienes dudas, escribe a: ${supportEmail}
+
+Nos alegra tenerte en el equipo.
+
+Un saludo,
+Departamento de Comunicación
+Asociación Engloba`
+  );
+}
+
+
+export function buildWelcomeWorkerHtmlEmail(
+  name = '',
+  corpEmail = '',
+  {
+    logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
+    supportEmail = 'comunicacion@engloba.org.es',
+    signatureTutorialUrl = 'https://drive.google.com/file/d/1GdrepisAPPiW9eAl8-S2t3-knKceC6ia/view?usp=sharing'
+  } = {}
+) {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bienvenida Engloba</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{
+      background:#ededed;
+      font-family:'Roboto',Arial,Helvetica,sans-serif;
+      color:#333;
+      line-height:1.5;
+      -webkit-text-size-adjust:100%;
+    }
+    .container{
+      max-width:640px;
+      margin:40px auto;
+      background:#ffffff;
+      border-radius:8px;
+      overflow:hidden;
+      box-shadow:0 8px 24px rgba(0,0,0,.08);
+    }
+    .header{
+      background:#50529f;
+      color:#ffffff;
+      text-align:center;
+      padding:24px;
+    }
+    .logo{
+      width:180px;
+      height:auto;
+      margin:0 auto 8px;
+      display:block;
+    }
+    .content{
+      padding:32px 24px 8px;
+      font-size:16px;
+    }
+    .content p{margin:12px 0 0;color:#666666;}
+    h1{
+      margin:0;
+      font-size:26px;
+      color:#333333;
+    }
+    h2{
+      margin:24px 0 8px;
+      font-size:18px;
+      color:#4f529f;
+    }
+    ol{
+      margin:8px 0 0 20px;
+      font-size:15px;
+      color:#555555;
+      line-height:1.6;
+    }
+    a.link{
+      color:#4f529f;
+      text-decoration:none;
+      font-weight:600;
+    }
+    .btn-primary{
+      display:inline-block;
+      background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);
+      color:#ffffff !important;
+      text-decoration:none;
+      font-size:15px;
+      padding:13px 26px;
+      border-radius:40px;
+      font-weight:700;
+    }
+    .block{
+      background:#f5f7fa;
+      padding:24px;
+    }
+    .block-inner{
+      padding:8px 0 0;
+    }
+    .area-table td{
+      padding:6px 0;
+    }
+    .btn-area{
+      display:inline-block;
+      color:#ffffff !important;
+      text-decoration:none;
+      font-size:14px;
+      padding:12px 18px;
+      border-radius:4px;
+    }
+    .footer{
+      padding:20px;
+      text-align:center;
+      font-size:14px;
+      color:#888888;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- CABECERA -->
+    <div class="header">
+      ${logoUrl ? `<img src="${logoUrl}" alt="Asociación Engloba" class="logo">` : ''}
+    </div>
+
+    <!-- BLOQUE BIENVENIDA -->
+    <div class="content">
+      <h1>¡Bienvenid@ a Asociación Engloba, ${name}!</h1>
+      <p>
+        Desde el Departamento de Comunicación queremos darte la bienvenida a
+        <b>Asociación Engloba</b>. A partir de ahora formarás parte de nuestro equipo y tendrás acceso
+        al espacio de trabajo corporativo a través de <b>Google&nbsp;Workspace</b>.
+      </p>
+
+      <h2>Tus datos de acceso</h2>
+      <p>
+        <b>Correo corporativo:</b> ${corpEmail}<br>
+        <b>Contraseña (solo la primera vez que inicies sesión):</b> Temporal123*<br>
+        <b>Acceso a Gmail:</b>
+        <a href="https://mail.google.com" target="_blank" class="link">
+          https://mail.google.com
+        </a>
+      </p>
+
+      <h2>Primeros pasos</h2>
+      <ol>
+        <li>Cierra sesión en gmail (si tienes una abierta).</li>
+        <li>Accede a <b>Gmail</b> con tu cuenta corporativa (<b>${corpEmail}</b>).</li>
+        <li>Cambia tu contraseña cuando el sistema te lo solicite.</li>
+        <li>
+          Activa la <b>verificación en dos pasos</b> desde
+          <a href="https://myaccount.google.com/security" target="_blank" class="link">
+            tu página de seguridad de Google
+          </a>.
+        </li>
+      </ol>
+    </div>
+
+    <!-- BOTÓN ACCESO GMAIL -->
+    <div style="padding:4px 24px 24px;text-align:center">
+      <a href="https://mail.google.com" target="_blank" class="btn-primary">
+        Acceder a Gmail ▸
+      </a>
+    </div>
+
+    <!-- BLOQUE FIRMA: INTRO -->
+    <div style="padding:8px 24px 8px">
+      <h2 style="margin:0 0 8px;font-size:20px;color:#333333">
+        Configura tu firma de correo corporativa
+      </h2>
+      <p style="margin:8px 0 0;font-size:16px;color:#666666">
+        Para mantener una <b>imagen corporativa unificada</b>, es muy importante que añadas la
+        <b>firma de Asociación Engloba</b> a tu correo.
+      </p>
+      <p style="margin:8px 0 0;font-size:16px;color:#666666">
+        Hemos preparado un <span style="background:#cc0000;color:#ffffff;padding:0 4px"><b>video tutorial</b></span>
+        con todos los pasos:
+      </p>
+      <p style="margin:8px 0 0;font-size:16px;font-weight:bold">
+        <a href="${signatureTutorialUrl}"
+           target="_blank"
+           style="color:#ffffff !important;text-decoration:none;background:#cc0000;padding:2px 4px;border-radius:3px;">
+          ${signatureTutorialUrl}
+        </a>
+      </p>
+      <p style="margin:8px 0 0;font-size:14px;color:#666666">
+        <b>Importante:</b> el proceso debe hacerse con
+        <a href="https://www.mozilla.org/es-ES/firefox/new/" target="_blank" class="link">
+          Mozilla Firefox
+        </a>, ya que en algunos casos <b>Chrome</b> no aplica bien las firmas.
+      </p>
+    </div>
+
+    <!-- BLOQUE FIRMA: BOTONES ÁREAS -->
+    <div style="padding:8px 24px 24px">
+      <p style="margin:0 0 8px;font-size:15px;color:#555555">
+        Descarga la firma del área en la que trabajas y sigue las instrucciones del vídeo (todos los archivos se deben abrir con el navegador firefox):
+      </p>
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" class="area-table">
+        <tbody>
+          <tr>
+            <td>
+              <a class="btn-area"
+                 style="background:#f0843a"
+                 href="https://drive.google.com/file/d/1H9TETP15Z36IN30UHbgDs4LKFEUGTh_e/view?usp=drive_link"
+                 target="_blank">
+                Descargar firma Desarrollo Comunitario
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <a class="btn-area"
+                 style="background:#2d3272"
+                 href="https://drive.google.com/file/d/1d4fyoNK5c2PK8HlhISAtRPR7co2TuUro/view?usp=drive_link"
+                 target="_blank">
+                Descargar firma Igualdad
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <a class="btn-area"
+                 style="background:#7881c1"
+                 href="https://drive.google.com/file/d/1clRROeKWr3H_p0kkQCXeGEbluPM79g0y/view?usp=drive_link"
+                 target="_blank">
+                Descargar firma Infancia y Juventud
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <a class="btn-area"
+                 style="background:#c9839a"
+                 href="https://drive.google.com/file/d/1y8COiP1ctXzYUwxOxn9UOQPpq2ygDNmi/view?usp=drive_link"
+                 target="_blank">
+                Descargar firma LGTBIQ+
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <a class="btn-area"
+                 style="background:#94aa51"
+                 href="https://drive.google.com/file/d/1rauASCtUmH_4OqEnSAinBG2yPGH5c6M_/view?usp=drive_link"
+                 target="_blank">
+                Descargar firma Mayores
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <a class="btn-area"
+                 style="background:#d4556a"
+                 href="https://drive.google.com/file/d/1mbAOZDGi7ezaqrEXqimOxUT9o8tZKayi/view?usp=drive_link"
+                 target="_blank">
+                Descargar firma Discapacidad
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <a class="btn-area"
+                 style="background:#26aecc"
+                 href="https://drive.google.com/file/d/1IvcWdpxeyyzu-RN3DcyubStBu3fcTZll/view?usp=sharing"
+                 target="_blank">
+                Descargar firma Migraciones
+              </a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p style="margin:16px 0 0;font-size:13px;color:#999999">
+        *Si los enlaces no se abren, descarga los archivos adjuntos al ordenador y ábrelos con doble clic.<br>
+        (Cuando abras la firma, ábrela con Firefox y copia el contenido desde allí).
+      </p>
+    </div>
+
+    <!-- INSTRUCCIONES FINALES FIRMA EN GMAIL -->
+    <div class="block">
+      <h2 style="margin:0 0 10px;font-size:18px;color:#333333">
+        Cómo añadir la firma en Gmail
+      </h2>
+      <div class="block-inner">
+        <ol>
+          <li>Haz doble clic en el archivo <i>.html</i> de la firma. Se abrirá en Firefox.</li>
+          <li>Pulsa <b>Ctrl + A</b> para seleccionar todo y luego <b>Ctrl + C</b> para copiar.</li>
+          <li>En Gmail ve a <b>Configuración &gt; Ver toda la configuración &gt; Firma</b>.</li>
+          <li>Haz clic en <b>Crear</b>, pon un nombre (por ejemplo, el área en la que trabajas) y pega con <b>Ctrl + V</b>.</li>
+          <li>Guarda los cambios y selecciona esa firma como predeterminada para tu cuenta.</li>
+        </ol>
+        <p style="margin:10px 0 0;font-size:14px;color:#666666">
+          <b>Tip:</b> Al redactar un correo, también puedes cambiar de firma desde el menú “Insertar firma”.
+        </p>
+      </div>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer">
+      ¡Nos alegra tenerte en el equipo!<br>
+      <b>Departamento de Comunicación · Asociación Engloba</b><br>
+      <span style="font-size:13px;">
+        Soporte: <a href="mailto:${supportEmail}" style="color:#4f529f;text-decoration:none;">${supportEmail}</a>
+      </span>
+    </div>
+
+  </div>
+</body>
+</html>`;
+}

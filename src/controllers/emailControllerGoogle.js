@@ -2,7 +2,7 @@
 const { google }   = require('googleapis');
 const MailComposer = require('nodemailer/lib/mail-composer');
 const { User, Periods, UserChangeRequest, Dispositive , Program, UserCv } = require('../models/indexModels');
-const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail } = require('../templates/emailTemplates');
+const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail } = require('../templates/emailTemplates');
 const { default: mongoose } = require('mongoose');
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -118,36 +118,26 @@ function normalizeString(str) {
 
 
 
-function buildUserEmail(user) {
-  if(user.email=='comunicacion@engloba.org.es') return 'comunicacion@engloba.org.es';
-  if(user.email=='web@engloba.org.es') return 'web@engloba.org.es';
-  if(!user) return '';
-  const first = (user.firstName || '').trim().toLowerCase();
-  const last = (user.lastName || '').trim().toLowerCase();
-  const normalizedFirst = first
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '');
-  const normalizedLast = last
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '');
-  return `${normalizedFirst}.${normalizedLast}@${DOMAIN}`;
-}
 
 
 
 
 
-async function sendWelcomeEmail(user) {
+
+async function sendWelcomeEmail(user, emailCorp='') {
   if (!user) throw new Error('user es obligatorio');
   const toPersonal = (user.email_personal || '').trim().toLowerCase();
   if (!toPersonal) throw new Error('El usuario no tiene email_personal');
+  const name=`${user.firstName} ${user.lastName}`
 
+  const subject     = 'Tu nueva cuenta de Engloba';
+  const text        = buildWelcomeWorkerPlainText(name, emailCorp);
+  const html        = buildWelcomeWorkerHtmlEmail(name, emailCorp);
 
-  const subject     = 'Tu nueva cuenta de Engloba y Google Workspace';
-  const text        = buildPlainText(user.firstName, user.email);
-  const html        = buildHtmlEmail(user.firstName, user.email);
-
-  await sendEmail([toPersonal,user.email], subject, text, html);
+  await sendEmail([toPersonal,emailCorp], subject, text, html);
 }
 
+//prueba()
 /* ────────────────────────────────────────────────────────────────────────────
    Plantilla SESAME · TEXTO PLANO
    ──────────────────────────────────────────────────────────────────────── */
