@@ -4,6 +4,8 @@ const MailComposer = require('nodemailer/lib/mail-composer');
 const { User, Periods, UserChangeRequest, Dispositive , Program, UserCv } = require('../models/indexModels');
 const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail } = require('../templates/emailTemplates');
 const { default: mongoose } = require('mongoose');
+const programs = require('../models/programs');
+const dispositive = require('../models/dispositive');
 
 /* ────────────────────────────────────────────────────────────────────────────
    1. Autenticación: cliente Gmail “impersonando” al remitente
@@ -137,7 +139,7 @@ async function sendWelcomeEmail(user, emailCorp='') {
   await sendEmail([toPersonal,emailCorp], subject, text, html);
 }
 
-//prueba()
+
 /* ────────────────────────────────────────────────────────────────────────────
    Plantilla SESAME · TEXTO PLANO
    ──────────────────────────────────────────────────────────────────────── */

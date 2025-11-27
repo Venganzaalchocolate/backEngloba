@@ -1,5 +1,5 @@
 // controllers/dispositiveController.js
-const { Provinces, Dispositive, Program, Documentation, Filedrive } = require('../models/indexModels');
+const { Provinces, Dispositive, Program, Documentation, Filedrive, Periods } = require('../models/indexModels');
 const { catchAsync, response, ClientError, toId } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { generateEmailHTML, sendEmail } = require('./emailControllerGoogle');
@@ -122,9 +122,6 @@ Creador: ${req.body?.userCreate || "—"}`;
   });
 };
 
-
-
-
 /** Obtener un Dispositive por id (sin programId) */
 const getDispositiveId = async (req, res) => {
   const { dispositiveId } = req.body;
@@ -186,7 +183,20 @@ if (!dispositiveId) throw new ClientError('Falta dispositiveId', 400);
   const oldProgramId = current.program ? String(current.program) : null;
 
   // Campos generales
-  if (active !== undefined) update.active = active;
+  if (active !== undefined){
+    update.active = active;
+    if(!active){
+      //active:true o no existe el campo endDate o no tiene fecha
+      const existHiringActive=await Periods.findOne({dispositiveId:dispositiveId, $or: [           // activo explícitamente
+      { endDate: { $exists: false } }, // sin campo endDate
+      { endDate: null },          // o endDate = null
+    ],})
+    if (existHiringActive) {
+    throw new ClientError('No se puede cerrar un dispositivo si tiene trabajadores con un periodo de contratación activo', 400);
+  }
+    }
+  } 
+
   if (name !== undefined) update.name = name;
   if (address !== undefined) update.address = address;
   if (email !== undefined) update.email = email;

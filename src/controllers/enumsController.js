@@ -56,7 +56,8 @@ function createProgramIndex(programs = []) {
       _id: p._id,
       name: p.name || '',
       acronym: p.acronym || '',
-      type:'program'
+      type:'program',
+      active:p.active
     });
   }
 
@@ -75,7 +76,8 @@ function createDispositiveIndex(dispositives = []) {
       name: d.name || '',
       program: d.program ? String(d.program) : null,   // <<< necesario
       province: d.province ? String(d.province) : null,
-      type:'dispositive'
+      type:'dispositive',
+      active:d.active
     };
   }
   return out;
