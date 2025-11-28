@@ -51,6 +51,19 @@ const PayrollSchema = new Schema({
     }
 });
 
+const VacationEntrySchema = new Schema({
+  date: {
+    type: Date,
+    required: true,
+  },
+  hours: {
+    type: Number,
+    required: true,
+    min: 0,
+  },
+}, { _id: false });
+
+
 // Esquema principal del Empleado
 const UserSchema = new Schema({
     birthday:{
@@ -147,6 +160,9 @@ const UserSchema = new Schema({
     // uploadFileSigned: pdf
     vacationDays:[Date],
     personalDays:[Date],
+    //NUEVOS CAMPOS
+    vacationHours: [VacationEntrySchema],
+    personalHours: [VacationEntrySchema],
     
     files: [fileSchema],
     notes:{

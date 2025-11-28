@@ -7,6 +7,19 @@ const { uploadFileToDrive, getFileById, deleteFileById, gestionAutomaticaNominas
 const { createUserWS, deleteUserByEmailWS, addUserToGroup, deleteMemeberAllGroups } = require('./workspaceController');
 const { actualizacionHiringyLeave } = require('./periodoTransicionController');
 
+const WEEKLY_HOURS = 38.5;
+// Día equivalente “redondeado”
+const DAILY_EQUIV_HOURS = 7.5;
+
+const ANNUAL_VACATION_DAYS = 23;
+const ANNUAL_PERSONAL_DAYS = 3;
+
+const ANNUAL_VACATION_HOURS = ANNUAL_VACATION_DAYS * DAILY_EQUIV_HOURS; // 172.5
+const ANNUAL_PERSONAL_HOURS = ANNUAL_PERSONAL_DAYS * DAILY_EQUIV_HOURS; // 22.5
+
+
+
+
 const toId = (v) => (v ? new mongoose.Types.ObjectId(v) : v);
 
 async function hasOpenHiring(userId) {
@@ -40,6 +53,28 @@ const toObjectId = (id, fieldName) => {
 };
 const normalizeDni = (dni) => String(dni).replace(/\s+/g, '').trim().toUpperCase();
 const debug = (...args) => console.log('[postCreateUser]', ...args);
+
+const normalizeVacationEntries = (arr) => {
+  if (!Array.isArray(arr)) return [];
+
+  return arr
+    .map((entry) => {
+      if (!entry) return null;
+
+      // Formato esperado: { date, hours }
+      const d = new Date(entry.date || entry.dateString || entry.d || entry);
+      if (isNaN(d)) return null;
+
+      const hoursRaw = entry.hours;
+      const hours =
+        typeof hoursRaw === "number" && hoursRaw >= 0
+          ? hoursRaw
+          : DAILY_EQUIV_HOURS; // fallback si viene sin horas
+
+      return { date: d, hours };
+    })
+    .filter(Boolean);
+};
 
 // =========================
 // CREATE USER (migrado a Dispositive)
@@ -864,6 +899,14 @@ const userPut = async (req, res) => {
       updateFields.phoneJob.extension = req.body.phoneJobExtension;
   }
 
+  // =============== VACACIONES / ASUNTOS PROPIOS POR HORAS (campos nuevos) ===============
+if (Array.isArray(req.body.vacationHours)) {
+  updateFields.vacationHours = normalizeVacationEntries(req.body.vacationHours);
+}
+
+if (Array.isArray(req.body.personalHours)) {
+  updateFields.personalHours = normalizeVacationEntries(req.body.personalHours);
+}
   // =============== ACTUALIZACIÓN FINAL ===============
   try {
     const updatedUser = await User.findOneAndUpdate(
@@ -1241,7 +1284,6 @@ const getBasicUserSearch = async (req, res) => {
 
     return response(res, 200, { users });
 };
-
 
 
 
