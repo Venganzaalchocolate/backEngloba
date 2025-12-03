@@ -6,13 +6,14 @@ const { validateRequiredFields, createAccentInsensitiveRegex } = require('../uti
 const { uploadFileToDrive, getFileById, deleteFileById, gestionAutomaticaNominas, obtenerCarpetaContenedora } = require('./googleController');
 const { createUserWS, deleteUserByEmailWS, addUserToGroup, deleteMemeberAllGroups } = require('./workspaceController');
 const { actualizacionHiringyLeave } = require('./periodoTransicionController');
+const { sendWelcomeEmail } = require('./emailControllerGoogle');
 
 const WEEKLY_HOURS = 38.5;
 // Día equivalente “redondeado”
 const DAILY_EQUIV_HOURS = 7.5;
 
 const ANNUAL_VACATION_DAYS = 23;
-const ANNUAL_PERSONAL_DAYS = 3;
+const ANNUAL_PERSONAL_DAYS = 2;
 
 const ANNUAL_VACATION_HOURS = ANNUAL_VACATION_DAYS * DAILY_EQUIV_HOURS; // 172.5
 const ANNUAL_PERSONAL_HOURS = ANNUAL_PERSONAL_DAYS * DAILY_EQUIV_HOURS; // 22.5

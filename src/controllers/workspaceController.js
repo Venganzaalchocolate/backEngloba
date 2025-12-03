@@ -680,6 +680,11 @@ async function ensureProgramGroup(program) {
       { groupWorkspace: group.id }
     );
   }
+    try {
+    await patchWithBackoff(email, commonSettings)
+  } catch (error) {
+    console.log('No se ha podido configurar el grupo')
+  }
   return { id: group.id, email: group.email };
 }
 
@@ -710,7 +715,11 @@ const p=await Program.updateOne(
   { $set: { 'devices.$.groupWorkspace': group.id } }
 );
 
-
+  try {
+    await patchWithBackoff(email, commonSettings)
+  } catch (error) {
+    console.log('No se ha podido configurar el grupo')
+  }
   return { id: group.id, email: group.email };
 }
 
@@ -752,10 +761,11 @@ async function updateAllGroupsSettings() {
   // for (const g of groups) {
   //   await patchWithBackoff(g.email, commonSettings);
   // }
-  await patchWithBackoff('pimenorestapia.edu@engloba.org.es', commonSettings);
+  await patchWithBackoff('pimenoresgranada.dir@engloba.org.es', commonSettings);
 }
 
-// updateAllGroupsSettings()
+
+//updateAllGroupsSettings()
 // // // // Ejecuta la tarea:
 // updateAllGroupsSettings().catch(console.error);
 

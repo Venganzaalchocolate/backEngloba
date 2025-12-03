@@ -8,7 +8,7 @@ const { postCreateBag, getBags, getBagID, bagDeactivateId, BagPut, getBagsFilter
 
 const { offerList,offerCreate,offerUpdate,offerHardDelete,offerId } = require("./offerController");
 const { getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers } = require("./enumsController");
-const {sendEmail, generateEmailHTML}=require("./emailControllerGoogle");
+const {sendEmail, generateEmailHTML, sendWelcomeEmail}=require("./emailControllerGoogle");
 const { getDocumentation,getDocumentationUnified, getDocumentationProgramDispositive, addProgramOrDispositiveToDocumentation, syncProgramDocsToDevices } = require("./documentationController");
 const { confirmSignature, requestSignature } = require("./pdfSignController");
 const {auditInfoDevices, auditInfoPrograms, auditInfoUsers, auditActiveLeaves, auditDocsProgram, auditDocsDispo, auditPayrolls, auditDocsUser} = require("./auditorController");
@@ -38,7 +38,7 @@ module.exports = {
     getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId,getProgramId,
     offerList,offerCreate,offerUpdate,offerHardDelete,offerId,
     getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers,
-    sendEmail, generateEmailHTML,
+    sendEmail, generateEmailHTML, sendWelcomeEmail,
     getDocumentation, getDocumentationUnified,getDocumentationProgramDispositive,addProgramOrDispositiveToDocumentation,syncProgramDocsToDevices,
     requestSignature,confirmSignature,
     auditDocsUser,auditInfoUsers,auditInfoPrograms, auditInfoDevices,auditActiveLeaves, auditDocsProgram, auditDocsDispo,auditPayrolls,
