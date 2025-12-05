@@ -564,6 +564,7 @@ export function buildChangeRequestNotificationHtml(opts = {}) {
     note,
     changes = [],
     documents = [],
+    timeOff = null,             // 👈 NUEVO: resumen de vacaciones/asuntos propios
     actionUrl = '',
     logoUrl = '',
     supportEmail = 'soporte@tudominio.com',
@@ -581,23 +582,39 @@ export function buildChangeRequestNotificationHtml(opts = {}) {
     crema: '#f5dc98',
   };
 
-  const tTxt = requestType === 'datos' ? 'Cambio de datos'
-           : requestType === 'mixta' ? 'Datos + Documentación'
-           : 'Documentación';
+  // Texto del chip según tipo de solicitud
+  const TYPE_LABELS = {
+    datos: 'Cambio de datos',
+    mixta: 'Datos + Documentación',
+    documentos: 'Documentación',
+    vacation: 'Vacaciones',
+    personal: 'Asuntos propios',
+  };
+
+  const tTxt = TYPE_LABELS[requestType] || 'Solicitud';
 
   const when = submittedAt ? new Date(submittedAt).toLocaleString('es-ES') : '';
 
   // Colores de chip según tipo
-  const chipColor = requestType === 'datos' ? COLORS.verde
-                   : requestType === 'mixta' ? COLORS.yema
-                   : COLORS.morado;
+  const chipColor =
+    requestType === 'datos'
+      ? COLORS.verde
+      : requestType === 'mixta'
+      ? COLORS.yema
+      : requestType === 'vacation'
+      ? COLORS.verde
+      : requestType === 'personal'
+      ? COLORS.naranja
+      : COLORS.morado;
 
   const renderChanges = (arr = []) => {
     if (!arr.length) return '';
     return `
       <h3>Cambios solicitados</h3>
       <ul class="list">
-        ${arr.map(c => `
+        ${arr
+          .map(
+            (c) => `
           <li>
             <span class="label">${c?.label || 'Campo'}</span>
             <span class="arrow">→</span>
@@ -605,7 +622,9 @@ export function buildChangeRequestNotificationHtml(opts = {}) {
             <span class="sep">→</span>
             <span class="val to">${c?.to ?? '—'}</span>
           </li>
-        `).join('')}
+        `
+          )
+          .join('')}
       </ul>
     `;
   };
@@ -615,15 +634,36 @@ export function buildChangeRequestNotificationHtml(opts = {}) {
     return `
       <h3>Documentos adjuntos</h3>
       <ul class="list">
-        ${arr.map(d => `
+        ${arr
+          .map(
+            (d) => `
           <li>
             <span class="label">${d?.name || 'Documento'}</span>
             ${d?.kind ? `<span class="pill">${d.kind}</span>` : ''}
             ${d?.date ? `<span class="meta">· ${d.date}</span>` : ''}
             ${d?.description ? `<div class="desc">${d.description}</div>` : ''}
           </li>
-        `).join('')}
+        `
+          )
+          .join('')}
       </ul>
+    `;
+  };
+
+  // 🔹 Bloque específico para vacaciones / asuntos propios
+  const renderTimeOff = (t) => {
+    if (!t) return '';
+    const rangeText =
+      t.range && t.daysCount > 1
+        ? ` (${t.range})`
+        : t.range && t.daysCount === 1
+        ? ` (${t.range})`
+        : '';
+    return `
+      <h3>${t.kindLabel}</h3>
+      <p style="margin-bottom:10px;">
+        Días solicitados: <strong>${t.daysCount}</strong>${rangeText}
+      </p>
     `;
   };
 
@@ -660,12 +700,11 @@ export function buildChangeRequestNotificationHtml(opts = {}) {
   }
   .row{margin:6px 0}
 
-  /* Línea de "Solicitud" – mayor compatibilidad email (sin flex) */
+  /* Línea de "Solicitud" */
   .tag{display:inline-block;white-space:nowrap}
   .tag strong,.chip,.meta{display:inline-block;vertical-align:middle}
   .tag strong{margin-right:6px}
 
-  /* Chip corregido (sin margen que lo desalineaba) */
   .chip{
     padding:6px 10px;border-radius:999px;background:${chipColor};
     color:#fff;font-weight:700;font-size:12px;letter-spacing:.2px;line-height:1
@@ -680,14 +719,12 @@ export function buildChangeRequestNotificationHtml(opts = {}) {
   .val{font-family:ui-monospace,Menlo,Consolas,monospace;background:#fafafa;border:1px solid #eee;border-radius:6px;padding:1px 6px}
   .val.to{background:#eef0ff;border-color:#dfe2ff}
 
-  /* Píldoras y detalles con morado/malva */
   .pill{
     display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;
     background:#eef0ff;color:#4f529f;border:1px solid #dfe2ff;font-size:12px;font-weight:700
   }
   .desc{font-size:14px;color:#444;margin-top:4px}
 
-  /* Botón con gradiente corporativo */
   .btns{margin:18px 0 6px;text-align:center}
   .btn{
     display:inline-block;padding:12px 22px;border-radius:40px;font-weight:700;
@@ -719,6 +756,7 @@ export function buildChangeRequestNotificationHtml(opts = {}) {
         ${note ? `<div class="row"><strong>Nota del trabajador:</strong> ${note}</div>` : ''}
       </div>
 
+      ${renderTimeOff(timeOff)}
       ${renderChanges(changes)}
       ${renderDocs(documents)}
 
@@ -737,6 +775,7 @@ export function buildChangeRequestNotificationHtml(opts = {}) {
 </body>
 </html>`;
 }
+
 
 export function buildMissingDniPlainText(name = '', phone = '', supportEmail = 'comunicacion@engloba.org.es') {
   return (

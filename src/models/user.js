@@ -158,6 +158,7 @@ const UserSchema = new Schema({
     payrolls: [PayrollSchema],
     // subida de archivos firmados
     // uploadFileSigned: pdf
+    //vacationDays:[Date] y personalDays:[Date] son campos antiguos que no se deben tener en cuenta
     vacationDays:[Date],
     personalDays:[Date],
     //NUEVOS CAMPOS

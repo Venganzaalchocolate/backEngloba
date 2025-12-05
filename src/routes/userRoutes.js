@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router()
-const { rehireUser, postCreateUser,getUsersCvsIDs, getUserID, getUsers, UserDeleteId, userPut, tokenValid, getUsersFilter, payroll, getFileUser, getUserName, getAllUsersWithOpenPeriods, getUsersCurrentStatus, getBasicUserSearch} = require('../controllers/indexController')
+const { rehireUser, postCreateUser,getUsersCvsIDs, getUserID, getUsers, UserDeleteId, userPut, tokenValid, getUsersFilter, payroll, getFileUser, getUserName, getAllUsersWithOpenPeriods, getUsersCurrentStatus, getBasicUserSearch, getUserListDays} = require('../controllers/indexController')
 // Configura `multer` para almacenamiento en memoria
 const multer = require('multer');
 
@@ -16,7 +16,7 @@ router.post("/users", tokenValid, getUsers)
 router.post("/userscv",tokenValid, getUsersCvsIDs)
 router.post("/deleteuser", tokenValid,UserDeleteId)
 router.post('/filteruser', tokenValid, getUsersFilter)
-router.post("/payroll", upload.single('pdf'), payroll)
+router.post("/payroll", tokenValid, upload.any(), payroll)
 
 
 
@@ -25,6 +25,7 @@ router.post("/usersname", tokenValid, getUserName)
 router.post('/user', tokenValid, getUserID)
 router.post('/searchusername', tokenValid, getBasicUserSearch);
 router.post("/modifyuser", tokenValid, userPut);
+router.post("/getuserlistdays", tokenValid, getUserListDays)
 
 router.post('/createemployer', upload.any(), postCreateUser);
 

@@ -20,7 +20,8 @@ const {
   getCvPresignPut,
   getCvPresignGet,
   zipMultipleFiles,
-  zipPayrolls
+  zipPayrolls,
+  listFile
 } = require('../controllers/indexController');
 
 // Multer en memoria (CV, FileDrive)
@@ -45,6 +46,9 @@ router.post('/pdf/confirm-sign', tokenValid, confirmSignature);
 
 router.post("/zip-files", tokenValid, zipMultipleFiles);
 router.post("/zip-payrolls", tokenValid, zipPayrolls);
+
+//lista de archivos 
+router.post("/listfile", tokenValid, listFile)
 
 
 module.exports = router;

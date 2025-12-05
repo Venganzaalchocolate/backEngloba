@@ -31,6 +31,16 @@ const { Schema, Types } = mongoose;
  * - to   : valor propuesto por el trabajador
  * - type : pista de tipo para la UI/validaciones (informativo)
  */
+
+const TimeOffEntrySchema = new Schema(
+  {
+    date: { type: Date, required: true },
+    hours: { type: Number, required: true, min: 0 },
+  },
+  { _id: false }
+);
+
+
 const ChangeLineSchema = new Schema(
   {
     path: { type: String, required: true },
@@ -141,17 +151,26 @@ const UserChangeRequestSchema = new Schema(
     },
 
     changes: {
-      type: [ChangeLineSchema],
-      validate: {
-        // ✅ Permitimos solicitudes “solo documentos” o “solo cambios”
-        validator: function (arr) {
-          const hasChanges = Array.isArray(arr) && arr.length > 0;
-          const hasUploads = Array.isArray(this.uploads) && this.uploads.length > 0;
-          return hasChanges || hasUploads;
-        },
-        message: "Debe existir al menos un cambio o un archivo a subir",
-      },
+  type: [ChangeLineSchema],
+  validate: {
+    validator: function (arr) {
+      const hasChanges = Array.isArray(arr) && arr.length > 0;
+      const hasUploads = Array.isArray(this.uploads) && this.uploads.length > 0;
+      const hasTimeOff =
+        this.timeOff &&
+        Array.isArray(this.timeOff.entries) &&
+        this.timeOff.entries.length > 0;
+
+      // ahora permitimos:
+      // - solo cambios
+      // - solo documentos
+      // - solo timeOff
+      return hasChanges || hasUploads || hasTimeOff;
     },
+    message:
+      "Debe existir al menos un cambio, un archivo o una solicitud de días",
+  },
+},
 
     uploads: { type: [UploadSchema], default: [] },
 
@@ -164,6 +183,18 @@ const UserChangeRequestSchema = new Schema(
     conflictCheckEnabled: { type: Boolean, default: true },
 
     error: { type: String }, // mensaje de error al aplicar (si status = failed)
+
+     // ⬇️ NUEVO BLOQUE
+    timeOff: {
+      type: {
+        kind: {
+          type: String,
+          enum: ["vacation", "personal"], // vacaciones / asuntos propios
+        },
+        entries: [TimeOffEntrySchema],
+      },
+      default: null,
+    },
   },
   { timestamps: true }
 );

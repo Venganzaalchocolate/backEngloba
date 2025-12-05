@@ -443,7 +443,56 @@ function buildBasicPayload(reqDoc, worker, deviceContexts, actionUrl, logoUrl, s
 
   const hasChanges = Array.isArray(reqDoc.changes) && reqDoc.changes.length > 0;
   const hasDocs    = Array.isArray(reqDoc.uploads) && reqDoc.uploads.length > 0;
-  const requestType = hasChanges && hasDocs ? 'mixta' : hasChanges ? 'datos' : 'documentos';
+  const hasTimeOff =
+    reqDoc.timeOff &&
+    Array.isArray(reqDoc.timeOff.entries) &&
+    reqDoc.timeOff.entries.length > 0;
+
+  let requestType;
+
+  if (hasTimeOff && !hasChanges && !hasDocs) {
+    // SOLO vacaciones / asuntos propios
+    requestType = reqDoc.timeOff.kind;   // "vacation" | "personal"
+  } else if (hasChanges && hasDocs) {
+    requestType = 'mixta';
+  } else if (hasChanges) {
+    requestType = 'datos';
+  } else if (hasDocs) {
+    requestType = 'documentos';
+  } else {
+    requestType = 'documentos'; // fallback antiguo
+  }
+
+  // (opcional) resumen de días para usarlo en la plantilla
+  let timeOffSummary = null;
+  if (hasTimeOff) {
+    const kindLabel =
+      reqDoc.timeOff.kind === 'vacation' ? 'Vacaciones' : 'Asuntos propios';
+
+    const dates = reqDoc.timeOff.entries
+      .map(e => e?.date ? new Date(e.date) : null)
+      .filter(d => d && !Number.isNaN(d.getTime()))
+      .sort((a, b) => a - b);
+
+    const uniqueDates = Array.from(
+      new Set(dates.map(d => d.toISOString().slice(0, 10)))
+    );
+
+    const daysCount = uniqueDates.length;
+    let range = '';
+    if (daysCount === 1) {
+      range = uniqueDates[0];
+    } else if (daysCount > 1) {
+      range = `${uniqueDates[0]} - ${uniqueDates[uniqueDates.length - 1]}`;
+    }
+
+    timeOffSummary = {
+      kind: reqDoc.timeOff.kind,   // "vacation" | "personal"
+      kindLabel,
+      daysCount,
+      range,
+    };
+  }
 
   const labelFor = (path) => ({
     firstName: "Nombre",
@@ -492,11 +541,15 @@ function buildBasicPayload(reqDoc, worker, deviceContexts, actionUrl, logoUrl, s
     note: reqDoc.note || '',
     changes,
     documents,
+    timeOff: timeOffSummary,   // ← nuevo
     actionUrl,
     logoUrl,
     supportEmail
   };
 }
+
+
+
 
 function getGmailClient(asUser, scopes = ['https://www.googleapis.com/auth/gmail.modify']) {
   const auth = new google.auth.JWT({

@@ -22,14 +22,21 @@ const dispositiveSchema = new Schema({
   files: [{ type: Schema.Types.ObjectId, ref: 'Filedrive' }],
   groupWorkspace: String,
   subGroupWorkspace: { type: [String], default: [] },
-  cronology:[cronologySchema],
-  program: { type: Schema.Types.ObjectId, ref: 'Program', index: true }, // NUEVO
+  cronology: [cronologySchema],
+  program: { type: Schema.Types.ObjectId, ref: 'Program' }, // 👈 SIN index: true
 }, { timestamps: true });
 
-// Índice único compuesto (con partial para no romper docs antiguos sin program)
+// Índice único compuesto (ya cubre consultas por program y program+name)
 dispositiveSchema.index(
   { program: 1, name: 1 },
   { unique: true, partialFilterExpression: { program: { $type: 'objectId' } } }
 );
+
+// Índice por provincia (bien para filtrar por provincia sola)
+dispositiveSchema.index({ province: 1 });
+
+// (Opcional) si haces muchas queries program+province:
+dispositiveSchema.index({ program: 1, province: 1 });
+
 
 module.exports = mongoose.model('Dispositive', dispositiveSchema);

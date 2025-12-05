@@ -66,4 +66,8 @@ const PeriodSchema = new Schema({
     }
 });
 
+PeriodSchema.index({ dispositiveId: 1, active: 1, endDate: 1 });
+PeriodSchema.index({ idUser: 1, active: 1, endDate: 1 });
+PeriodSchema.index({ position: 1, dispositiveId: 1, active: 1, endDate: 1 });
+
 module.exports = mongoose.model('Periods', PeriodSchema)

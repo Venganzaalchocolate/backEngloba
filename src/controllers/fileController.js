@@ -415,6 +415,50 @@ const deleteFileDrive = async (req, res, next) => {
 };
 
 
+
+const MODEL_MAP = {
+  user: "User",
+  User: "User",
+  program: "Program",
+  Program: "Program",
+  dispositive: "Dispositive",
+  Dispositive: "Dispositive",
+  finantial: "Finantial",
+  Finantial: "Finantial",
+  estadistics: "Estadistics",
+  Estadistics: "Estadistics",
+  usercv: "UserCv",
+  UserCv: "UserCv",
+};
+
+const listFile = async (req, res) => {
+  const { originModel, idModel } = req.body;
+
+  if (!originModel) {
+    throw new ClientError("Falta originModel", 400);
+  }
+  if (!idModel) {
+    throw new ClientError("Falta idModel", 400);
+  }
+
+  const canonicalModel = MODEL_MAP[originModel];
+  if (!canonicalModel) {
+    throw new ClientError("originModel no permitido", 400);
+  }
+
+  const files = await Filedrive.find({
+    originModel: canonicalModel,
+    idModel: new mongoose.Types.ObjectId(idModel),
+  })
+    .select("_id originDocumentation date fileLabel description idDrive category")
+    .lean();
+
+  response(res, 200, { items: files });
+};
+
+
+
+
 module.exports = {
   postUploadFile: catchAsync(postUploadFile),
   getFile: catchAsync(getFile),
@@ -426,6 +470,7 @@ module.exports = {
   getCvPresignPut: catchAsync(getCvPresignPut),
   getCvPresignGet: catchAsync(getCvPresignGet),
   zipMultipleFiles: catchAsync(zipMultipleFiles),
-  zipPayrolls:catchAsync(zipPayrolls)
+  zipPayrolls:catchAsync(zipPayrolls),
+  listFile:catchAsync(listFile)
 
 };

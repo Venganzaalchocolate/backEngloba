@@ -1,9 +1,9 @@
-const {postCreateUser, getUserID, getUsers, UserDeleteId, userPut, getUsersFilter, payroll, getFileUser, getUserName, getAllUsersWithOpenPeriods, rehireUser, getUsersCurrentStatus, getBasicUserSearch}=require("./userController");
+const {postCreateUser, getUserID, getUsers, UserDeleteId, userPut, getUsersFilter, payroll, getFileUser, getUserName, getAllUsersWithOpenPeriods, rehireUser, getUsersCurrentStatus, getBasicUserSearch, getUserListDays}=require("./userController");
 const { login, validToken, verifyCode } = require("./loginController");
 const {tokenValid, tokenValidAdmin} = require("./authController");
 const { getUserCvsFilter, postCreateUserCv, getUsersCvsIDs, getUserCvs, UserCvDeleteId, UserCvPut, getUserCvID } = require("./userCvController");
 const { uploadFile, listBucketContents, getFileCv, deleteFile, getPresignedPut, getPresignedGet } = require("./ovhController");
-const { postUploadFile, getFile, deleteIdFile, createFileDrive, updateFileDrive, deleteFileDrive, getFileDrive, getCvPresignPut,getCvPresignGet, zipMultipleFiles, zipPayrolls} = require("./fileController");
+const { postUploadFile, getFile, deleteIdFile, createFileDrive, updateFileDrive, deleteFileDrive, getFileDrive, getCvPresignPut,getCvPresignGet, zipMultipleFiles, zipPayrolls, listFile} = require("./fileController");
 const { postCreateBag, getBags, getBagID, bagDeactivateId, BagPut, getBagsFilter, BagPutDeleteUser } = require("./bagController");
 
 const { offerList,offerCreate,offerUpdate,offerHardDelete,offerId } = require("./offerController");
@@ -17,7 +17,7 @@ const {deleteGroupWS, deleteMemberGroupWS,addGroupWS, createGroupWS, infoGroupWS
 const { getPreferents, getPreferentById, createPreferent, updatePreferent, deletePreferent, filterPreferents } = require("./preferentsController");
 const {createLeave,updateLeave,closeLeave, softDeleteLeave, hardDeleteLeave, listLeaves, getLeaveById}= require("./leaveController");
 const {createHiring,updateHiring,closeHiring,softDeleteHiring,hardDeleteHiring,listHirings,getHiringById, getLastHiringForUser, relocateHirings}= require("./hiringController");
-const { postCancelChangeRequest, postRejectChangeRequest, postApproveChangeRequest, getPendingChangeRequests, getMyChangeRequests, postCreateChangeRequest } = require("./userChangeRequestController");
+const { postCancelChangeRequest, postRejectChangeRequest, postApproveChangeRequest, getPendingChangeRequests, getMyChangeRequests, postCreateChangeRequest, postCreateTimeOffChangeRequest } = require("./userChangeRequestController");
 const { moveDriveFile, adoptDriveFileIntoFiledrive } = require("./googleController");
 
 const { getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, getProgramId} = require("./programController");
@@ -28,11 +28,11 @@ const { getDispositiveId, createDispositive, updateDispositive, deleteDispositiv
 
 
 module.exports = {
-    getAllUsersWithOpenPeriods, postCreateUser, getUserID, getUsers, UserDeleteId, userPut,getUsersFilter,rehireUser,getUsersCurrentStatus,
+    getAllUsersWithOpenPeriods, postCreateUser, getUserID, getUsers, UserDeleteId, userPut,getUsersFilter,rehireUser,getUsersCurrentStatus,getUserListDays,
     login, validToken,verifyCode,
     tokenValid, tokenValidAdmin,
     getUserCvsFilter, postCreateUserCv, getUsersCvsIDs, getUserCvs, UserCvDeleteId, UserCvPut, payroll, getFileUser,getUserCvID, getUserName,getBasicUserSearch,
-    createFileDrive,updateFileDrive, deleteFileDrive,uploadFile, listBucketContents, getFile, deleteFile, getFileDrive, getPresignedPut, getPresignedGet, moveDriveFile, adoptDriveFileIntoFiledrive,
+    listFile,createFileDrive,updateFileDrive, deleteFileDrive,uploadFile, listBucketContents, getFile, deleteFile, getFileDrive, getPresignedPut, getPresignedGet, moveDriveFile, adoptDriveFileIntoFiledrive,
     zipPayrolls, zipMultipleFiles, postUploadFile, deleteIdFile, getCvPresignPut,getCvPresignGet,
     postCreateBag, getBags, getBagID,bagDeactivateId, BagPut,getBagsFilter, BagPutDeleteUser,
     getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId,getProgramId,
@@ -47,7 +47,7 @@ module.exports = {
     getPreferents,getPreferentById,createPreferent,updatePreferent,deletePreferent,filterPreferents,
     createLeave,updateLeave,closeLeave, softDeleteLeave, hardDeleteLeave, listLeaves, getLeaveById,
     createHiring,updateHiring,closeHiring,softDeleteHiring,hardDeleteHiring,listHirings,getHiringById,getLastHiringForUser,relocateHirings,
-    postCreateChangeRequest,getMyChangeRequests,getPendingChangeRequests,postApproveChangeRequest,postRejectChangeRequest,postCancelChangeRequest,
+    postCreateTimeOffChangeRequest, postCreateChangeRequest,getMyChangeRequests,getPendingChangeRequests,postApproveChangeRequest,postRejectChangeRequest,postCancelChangeRequest,
     createDispositive,updateDispositive,deleteDispositive,handleCoordinators,handleResponsibles,listsResponsiblesAndCoordinators, getDispositiveResponsable,getDispositiveId
 
     

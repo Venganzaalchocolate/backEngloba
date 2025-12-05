@@ -1,5 +1,5 @@
 // controllers/users.js
-const { User, Program, Periods, Leaves, Preferents, Dispositive } = require('../models/indexModels');
+const { User, Program, Periods, Leaves, Preferents, Dispositive, UserChangeRequest } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { validateRequiredFields, createAccentInsensitiveRegex } = require('../utils/utils');
@@ -301,7 +301,6 @@ async function getUsersCurrentStatus(req, res) {
   const periods = await Periods.find(
     {
       idUser: { $in: ids },
-      active: { $ne: false },
       startDate: { $lte: now },
       $or: [
         { endDate: { $exists: false } },
@@ -429,146 +428,145 @@ async function getUsersCurrentStatus(req, res) {
 // =========================
 // LIST USERS (migrado a Dispositive / dispositiveId)
 // =========================
-const getUsers = async (req, res) => {
-  if (!req.body.page || !req.body.limit) {
-    throw new ClientError("Faltan datos no son correctos", 400);
-  }
+// const getUsers = async (req, res) => {
+//   if (!req.body.page || !req.body.limit) {
+//     throw new ClientError("Faltan datos no son correctos", 400);
+//   }
 
-  const page  = parseInt(req.body.page, 10)  || 1;
-  const limit = parseInt(req.body.limit, 10) || 10;
+//   const page  = parseInt(req.body.page, 10)  || 1;
+//   const limit = parseInt(req.body.limit, 10) || 10;
 
-  const filters = {};
+//   const filters = {};
 
-  // ---------------- Búsquedas por texto y flags de User ----------------
-  if (req.body.firstName) {
-    const rx = createAccentInsensitiveRegex(req.body.firstName);
-    filters.firstName = { $regex: rx };
-  }
-  if (req.body.lastName) {
-    const rx = createAccentInsensitiveRegex(req.body.lastName);
-    filters.lastName = { $regex: rx };
-  }
+//   // ---------------- Búsquedas por texto y flags de User ----------------
+//   if (req.body.firstName) {
+//     const rx = createAccentInsensitiveRegex(req.body.firstName);
+//     filters.firstName = { $regex: rx };
+//   }
+//   if (req.body.lastName) {
+//     const rx = createAccentInsensitiveRegex(req.body.lastName);
+//     filters.lastName = { $regex: rx };
+//   }
 
-  if (req.body.email) filters.email = { $regex: req.body.email, $options: 'i' };
-  if (req.body.phone) filters.phone = { $regex: req.body.phone, $options: 'i' };
-  if (req.body.dni)   filters.dni   = { $regex: req.body.dni,   $options: 'i' };
-  if (req.body.gender) filters.gender = req.body.gender;
+//   if (req.body.email) filters.email = { $regex: req.body.email, $options: 'i' };
+//   if (req.body.phone) filters.phone = { $regex: req.body.phone, $options: 'i' };
+//   if (req.body.dni)   filters.dni   = { $regex: req.body.dni,   $options: 'i' };
+//   if (req.body.gender) filters.gender = req.body.gender;
 
-  if (req.body.fostered === "si") filters.fostered = true;
-  if (req.body.fostered === "no") filters.fostered = false;
-  if (req.body.apafa === "si") filters.apafa = true;
-  if (req.body.apafa === "no") filters.apafa = false;
+//   if (req.body.fostered === "si") filters.fostered = true;
+//   if (req.body.fostered === "no") filters.fostered = false;
+//   if (req.body.apafa === "si") filters.apafa = true;
+//   if (req.body.apafa === "no") filters.apafa = false;
 
-  if (req.body.disability !== undefined) {
-    if (req.body.disability === "si") filters["disability.percentage"] = { $gt: 0 };
-    if (req.body.disability === "no") filters["disability.percentage"] = 0;
-  }
+//   if (req.body.disability !== undefined) {
+//     if (req.body.disability === "si") filters["disability.percentage"] = { $gt: 0 };
+//     if (req.body.disability === "no") filters["disability.percentage"] = 0;
+//   }
 
-  // Estado laboral
-  if (req.body.status) {
-    if (req.body.status === 'total') {
-      filters.employmentStatus = { $in: ['activo', 'en proceso de contratación'] };
-    } else {
-      filters.employmentStatus = req.body.status;
-    }
-  }
+//   // Estado laboral
+//   if (req.body.status) {
+//     if (req.body.status === 'total') {
+//       filters.employmentStatus = { $in: ['activo', 'en proceso de contratación'] };
+//     } else {
+//       filters.employmentStatus = req.body.status;
+//     }
+//   }
 
-  // ---------------- Resolución por provincia / programa / dispositive via Dispositive ----------------
-  const intersectArrays = (a, b) => {
-    if (!a || !b) return [];
-    const s = new Set(a);
-    return b.filter(x => s.has(x));
-  };
+//   // ---------------- Resolución por provincia / programa / dispositive via Dispositive ----------------
+//   const intersectArrays = (a, b) => {
+//     if (!a || !b) return [];
+//     const s = new Set(a);
+//     return b.filter(x => s.has(x));
+//   };
 
-  let dispositiveIdsFromProvinces = null;
-  let dispositiveIdsFromProgram   = null;
+//   let dispositiveIdsFromProvinces = null;
+//   let dispositiveIdsFromProgram   = null;
 
-  // provinces -> lista de dispositiveIds de esa provincia
-  if (req.body.provinces && mongoose.Types.ObjectId.isValid(req.body.provinces)) {
-    const byProv = await Dispositive.find({ province: toId(req.body.provinces) })
-      .select('_id').lean();
-    dispositiveIdsFromProvinces = byProv.map(d => String(d._id));
-  }
+//   // provinces -> lista de dispositiveIds de esa provincia
+//   if (req.body.provinces && mongoose.Types.ObjectId.isValid(req.body.provinces)) {
+//     const byProv = await Dispositive.find({ province: toId(req.body.provinces) })
+//       .select('_id').lean();
+//     dispositiveIdsFromProvinces = byProv.map(d => String(d._id));
+//   }
 
-  // programId -> lista de dispositiveIds del programa
-  if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
-    const byProg = await Dispositive.find({ program: toId(req.body.programId) })
-      .select('_id').lean();
-    dispositiveIdsFromProgram = byProg.map(d => String(d._id));
-  }
+//   // programId -> lista de dispositiveIds del programa
+//   if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
+//     const byProg = await Dispositive.find({ program: toId(req.body.programId) })
+//       .select('_id').lean();
+//     dispositiveIdsFromProgram = byProg.map(d => String(d._id));
+//   }
 
-  let finalDispositiveIds = null;
-  if (dispositiveIdsFromProvinces && dispositiveIdsFromProgram) {
-    finalDispositiveIds = intersectArrays(dispositiveIdsFromProvinces, dispositiveIdsFromProgram);
-  } else if (dispositiveIdsFromProvinces) {
-    finalDispositiveIds = dispositiveIdsFromProvinces;
-  } else if (dispositiveIdsFromProgram) {
-    finalDispositiveIds = dispositiveIdsFromProgram;
-  }
+//   let finalDispositiveIds = null;
+//   if (dispositiveIdsFromProvinces && dispositiveIdsFromProgram) {
+//     finalDispositiveIds = intersectArrays(dispositiveIdsFromProvinces, dispositiveIdsFromProgram);
+//   } else if (dispositiveIdsFromProvinces) {
+//     finalDispositiveIds = dispositiveIdsFromProvinces;
+//   } else if (dispositiveIdsFromProgram) {
+//     finalDispositiveIds = dispositiveIdsFromProgram;
+//   }
 
-  // position
-  let positionId = null;
-  if (req.body.position && mongoose.Types.ObjectId.isValid(req.body.position)) {
-    positionId = String(req.body.position);
-  }
+//   // position
+//   let positionId = null;
+//   if (req.body.position && mongoose.Types.ObjectId.isValid(req.body.position)) {
+//     positionId = String(req.body.position);
+//   }
 
-  // dispositive concreto
-  let singleDispositiveId = null;
-  if (req.body.dispositive && mongoose.Types.ObjectId.isValid(req.body.dispositive)) {
-    singleDispositiveId = String(req.body.dispositive);
-  }
+//   // dispositive concreto
+//   let singleDispositiveId = null;
+//   if (req.body.dispositive && mongoose.Types.ObjectId.isValid(req.body.dispositive)) {
+//     singleDispositiveId = String(req.body.dispositive);
+//   }
 
-  // ¿Necesitamos filtrar por periodos abiertos?
-  const mustFilterByOpenPeriods =
-    !!finalDispositiveIds || !!positionId || !!singleDispositiveId;
+//   // ¿Necesitamos filtrar por periodos abiertos?
+//   const mustFilterByOpenPeriods =
+//     !!finalDispositiveIds || !!positionId || !!singleDispositiveId;
 
-  if (mustFilterByOpenPeriods) {
-    // Combinar dispositivo concreto con la lista (intersección)
-    let allowedDispositiveIds = finalDispositiveIds;
-    if (singleDispositiveId) {
-      allowedDispositiveIds = allowedDispositiveIds
-        ? intersectArrays(allowedDispositiveIds, [singleDispositiveId])
-        : [singleDispositiveId];
-    }
+//   if (mustFilterByOpenPeriods) {
+//     // Combinar dispositivo concreto con la lista (intersección)
+//     let allowedDispositiveIds = finalDispositiveIds;
+//     if (singleDispositiveId) {
+//       allowedDispositiveIds = allowedDispositiveIds
+//         ? intersectArrays(allowedDispositiveIds, [singleDispositiveId])
+//         : [singleDispositiveId];
+//     }
 
-    const periodFilter = {
-      active: { $ne: false },
-      $or: [{ endDate: null }, { endDate: { $exists: false } }],
-    };
+//     const periodFilter = {
+//       $or: [{ endDate: null }, { endDate: { $exists: false } }],
+//     };
 
-    if (allowedDispositiveIds && allowedDispositiveIds.length) {
-      periodFilter.dispositiveId = { $in: allowedDispositiveIds.map(id => new mongoose.Types.ObjectId(id)) };
-    }
-    if (positionId) {
-      periodFilter.position = new mongoose.Types.ObjectId(positionId);
-    }
+//     if (allowedDispositiveIds && allowedDispositiveIds.length) {
+//       periodFilter.dispositiveId = { $in: allowedDispositiveIds.map(id => new mongoose.Types.ObjectId(id)) };
+//     }
+//     if (positionId) {
+//       periodFilter.position = new mongoose.Types.ObjectId(positionId);
+//     }
 
-    const userIdsFromPeriods = await Periods
-      .find(periodFilter)
-      .distinct('idUser');
+//     const userIdsFromPeriods = await Periods
+//       .find(periodFilter)
+//       .distinct('idUser');
 
-    if (!userIdsFromPeriods.length) {
-      return response(res, 200, { users: [], totalPages: 0 });
-    }
+//     if (!userIdsFromPeriods.length) {
+//       return response(res, 200, { users: [], totalPages: 0 });
+//     }
 
-    filters._id = { $in: userIdsFromPeriods };
-  }
+//     filters._id = { $in: userIdsFromPeriods };
+//   }
 
-  // ---------------- Paginación sobre Users ya filtrados ----------------
-  const totalDocs  = await User.countDocuments(filters);
-  const totalPages = Math.ceil(totalDocs / limit);
+//   // ---------------- Paginación sobre Users ya filtrados ----------------
+//   const totalDocs  = await User.countDocuments(filters);
+//   const totalPages = Math.ceil(totalDocs / limit);
 
-  const users = await User.find(filters)
-    .populate({
-      path: 'files.filesId',
-      model: 'Filedrive',
-    })
-    .sort({ createdAt: -1 })
-    .skip((page - 1) * limit)
-    .limit(limit);
+//   const users = await User.find(filters)
+//     .populate({
+//       path: 'files.filesId',
+//       model: 'Filedrive',
+//     })
+//     .sort({ createdAt: -1 })
+//     .skip((page - 1) * limit)
+//     .limit(limit);
 
-  return response(res, 200, { users, totalPages });
-};
+//   return response(res, 200, { users, totalPages });
+// };
 
 // =========================
 // getAllUsersWithOpenPeriods (migrado a Dispositive / dispositiveId)
@@ -914,11 +912,17 @@ if (Array.isArray(req.body.personalHours)) {
       { _id: userId },
       { $set: updateFields },
       { new: true, runValidators: true }
-    ).populate({
-      path: "files.filesId",
-      model: "Filedrive",
-    });
-
+    )
+    if (req.body.personalHours || req.body.vacationHours) {
+      const payload = {
+        _id: updatedUser._id,
+        vacationHours: updatedUser.vacationHours || [],
+        vacationDays: updatedUser.vacationDays || [],
+        personalHours: updatedUser.personalHours || [],
+        personalDays: updatedUser.personalDays || [],
+      };
+      return response(res, 200, payload);
+    }
     return response(res, 200, updatedUser);
   } catch (error) {
     if (error.code === 11000) {
@@ -936,58 +940,78 @@ if (Array.isArray(req.body.personalHours)) {
 // =========================
 // Payroll (igual)
 // =========================
+// --- helpers nóminas "slim" ---
+
+// Devuelve sólo el array de nóminas de un usuario (o null si no existe)
+const getUserPayrollsSlim = async (userId) => {
+  const user = await User.findById(userId, 'payrolls').lean();
+  if (!user) return null;
+  return user.payrolls || [];
+};
+
 const deletePayroll = async (userId, payrollId) => {
   try {
+    // 1) Traemos SOLO la nómina a borrar (para conocer pdf y sign)
     const user = await User.findOne(
       { _id: userId, 'payrolls._id': payrollId },
-      { 'payrolls.$': 1 }
-    );
+      { 'payrolls.$': 1 } // sólo ese subdocumento
+    ).lean();
 
-    if (!user) return false;
+    if (!user || !user.payrolls || user.payrolls.length === 0) return null;
 
-    if (user.payrolls[0].sign) {
-      await deleteFileById(user.payrolls[0].sign);
+    const payroll = user.payrolls[0];
+
+    // 2) Borramos firma (si existe)
+    if (payroll.sign) {
+      await deleteFileById(payroll.sign).catch(() => {});
     }
-    const deleteResponse = await deleteFileById(user.payrolls[0].pdf)
-    if (deleteResponse.success) {
-      const result = await User.findByIdAndUpdate(
-        userId,
-        { $pull: { payrolls: { _id: payrollId } } },
-        { new: true }
-      ).populate({
-        path: 'files.filesId',
-        model: 'Filedrive',
-      });
 
-      return result;
-    } else {
-      return false
+    // 3) Borramos PDF principal; si falla, abortamos
+    const deleteResponse = await deleteFileById(payroll.pdf);
+    if (!deleteResponse || !deleteResponse.success) {
+      return null;
     }
+
+    // 4) Quitamos la nómina del usuario, devolviendo SOLO payrolls
+    const updated = await User.findByIdAndUpdate(
+      userId,
+      { $pull: { payrolls: { _id: payrollId } } },
+      {
+        new: true,
+        select: 'payrolls', // no queremos más campos
+      }
+    ).lean();
+
+    if (!updated) return null;
+    return updated.payrolls || [];
   } catch {
-    return false;
+    return null;
   }
 };
 
 const createPayroll = async (idUser, file, payrollYear, payrollMonth) => {
   try {
-    const userAux = await User.findById(idUser);
+    // 1) Traemos sólo el DNI para nombrar el archivo
+    const userAux = await User.findById(idUser, 'dni').lean();
     if (!userAux) throw new Error('Usuario no encontrado');
 
     const fileNameAux = `${userAux.dni}_${payrollMonth}_${payrollYear}.pdf`;
     const folderId = process.env.GOOGLE_DRIVE_NUEVAS_NOMINAS;
     const fileAux = await uploadFileToDrive(file, folderId, fileNameAux, true);
-
-    if (fileAux) {
-      const gestionado = await gestionAutomaticaNominas();
-      if (gestionado) {
-        return await User.findById(idUser).populate({
-          path: 'files.filesId',
-          model: 'Filedrive',
-        });
-      }
-    } else {
+    
+    if (!fileAux) {
       throw new Error('Error al subir el archivo a Google Drive');
     }
+
+    // Esta función ya se encarga de crear/actualizar las nóminas en User
+    const gestionado = await gestionAutomaticaNominas();
+    if (!gestionado) {
+      throw new Error('No se pudo procesar la nómina automáticamente');
+    }
+
+    // 2) Leemos solo payrolls del usuario actualizado
+    const payrolls = await getUserPayrollsSlim(idUser);
+    return payrolls;
   } catch {
     return null;
   }
@@ -995,79 +1019,137 @@ const createPayroll = async (idUser, file, payrollYear, payrollMonth) => {
 
 const signPayroll = async (idUser, file, payrollYear, payrollMonth, idPayroll) => {
   try {
+    // 1) Sólo DNI + nómina objetivo
     const userAux = await User.findOne(
       { _id: idUser, 'payrolls._id': idPayroll },
       { dni: 1, 'payrolls.$': 1 }
-    );
+    ).lean();
 
     if (!userAux || !userAux.payrolls || userAux.payrolls.length === 0) {
       return null;
     }
 
-    const result = {
-      dni: userAux.dni,
-      pdf: userAux.payrolls[0].pdf
-    };
+    const payroll = userAux.payrolls[0];
 
-    const fileNameAux = `${result.dni}_${payrollMonth}_${payrollYear}_signed.pdf`;
-    const folderId = await obtenerCarpetaContenedora(result.pdf);
+    // Podemos tomar año/mes del propio subdoc para evitar incoherencias
+    const year = payroll.payrollYear ?? payrollYear;
+    const month = payroll.payrollMonth ?? payrollMonth;
+
+    const monthPadded = String(month).padStart(2, '0');
+    const fileNameAux = `${userAux.dni}_${monthPadded}_${year}_signed.pdf`;
+
+    // 2) Buscamos la carpeta donde está la nómina base y subimos la firmada
+    const folderId = await obtenerCarpetaContenedora(payroll.pdf);
     const fileAux = await uploadFileToDrive(file, folderId, fileNameAux, true);
 
-    if (fileAux) {
-      return await User.findOneAndUpdate(
-        { _id: idUser, 'payrolls._id': idPayroll },
-        { $set: { 'payrolls.$.sign': fileAux.id } },
-        { new: true }
-      ).populate({
-        path: 'files.filesId',
-        model: 'Filedrive',
-      });
-    } else {
+    if (!fileAux) {
       throw new Error('Error al subir el archivo a Google Drive');
     }
+
+    // 3) Actualizamos SOLO el campo sign de esa nómina
+    const updated = await User.findOneAndUpdate(
+      { _id: idUser, 'payrolls._id': idPayroll },
+      { $set: { 'payrolls.$.sign': fileAux.id } },
+      {
+        new: true,
+        select: 'payrolls',
+      }
+    ).lean();
+
+    if (!updated) return null;
+    return updated.payrolls || [];
   } catch {
     return null;
   }
 };
 
+
 const payroll = async (req, res) => {
-  if (!req.body.userId) throw new ClientError('El campo userId es requerido', 400);
-  if (!req.body.type) throw new ClientError('La acción es requerida', 400);
 
-  const id = req.body.userId;
-  const file = req.file;
+  const { userId, type } = req.body || {};
 
-  if (req.body.type === 'create') {
+    if (!userId) throw new ClientError('El campo userId es requerido', 400);
+  if (!type) throw new ClientError('La acción es requerida', 400);
+  
+  const id = userId;
+
+  const file = req.file || (Array.isArray(req.files) ? req.files[0] : null);
+
+  // 1) LISTAR nóminas del usuario (para que el front sea independiente del padre)
+  if (type === 'list') {
+    const payrolls = await getUserPayrollsSlim(id);
+    if (!payrolls) throw new ClientError('Usuario no encontrado', 404);
+    return response(res, 200, { payrolls });
+  }
+
+  // 2) CREAR nómina
+  if (type === 'create') {
     if (!file) throw new ClientError('El archivo es requerido para la creación de nóminas', 400);
+
     const requiredFields = ['payrollYear', 'payrollMonth'];
     validateRequiredFields(req.body, requiredFields);
+
     const createResult = await createPayroll(id, file, req.body.payrollYear, req.body.payrollMonth);
-    if (!createResult) throw new ClientError('No se ha podido subir la nómina', 400);
-    return response(res, 200, createResult);
+    if (!createResult) {
+      throw new ClientError('No se ha podido subir la nómina', 400);
+    }
 
-  } else if (req.body.type === 'delete') {
+    // Sólo devolvemos las nóminas
+    return response(res, 200, { payrolls: createResult });
+  }
+
+  // 3) BORRAR nómina
+  if (type === 'delete') {
     if (!req.body.idPayroll) throw new ClientError('El campo idPayroll es requerido', 400);
-    const newUser = await deletePayroll(id, req.body.idPayroll);
-    if (!!newUser) return response(res, 200, newUser);
-    throw new ClientError('No se ha podido borrar la nómina', 404);
 
-  } else if (req.body.type === 'get') {
+    const payrolls = await deletePayroll(id, req.body.idPayroll);
+    if (!payrolls) {
+      throw new ClientError('No se ha podido borrar la nómina', 404);
+    }
+
+    return response(res, 200, { payrolls });
+  }
+
+  // 4) DESCARGAR PDF (stream directo)
+  if (type === 'get') {
     if (!req.body.pdf) throw new ClientError('El campo pdf es requerido', 400);
-    const { file, stream } = await getFileById(req.body.pdf);
-    if (!stream) throw new ClientError('Archivo no encontrado en Google Drive', 404);
-    res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
-    res.setHeader('Content-Type', file.mimeType);
-    stream.pipe(res);
 
-  } else if (req.body.type === 'sign') {
+    const { file: driveFile, stream } = await getFileById(req.body.pdf);
+    if (!stream) throw new ClientError('Archivo no encontrado en Google Drive', 404);
+
+    res.setHeader('Content-Disposition', `attachment; filename="${driveFile.name}"`);
+    res.setHeader('Content-Type', driveFile.mimeType);
+    return stream.pipe(res);
+  }
+
+  // 5) FIRMAR nómina (subir PDF firmado + actualizar campo sign)
+  if (type === 'sign') {
     const requiredFields = ['payrollYear', 'payrollMonth', 'idPayroll'];
     validateRequiredFields(req.body, requiredFields);
+
     if (!file) throw new ClientError('El archivo es requerido para la firma de la nómina', 400);
-    const signResult = await signPayroll(id, file, req.body.payrollYear, req.body.payrollMonth, req.body.idPayroll);
-    if (!signResult) throw new ClientError('No se ha podido subir la nómina', 400);
-    return response(res, 200, signResult);
+
+    const signResult = await signPayroll(
+      id,
+      file,
+      req.body.payrollYear,
+      req.body.payrollMonth,
+      req.body.idPayroll
+    );
+
+    if (!signResult) {
+      throw new ClientError('No se ha podido subir la nómina firmada', 400);
+    }
+
+    return response(res, 200, { payrolls: signResult });
   }
+
+  // Si llega aquí, type no es ninguno de los soportados
+  throw new ClientError('Acción de nómina no soportada', 400);
+
+
 };
+
 
 // =========================
 // Rehire (migrado a Dispositive / dispositiveId)
@@ -1287,6 +1369,222 @@ const getBasicUserSearch = async (req, res) => {
 };
 
 
+async function getUserIdsWithOpenPeriodsForFilters(body) {
+  const periodQuery = {
+    active: { $ne: false },
+    $or: [{ endDate: null }, { endDate: { $exists: false } }],
+  };
+
+  // 1) Filtro por dispositiveId directo
+  const dispositiveId = toId(body.dispositive);
+  if (dispositiveId) {
+    periodQuery.dispositiveId = dispositiveId;
+  } else if (body.programId || body.provinces) {
+    // 2) Filtro por programa y/o provincia => Dispositive -> _id
+    const dspQuery = {};
+    const programId = toId(body.programId);
+    const provinceId = toId(body.provinces);
+
+    if (programId) dspQuery.program = programId;
+    if (provinceId) dspQuery.province = provinceId;
+
+    // Si solo has filtrado por provincias/programa, resolvemos
+    // primero cuáles son los dispositivos válidos
+    const dispositiveIds = await Dispositive.distinct("_id", dspQuery);
+    if (!dispositiveIds.length) {
+      return []; // no hay dispositivos = no hay periodos abiertos
+    }
+
+    periodQuery.dispositiveId = { $in: dispositiveIds };
+  }
+
+  // 3) Filtro por posición (opcional)
+  const positionId = toId(body.position);
+  if (positionId) {
+    periodQuery.position = positionId;
+  }
+
+  // 4) Distinct sobre Periods (idUser) con los filtros anteriores
+  const userIds = await Periods.distinct("idUser", periodQuery);
+  return userIds;
+}
+
+
+const getUsers = async (req, res) => {
+  const { page, limit } = req.body || {};
+
+  if (!page || !limit) {
+    throw new ClientError("Faltan datos no son correctos", 400);
+  }
+
+  const pageNum  = parseInt(page, 10)  || 1;
+  const limitNum = parseInt(limit, 10) || 10;
+
+  const body = req.body || {};
+  const filters = {};
+
+  // ---------------- Búsquedas por texto y flags de User ----------------
+  if (body.firstName) {
+    const rx = createAccentInsensitiveRegex(body.firstName);
+    filters.firstName = { $regex: rx };
+  }
+  if (body.lastName) {
+    const rx = createAccentInsensitiveRegex(body.lastName);
+    filters.lastName = { $regex: rx };
+  }
+
+  if (body.email) {
+    filters.email = { $regex: body.email, $options: "i" };
+  }
+  if (body.phone) {
+    filters.phone = { $regex: body.phone, $options: "i" };
+  }
+  if (body.dni) {
+    filters.dni = { $regex: body.dni, $options: "i" };
+  }
+  if (body.gender) {
+    filters.gender = body.gender;
+  }
+
+  if (body.fostered === "si") filters.fostered = true;
+  if (body.fostered === "no") filters.fostered = false;
+
+  if (body.apafa === "si") filters.apafa = true;
+  if (body.apafa === "no") filters.apafa = false;
+
+  if (body.disability !== undefined) {
+    if (body.disability === "si") {
+      filters["disability.percentage"] = { $gt: 0 };
+    }
+    if (body.disability === "no") {
+      filters["disability.percentage"] = 0;
+    }
+  }
+
+  // Estado laboral
+  if (body.status) {
+    if (body.status === "total") {
+      filters.employmentStatus = {
+        $in: ["activo", "en proceso de contratación"],
+      };
+    } else {
+      filters.employmentStatus = body.status;
+    }
+  }
+
+  // ---------------- Filtros por Periods abiertos (programa/dispositivo/provincia/posición) ----------------
+  const mustFilterByPeriods =
+    body.dispositive || body.programId || body.provinces || body.position;
+
+  if (mustFilterByPeriods) {
+    const userIdsFromPeriods = await getUserIdsWithOpenPeriodsForFilters(body);
+
+    if (!userIdsFromPeriods.length) {
+      // No hay ningún usuario con periodo abierto que cumpla esos filtros
+      return response(res, 200, { users: [], totalPages: 0 });
+    }
+
+    filters._id = { $in: userIdsFromPeriods };
+  }
+
+  // ---------------- Proyección LIGERA para lista / panel ----------------
+  const projection = {
+    firstName: 1,
+    lastName: 1,
+    employmentStatus: 1,
+    apafa: 1,
+    fostered: 1,
+    gender: 1,
+    dni: 1,
+    email: 1,
+    email_personal: 1,
+    phone: 1,
+    birthday: 1,
+    tracking: 1,
+    role: 1,
+    studies:1,
+    _id: 1,
+    socialSecurityNumber:1,
+    phoneJob:1
+  };
+
+  // ---------------- Paginación sobre Users ya filtrados ----------------
+  const totalDocs  = await User.countDocuments(filters);
+  const totalPages = Math.ceil(totalDocs / limitNum);
+
+  const users = await User.find(filters, projection)
+    .sort({ createdAt: -1})
+    .skip((pageNum - 1) * limitNum)
+    .limit(limitNum)
+    .lean();
+
+  if (!users.length) {
+    return response(res, 200, { users: [], totalPages });
+  }
+
+  const userIds = users.map((u) => u._id);
+
+  // =========================
+  // 1) hasPendingRequests (UserChangeRequest)
+  // =========================
+  const [pendingIds, leaveIds] = await Promise.all([
+    UserChangeRequest.distinct("userId", {
+      userId: { $in: userIds },
+      status: "pending",
+    }),
+    // =========================
+    // 2) isOnLeave (Leaves)
+    // =========================
+    Leaves.distinct("idUser", {
+      idUser: { $in: userIds },
+      active: { $ne: false },
+      $or: [
+        { actualEndLeaveDate: null },
+        { actualEndLeaveDate: { $exists: false } },
+      ],
+    }),
+  ]);
+
+  const pendingSet = new Set(pendingIds.map((id) => String(id)));
+  const leaveSet   = new Set(leaveIds.map((id) => String(id)));
+
+  const usersWithFlags = users.map((u) => ({
+    ...u,
+    hasPendingRequests: pendingSet.has(String(u._id)),
+    isOnLeave:          leaveSet.has(String(u._id)),
+  }));
+  response(res, 200, { users: usersWithFlags, totalPages });
+};
+
+/*
+.populate({
+      path: "files.filesId",
+      model: "Filedrive",
+    });
+*/
+
+const getUserListDays = async (req, res) => {
+  const { idUser } = req.body || {};
+
+  if (!idUser) {
+    throw new ClientError('El campo idUser es requerido', 400);
+  }
+
+  const userDays = await User.findById(idUser)
+    .select('vacationHours vacationDays personalHours personalDays')
+    .lean();
+
+  if (!userDays) {
+    throw new ClientError('Usuario no encontrado', 404);
+  }
+
+  response(res, 200, {
+    vacationHours: userDays.vacationHours || [],
+    vacationDays: userDays.vacationDays || [],
+    personalHours: userDays.personalHours || [],
+    personalDays: userDays.personalDays || [],
+  });
+};
 
 
 module.exports = {
@@ -1302,5 +1600,6 @@ module.exports = {
   getUserName: catchAsync(getUserName),
   getAllUsersWithOpenPeriods: catchAsync(getAllUsersWithOpenPeriods),
   getUsersCurrentStatus: catchAsync(getUsersCurrentStatus),
-  getBasicUserSearch:catchAsync(getBasicUserSearch)
+  getBasicUserSearch:catchAsync(getBasicUserSearch),
+  getUserListDays:catchAsync(getUserListDays)
 };
