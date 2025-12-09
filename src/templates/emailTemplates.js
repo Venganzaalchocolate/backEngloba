@@ -1218,3 +1218,244 @@ export function buildWelcomeWorkerHtmlEmail(
 </body>
 </html>`;
 }
+
+
+// Helper común
+function getMonthLabelEs(month, year) {
+  const m = parseInt(month, 10);
+  const y = parseInt(year, 10);
+  if (Number.isNaN(m) || Number.isNaN(y)) return `${month}/${year}`;
+  return new Date(y, m - 1, 1).toLocaleDateString('es-ES', {
+    month: 'long',
+    year:  'numeric'
+  });
+}
+
+// --- NOTIFICACIÓN: nómina subida a la APP (TEXTO PLANO) ---
+export function buildPayrollAppNotificationPlainText(
+  name = '',
+  month,
+  year,
+  appUrl = 'https://app.engloba.org.es'
+) {
+  const monthLabel = getMonthLabelEs(month, year);
+
+  return (
+`Hola ${name},
+
+Te informamos de que ya está disponible en la aplicación interna tu nómina correspondiente a ${monthLabel}.
+
+Puedes consultarla accediendo a tu ficha personal en la app:
+
+${appUrl}
+
+Si detectas algún error o tienes alguna duda sobre el contenido de tu nómina, por favor contacta con el departamento de rrhh@engloba.org.es.
+
+Un saludo,
+Asociación Engloba`
+  );
+}
+
+// --- NOTIFICACIÓN: nómina subida a la APP (HTML) ---
+export function buildPayrollAppNotificationHtmlEmail(
+  name = '',
+  month,
+  year,
+  {
+    logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
+    appUrl  = 'https://app.engloba.org.es'
+  } = {}
+) {
+  const monthLabel = getMonthLabelEs(month, year);
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Nueva nómina disponible</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{
+      background:#ededed;
+      font-family:'Roboto',Arial,Helvetica,sans-serif;
+      color:#333;
+      line-height:1.5;
+    }
+    .card{
+      max-width:640px;
+      margin:40px auto;
+      background:#ffffff;
+      border-radius:12px;
+      overflow:hidden;
+      box-shadow:0 8px 24px rgba(0,0,0,.08);
+    }
+    .header{
+      background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);
+      color:#ffffff;
+      text-align:center;
+      padding:24px 20px;
+    }
+    .logo{
+      max-width:140px;
+      height:auto;
+      margin:0 auto 8px;
+      display:block;
+    }
+    .header h1{
+      margin:0;
+      font-size:22px;
+    }
+    .content{
+      padding:28px 26px 24px;
+      font-size:15px;
+    }
+    .content p{margin:12px 0}
+    .btn{
+      display:inline-block;
+      margin:20px 0 4px;
+      padding:12px 24px;
+      background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);
+      color:#ffffff !important;
+      text-decoration:none;
+      border-radius:40px;
+      font-weight:700;
+      font-size:15px;
+    }
+    .footer{
+      padding:16px;
+      text-align:center;
+      font-size:13px;
+      color:#777;
+      background:#f4f5fb;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      ${logoUrl ? `<img src="${logoUrl}" alt="Asociación Engloba" class="logo">` : ''}
+      <h1>Nueva nómina disponible</h1>
+    </div>
+    <div class="content">
+      <p>Hola ${name},</p>
+      <p>Te informamos de que ya está disponible en la aplicación interna tu nómina correspondiente a <strong>${monthLabel}</strong> para ser firmada.</p>
+      <p>Puedes consultarla accediendo a tu ficha personal en la app de Asociación Engloba:</p>
+      <p style="text-align:center;">
+        <a href="${appUrl}" target="_blank" class="btn">Acceder a la app ▸</a>
+      </p>
+      <p>Si detectas algún error o tienes dudas sobre el contenido de tu nómina, contacta con el departamento de Recursos Humanos.</p>
+      <p>Un saludo,<br><strong>Asociación Engloba</strong></p>
+    </div>
+    <div class="footer">
+      Este mensaje se ha generado automáticamente desde el sistema de nóminas.
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+// --- NOTIFICACIÓN: nómina adjunta (TEXTO PLANO) ---
+export function buildPayrollAttachmentPlainText(
+  name = '',
+  month,
+  year
+) {
+  const monthLabel = getMonthLabelEs(month, year);
+
+  return (
+`Hola ${name},
+
+Te enviamos adjunta tu nómina correspondiente a ${monthLabel} en formato PDF.
+
+Por favor, revisa la información y guarda este documento en un lugar seguro. 
+Si detectas algún error o necesitas alguna aclaración, ponte en contacto con el departamento de Administración de Personal.
+
+Un saludo,
+Asociación Engloba`
+  );
+}
+
+// --- NOTIFICACIÓN: nómina adjunta (HTML) ---
+export function buildPayrollAttachmentHtmlEmail(
+  name = '',
+  month,
+  year,
+  {
+    logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png'
+  } = {}
+) {
+  const monthLabel = getMonthLabelEs(month, year);
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Nómina adjunta</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{
+      background:#ededed;
+      font-family:'Roboto',Arial,Helvetica,sans-serif;
+      color:#333;
+      line-height:1.5;
+    }
+    .card{
+      max-width:640px;
+      margin:40px auto;
+      background:#ffffff;
+      border-radius:12px;
+      overflow:hidden;
+      box-shadow:0 8px 24px rgba(0,0,0,.08);
+    }
+    .header{
+      background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);
+      color:#ffffff;
+      text-align:center;
+      padding:24px 20px;
+    }
+    .logo{
+      max-width:140px;
+      height:auto;
+      margin:0 auto 8px;
+      display:block;
+    }
+    .header h1{
+      margin:0;
+      font-size:22px;
+    }
+    .content{
+      padding:28px 26px 24px;
+      font-size:15px;
+    }
+    .content p{margin:12px 0}
+    .footer{
+      padding:16px;
+      text-align:center;
+      font-size:13px;
+      color:#777;
+      background:#f4f5fb;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      ${logoUrl ? `<img src="${logoUrl}" alt="Asociación Engloba" class="logo">` : ''}
+      <h1>Nómina adjunta</h1>
+    </div>
+    <div class="content">
+      <p>Hola ${name},</p>
+      <p>Te enviamos adjunta tu nómina correspondiente a <strong>${monthLabel}</strong> en formato PDF.</p>
+      <p>Te recomendamos revisarla con calma y conservar este documento en un lugar seguro.</p>
+      <p>Si detectas algún error o necesitas alguna aclaración, ponte en contacto con el departamento de Administración de Personal.</p>
+      <p>Un saludo,<br><strong>Asociación Engloba</strong></p>
+    </div>
+    <div class="footer">
+      Este mensaje se ha generado automáticamente desde el sistema de nóminas.
+    </div>
+  </div>
+</body>
+</html>`;
+}

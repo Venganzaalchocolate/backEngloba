@@ -2,10 +2,8 @@
 const { google }   = require('googleapis');
 const MailComposer = require('nodemailer/lib/mail-composer');
 const { User, Periods, UserChangeRequest, Dispositive , Program, UserCv } = require('../models/indexModels');
-const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail } = require('../templates/emailTemplates');
+const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail } = require('../templates/emailTemplates');
 const { default: mongoose } = require('mongoose');
-const programs = require('../models/programs');
-const dispositive = require('../models/dispositive');
 
 /* ────────────────────────────────────────────────────────────────────────────
    1. Autenticación: cliente Gmail “impersonando” al remitente
@@ -650,9 +648,11 @@ async function moveMailToTrashByDate(
 //   after: '2000/01/01',
 //   before: '2024/05/01'
 // });
+
+
 module.exports = {
   sendEmail,          // firma idéntica a tu antiguo SMTP
   generateEmailHTML,
   sendWelcomeEmail,
-  notifyDeviceManagersOfChangeRequest
+  notifyDeviceManagersOfChangeRequest,
 };

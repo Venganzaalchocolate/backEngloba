@@ -3,6 +3,8 @@ const { google } = require('googleapis');
 const { User, Program} = require('../models/indexModels');
 const mongoose = require('mongoose');
 const { PassThrough } = require('stream');
+const { sendEmail } = require('./emailControllerGoogle');
+const { buildPayrollAttachmentPlainText, buildPayrollAttachmentHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail } = require('../templates/emailTemplates');
 const pLimit = require('p-limit').default;
 
 
@@ -602,13 +604,20 @@ const addPayroll = async (dniUser, payrollMonth, payrollYear, idFile) => {
     userAux.payrolls.push(newPayroll);
 
     await userAux.save();
-
+    if(userAux.employmentStatus=='ya no trabaja con nosotros'){
+      await sendPayrollWithAttachmentEmail(userAux, { month: payrollMonth, year: payrollYear, idFile })
+      //enviar email con nomina
+    } else {
+      await sendPayrollAppNotificationEmail(userAux, { month: payrollMonth, year: payrollYear });
+    }
     return userAux;
 
   } catch (error) {
+    
     return false
   }
 };
+
 
 const validateDNIorNIE = (value) => {
   // Eliminar espacios y convertir a mayúsculas
@@ -1025,7 +1034,94 @@ const targetAcronyms = [
 
 
 
+// Helper para convertir stream de Drive a Buffer
+function streamToBuffer(stream) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on('data', (chunk) => chunks.push(chunk));
+    stream.on('end',  () => resolve(Buffer.concat(chunks)));
+    stream.on('error', reject);
+  });
+}
 
+// Decide destinatarios (puedes reutilizar la lógica que quieras)
+function getPayrollRecipients(user) {
+  const corp = (user.email || '').trim().toLowerCase();
+  const personal = (user.email_personal || '').trim().toLowerCase();
+
+  if (user.employmentStatus === 'ya no trabaja con nosotros') {
+    if (personal) return [personal];
+    if (corp)     return [corp];
+    return [];
+  }
+
+  // trabajador activo: primero corporativo, luego personal
+  const out = [];
+  if (corp) out.push(corp);
+  if (personal && personal !== corp) out.push(personal);
+  return out;
+}
+
+/**
+ * 1) Notificar que la nómina está subida en la app (sin adjunto)
+ */
+async function sendPayrollAppNotificationEmail(user, { month, year }) {
+  const to = getPayrollRecipients(user);
+  if (!to.length) {
+    console.warn('[sendPayrollAppNotificationEmail] Usuario sin email', user._id);
+    return;
+  }
+
+  const name = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+  const subject = 'Nueva nómina disponible en la app';
+
+  const text = buildPayrollAppNotificationPlainText(name, month, year);
+  const html = buildPayrollAppNotificationHtmlEmail(name, month, year);
+
+  await sendEmail(to, subject, text, html);
+}
+
+/**
+ * 2) Enviar email con la nómina adjunta (descargada desde Drive por idFile)
+ */
+async function sendPayrollWithAttachmentEmail(user, { month, year, idFile }) {
+  const to = getPayrollRecipients(user);
+  if (!to.length) {
+    console.warn('[sendPayrollWithAttachmentEmail] Usuario sin email', user._id);
+    return;
+  }
+
+  // 1) Descargamos de Drive
+  const result = await getFileById(idFile);
+  if (!result || !result.stream || !result.file) {
+    throw new Error(`No se pudo obtener el archivo de Drive con id ${idFile}`);
+  }
+
+  const buffer = await streamToBuffer(result.stream);
+
+  // 2) Preparamos adjunto
+  const filename =
+    result.file.name?.toLowerCase().endsWith('.pdf')
+      ? result.file.name
+      : `${result.file.name || 'nomina'}.pdf`;
+
+  const attachments = [
+    {
+      filename,
+      content: buffer,
+      contentType: 'application/pdf',
+    },
+  ];
+
+  // 3) Templates
+  const name = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+  const subject = 'Nómina adjunta';
+
+  const text = buildPayrollAttachmentPlainText(name, month, year);
+  const html = buildPayrollAttachmentHtmlEmail(name, month, year);
+
+  await sendEmail(to, subject, text, html, attachments);
+}
 
 
 module.exports = {
