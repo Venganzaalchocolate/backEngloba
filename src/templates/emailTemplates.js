@@ -1369,7 +1369,7 @@ export function buildPayrollAttachmentPlainText(
 Te enviamos adjunta tu nómina correspondiente a ${monthLabel} en formato PDF.
 
 Por favor, revisa la información y guarda este documento en un lugar seguro. 
-Si detectas algún error o necesitas alguna aclaración, ponte en contacto con el departamento de Administración de Personal.
+Si detectas algún error o necesitas alguna aclaración, ponte en contacto con el departamento de Recursos Humanos.
 
 Un saludo,
 Asociación Engloba`
@@ -1449,7 +1449,7 @@ export function buildPayrollAttachmentHtmlEmail(
       <p>Hola ${name},</p>
       <p>Te enviamos adjunta tu nómina correspondiente a <strong>${monthLabel}</strong> en formato PDF.</p>
       <p>Te recomendamos revisarla con calma y conservar este documento en un lugar seguro.</p>
-      <p>Si detectas algún error o necesitas alguna aclaración, ponte en contacto con el departamento de Administración de Personal.</p>
+      <p>Si detectas algún error o necesitas alguna aclaración, ponte en contacto con el departamento de Recursos Humanos.</p>
       <p>Un saludo,<br><strong>Asociación Engloba</strong></p>
     </div>
     <div class="footer">
