@@ -124,26 +124,41 @@ function normalizeString(str) {
 
 
 
-async function sendWelcomeEmail(user, emailCorp='') {
-  if (!user) throw new Error('user es obligatorio');
+async function sendWelcomeEmail(user, emailCorp='', delayMs = 5 * 60 * 1000) {
+    if (!user) {
+    console.error('[sendWelcomeEmailDelayed] user es obligatorio');
+    return;
+  }
+
   const toPersonal = (user.email_personal || '').trim().toLowerCase();
-  if (!toPersonal) throw new Error('El usuario no tiene email_personal');
-  const name=`${user.firstName} ${user.lastName}`
+  if (!toPersonal) {
+    console.error('[sendWelcomeEmailDelayed] El usuario no tiene email_personal');
+    return;
+  }
 
-  const subject     = 'Tu nueva cuenta de Engloba';
-  const text        = buildWelcomeWorkerPlainText(name, emailCorp);
-  const html        = buildWelcomeWorkerHtmlEmail(name, emailCorp);
+  const name    = `${user.firstName} ${user.lastName}`;
+  const subject = 'Tu nueva cuenta de Engloba';
+  const text    = buildWelcomeWorkerPlainText(name, emailCorp);
+  const html    = buildWelcomeWorkerHtmlEmail(name, emailCorp);
 
-  await sendEmail([toPersonal,emailCorp], subject, text, html);
+  const recipients = [toPersonal, emailCorp].filter(Boolean);
+
+  setTimeout(async () => {
+    try {
+      await sendEmail(recipients, subject, text, html);
+    } catch (err) {
+      console.error(
+        '[sendWelcomeEmailDelayed] Error enviando email de bienvenida:',
+        err?.message || err
+      );
+    }
+  }, delayMs);
 }
 
 
 /* ────────────────────────────────────────────────────────────────────────────
    Plantilla SESAME · TEXTO PLANO
    ──────────────────────────────────────────────────────────────────────── */
-
-
-
 
 // ──────────────────────────────────────────────────────────────
 // Utilidad: normaliza DNI (mayúsculas, sin espacios)

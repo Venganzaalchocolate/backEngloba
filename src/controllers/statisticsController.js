@@ -268,10 +268,10 @@ async function buildMatchStage({ year, month, programId, deviceId, apafa }) {
 
   let refDate = new Date();
   let periodDateMatch = null;
-  
+
   if (year && month) {
     const start = new Date(year, month - 1, 1);
-    const end   = new Date(year, month, 0, 23, 59, 59, 999);
+    const end = new Date(year, month, 0, 23, 59, 59, 999);
 
     periodDateMatch = {
       startDate: { $lte: end },
@@ -282,7 +282,7 @@ async function buildMatchStage({ year, month, programId, deviceId, apafa }) {
   }
   else if (year) {
     const start = new Date(year, 0, 1);
-    const end   = new Date(year, 11, 31, 23, 59, 59, 999);
+    const end = new Date(year, 11, 31, 23, 59, 59, 999);
 
     periodDateMatch = {
       startDate: { $lte: end },
@@ -296,7 +296,7 @@ async function buildMatchStage({ year, month, programId, deviceId, apafa }) {
 
   if (programId) {
     const program = await Dispositive.find(
-      { program: programId }, 
+      { program: programId },
       { _id: 1 }
     ).lean();
 
@@ -419,13 +419,13 @@ const getWorkersStats = async (req, res) => {
       {
         $group: {
           _id: null,
-          total      : { $sum: 1 },
-          disability : { $sum: { $cond:[{ $gt:['$disability.percentage',0]},1,0] } },
-          male       : { $sum: { $cond:[{ $eq:['$gender','male']},1,0] } },
-          female     : { $sum: { $cond:[{ $eq:['$gender','female']},1,0] } },
-          fostered   : { $sum: { $cond:['$fostered',1,0] } },
-          over55     : { $sum: { $cond:[{ $gte:['$age',55]},1,0] } },
-          under25    : { $sum: { $cond:[{ $lt:['$age',25]},1,0] } }
+          total: { $sum: 1 },
+          disability: { $sum: { $cond: [{ $gt: ['$disability.percentage', 0] }, 1, 0] } },
+          male: { $sum: { $cond: [{ $eq: ['$gender', 'male'] }, 1, 0] } },
+          female: { $sum: { $cond: [{ $eq: ['$gender', 'female'] }, 1, 0] } },
+          fostered: { $sum: { $cond: ['$fostered', 1, 0] } },
+          over55: { $sum: { $cond: [{ $gte: ['$age', 55] }, 1, 0] } },
+          under25: { $sum: { $cond: [{ $lt: ['$age', 25] }, 1, 0] } }
         }
       },
       { $project: { _id: 0 } }
@@ -438,8 +438,8 @@ const getWorkersStats = async (req, res) => {
       {
         $group: {
           _id: "$age",
-          male  : { $sum: { $cond:[{ $eq:['$gender','male']},1,0] } },
-          female: { $sum: { $cond:[{ $eq:['$gender','female']},1,0] } }
+          male: { $sum: { $cond: [{ $eq: ['$gender', 'male'] }, 1, 0] } },
+          female: { $sum: { $cond: [{ $eq: ['$gender', 'female'] }, 1, 0] } }
         }
       },
       { $project: { _id: 0, age: "$_id", male: 1, female: 1 } },
@@ -612,16 +612,16 @@ const getWorkersStats = async (req, res) => {
       total: 0, disability: 0, male: 0, female: 0,
       fostered: 0, over55: 0, under25: 0
     },
-    pyramid   : raw.pyramid ?? [],
-    pie       : {
-      gender     : raw.pie_gender ?? [],
-      apafa      : raw.pie_apafa ?? [],
-      fostered   : raw.pie_fostered ?? [],
-      disability : raw.pie_disability ?? []
+    pyramid: raw.pyramid ?? [],
+    pie: {
+      gender: raw.pie_gender ?? [],
+      apafa: raw.pie_apafa ?? [],
+      fostered: raw.pie_fostered ?? [],
+      disability: raw.pie_disability ?? []
     },
     hiredEnded: raw.hiredEnded ?? [],
-    workShift : raw.workShift ?? [],
-    tenure    : raw.tenure ?? []
+    workShift: raw.workShift ?? [],
+    tenure: raw.tenure ?? []
   };
 
   response(res, 200, responseData);
@@ -629,10 +629,367 @@ const getWorkersStats = async (req, res) => {
 
 
 
+/**
+ * Devuelve la foto de la plantilla actual:
+ * - total plantilla (headcount + FTE)
+ * - por área de programa
+ * - por programa
+ * - por provincia
+ * - por género
+ */
 
-/* =====================================================================================
-   EXPORTS
-===================================================================================== */
+const getCurrentHeadcountStats = async (req, res) => {
+  const { year, apafa } = req.body || {};
+
+  // 1) Fecha de referencia: ahora o fin de año seleccionado
+  let refDate = new Date();
+  if (year && !Number.isNaN(parseInt(year, 10))) {
+    const y = parseInt(year, 10);
+    // 31 diciembre del año indicado, 23:59:59.999 (UTC)
+    refDate = new Date(Date.UTC(y, 11, 31, 23, 59, 59, 999));
+  }
+
+  const pipeline = [
+    // 1) Solo periodos "vigentes" en la fecha de referencia
+    {
+      $match: {
+        active: true,
+        startDate: { $lte: refDate },
+        $or: [
+          { endDate: null },
+          { endDate: { $gte: refDate } }
+        ]
+      }
+    },
+    // 2) Join con usuario (para género, apafa, etc.)
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'idUser',
+        foreignField: '_id',
+        as: 'user'
+      }
+    },
+    { $unwind: '$user' }
+  ];
+
+  // 2.bis) Filtro APAFA
+  if (apafa === 'true') {
+    pipeline.push({ $match: { 'user.apafa': true } });
+  } else if (apafa === 'false') {
+    pipeline.push({ $match: { 'user.apafa': false } });
+  }
+
+  // 3) Join con dispositivo / programa
+  pipeline.push(
+    {
+      $lookup: {
+        from: 'dispositives',
+        localField: 'dispositiveId',
+        foreignField: '_id',
+        as: 'dispositive'
+      }
+    },
+    { $unwind: { path: '$dispositive', preserveNullAndEmptyArrays: true } },
+
+    {
+      $lookup: {
+        from: 'programs',
+        localField: 'dispositive.program',
+        foreignField: '_id',
+        as: 'program'
+      }
+    },
+    { $unwind: { path: '$program', preserveNullAndEmptyArrays: true } },
+
+    // 4) Campos calculados (fte, ids planos, etc.)
+    {
+      $addFields: {
+        fte: {
+          $cond: [
+            { $eq: ['$workShift.type', 'completa'] },
+            1,
+            0.5
+          ]
+        },
+        gender: '$user.gender',
+
+        programId: '$program._id',
+        programName: '$program.name',
+        programArea: '$program.area',
+
+        // solo id, el nombre lo resuelves en el front con enumsData.provincesIndex
+        provinceId: '$dispositive.province',
+
+        dispositiveId: '$dispositive._id',
+        dispositiveName: '$dispositive.name',
+
+        // IMPORTANTE: jobId = position (ObjectId de Jobs)
+        jobId: '$position'
+      }
+    },
+
+    // 5) Facetas
+    {
+      $facet: {
+        totals: [
+          {
+            $group: {
+              _id: null,
+              headcount: { $sum: 1 },
+              fte: { $sum: '$fte' }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              headcount: 1,
+              fte: 1
+            }
+          }
+        ],
+
+        byArea: [
+          {
+            $group: {
+              _id: '$programArea',
+              headcount: { $sum: 1 },
+              fte: { $sum: '$fte' }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              area: '$_id',
+              headcount: 1,
+              fte: 1
+            }
+          },
+          { $sort: { area: 1 } }
+        ],
+
+        byProgram: [
+          {
+            $group: {
+              _id: {
+                programId: '$programId',
+                programName: '$programName',
+                area: '$programArea'
+              },
+              headcount: { $sum: 1 },
+              fte: { $sum: '$fte' }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              programId: '$_id.programId',
+              programName: '$_id.programName',
+              area: '$_id.area',
+              headcount: 1,
+              fte: 1
+            }
+          },
+          { $sort: { programName: 1 } }
+        ],
+
+        byProvince: [
+          {
+            $group: {
+              _id: '$provinceId',
+              headcount: { $sum: 1 },
+              fte: { $sum: '$fte' }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              provinceId: '$_id',
+              headcount: 1,
+              fte: 1
+            }
+          },
+          { $sort: { headcount: -1 } }
+        ],
+
+        byGender: [
+          {
+            $group: {
+              _id: '$gender',
+              headcount: { $sum: 1 },
+              fte: { $sum: '$fte' }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              gender: '$_id',
+              headcount: 1,
+              fte: 1
+            }
+          },
+          { $sort: { gender: 1 } }
+        ],
+
+        byDispositive: [
+          {
+            $group: {
+              _id: {
+                dispositiveId: '$dispositiveId',
+                dispositiveName: '$dispositiveName',
+                programId: '$programId',
+                programName: '$programName',
+                area: '$programArea',
+                provinceId: '$provinceId'
+              },
+              headcount: { $sum: 1 },
+              fte: { $sum: '$fte' }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              dispositiveId: '$_id.dispositiveId',
+              dispositiveName: '$_id.dispositiveName',
+              programId: '$_id.programId',
+              programName: '$_id.programName',
+              area: '$_id.area',
+              provinceId: '$_id.provinceId',
+              headcount: 1,
+              fte: 1
+            }
+          },
+          { $sort: { programName: 1, dispositiveName: 1 } }
+        ],
+
+        byProgramGender: [
+          {
+            $group: {
+              _id: {
+                programId: '$programId',
+                programName: '$programName',
+                area: '$programArea',
+                gender: '$gender'
+              },
+              headcount: { $sum: 1 },
+              fte: { $sum: '$fte' }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              programId: '$_id.programId',
+              programName: '$_id.programName',
+              area: '$_id.area',
+              gender: '$_id.gender',
+              headcount: 1,
+              fte: 1
+            }
+          },
+          { $sort: { programName: 1, gender: 1 } }
+        ],
+
+        byJobDispositive: [
+          {
+            $group: {
+              _id: {
+                jobId: '$jobId',
+                dispositiveId: '$dispositiveId',
+                dispositiveName: '$dispositiveName',
+                programId: '$programId',
+                programName: '$programName',
+                provinceId: '$provinceId'
+              },
+              headcount: { $sum: 1 },
+              fte: { $sum: '$fte' }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              jobId: '$_id.jobId',
+              dispositiveId: '$_id.dispositiveId',
+              dispositiveName: '$_id.dispositiveName',
+              programId: '$_id.programId',
+              programName: '$_id.programName',
+              provinceId: '$_id.provinceId',
+              headcount: 1,
+              fte: 1
+            }
+          },
+          { $sort: { programName: 1, dispositiveName: 1 } }
+        ],
+
+        byDispositiveGender: [
+          {
+            $group: {
+              _id: {
+                dispositiveId: '$dispositiveId',
+                dispositiveName: '$dispositiveName',
+                programId: '$programId',
+                programName: '$programName',
+                area: '$programArea',
+                provinceId: '$provinceId',
+                gender: '$gender'
+              },
+              headcount: { $sum: 1 },
+              fte: { $sum: '$fte' }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              dispositiveId: '$_id.dispositiveId',
+              dispositiveName: '$_id.dispositiveName',
+              programId: '$_id.programId',
+              programName: '$_id.programName',
+              area: '$_id.area',
+              provinceId: '$_id.provinceId',
+              gender: '$_id.gender',
+              headcount: 1,
+              fte: 1
+            }
+          },
+          { $sort: { programName: 1, dispositiveName: 1, gender: 1 } }
+        ]
+      }
+    }
+  );
+
+  const aggArr = await Periods.aggregate(pipeline).exec();
+  const agg = aggArr[0] || {
+    totals: [],
+    byArea: [],
+    byProgram: [],
+    byProvince: [],
+    byGender: [],
+    byDispositive: [],
+    byProgramGender: [],
+    byDispositiveGender: [],
+    byJobDispositive: []
+  };
+
+  const totals = (agg.totals && agg.totals[0]) || { headcount: 0, fte: 0 };
+
+  const respData = {
+    generatedAt: new Date(),
+    totals,
+    byArea: agg.byArea || [],
+    byProgram: agg.byProgram || [],
+    byProvince: agg.byProvince || [],
+    byGender: agg.byGender || [],
+    byDispositive: agg.byDispositive || [],
+    byProgramGender: agg.byProgramGender || [],
+    byDispositiveGender: agg.byDispositiveGender || [],
+    byJobDispositive: agg.byJobDispositive || []
+  };
+
+  response(res, 200, respData);
+};
+
+
+// Requiere tener Periods, User, Dispositive, Program importados arriba:
+// const { Periods, User, Dispositive, Program } = require('../models/indexModels');
 
 module.exports = {
   getCvOverview: catchAsync(getCvOverview),
@@ -641,4 +998,6 @@ module.exports = {
   getCvConversion: catchAsync(getCvConversion),
   auditWorkersStats: catchAsync(auditWorkersStats),
   getWorkersStats: catchAsync(getWorkersStats),
+
+  getCurrentHeadcountStats: catchAsync(getCurrentHeadcountStats)
 };
