@@ -990,6 +990,256 @@ const getCurrentHeadcountStats = async (req, res) => {
 
 // Requiere tener Periods, User, Dispositive, Program importados arriba:
 // const { Periods, User, Dispositive, Program } = require('../models/indexModels');
+// Ejemplo de import esperable arriba del archivo:
+// const UserCv = require('../models/UserCv');
+// const { response } = require('../helpers/response');
+// const ClientError = require('../errors/ClientError');
+
+const getUserCvStats = async (req, res) => {
+  const { year, apafa } = req.body || {};
+
+  // ---------- MATCH BASE PARA TODOS LOS CV ----------
+  const matchCv = {};
+  let yearNum = null;
+
+  if (year && String(year).trim() !== '') {
+    yearNum = Number(String(year).trim());
+    if (!Number.isNaN(yearNum)) {
+      const start = new Date(yearNum, 0, 1);
+      const end = new Date(yearNum + 1, 0, 1);
+
+      // IMPORTANTE: usamos createdAt como año de recepción del CV
+      matchCv.createdAt = { $gte: start, $lt: end };
+    }
+  }
+
+  // ---------- TOTALES BÁSICOS ----------
+  const [totalsAgg] = await UserCv.aggregate([
+    { $match: matchCv },
+    {
+      $group: {
+        _id: null,
+        totalCvs: { $sum: 1 },
+        withDisability: {
+          $sum: {
+            $cond: [{ $gte: ['$disability', 33] }, 1, 0], // ajusta umbral si quieres
+          },
+        },
+        fostered: {
+          $sum: {
+            $cond: [{ $eq: ['$fostered', true] }, 1, 0],
+          },
+        },
+      },
+    },
+  ]);
+
+  // ---------- GÉNERO ----------
+  const byGender = await UserCv.aggregate([
+    { $match: matchCv },
+    {
+      $group: {
+        _id: '$gender',
+        count: { $sum: 1 },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        gender: '$_id',
+        count: 1,
+      },
+    },
+    { $sort: { count: -1 } },
+  ]);
+
+  // ---------- PROVINCIAS (provincesId) ----------
+  const byProvince = await UserCv.aggregate([
+    { $match: matchCv },
+    { $unwind: { path: '$provincesId', preserveNullAndEmptyArrays: false } },
+    {
+      $group: {
+        _id: '$provincesId',
+        count: { $sum: 1 },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        provinceId: '$_id',
+        count: 1,
+      },
+    },
+    { $sort: { count: -1 } },
+  ]);
+
+  // ---------- PROFESIONES (jobsId) ----------
+  const byJob = await UserCv.aggregate([
+    { $match: matchCv },
+    { $unwind: { path: '$jobsId', preserveNullAndEmptyArrays: false } },
+    {
+      $group: {
+        _id: '$jobsId',
+        count: { $sum: 1 },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        jobId: '$_id',
+        count: 1,
+      },
+    },
+    { $sort: { count: -1 } },
+  ]);
+
+  // ---------- ESTUDIOS (studiesId) ----------
+  const byStudies = await UserCv.aggregate([
+    { $match: matchCv },
+    { $unwind: { path: '$studiesId', preserveNullAndEmptyArrays: false } },
+    {
+      $group: {
+        _id: '$studiesId',
+        count: { $sum: 1 },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        studyId: '$_id',
+        count: 1,
+      },
+    },
+    { $sort: { count: -1 } },
+  ]);
+
+  // ---------- DISPONIBILIDAD HORARIA ----------
+  const byWorkSchedule = await UserCv.aggregate([
+    { $match: matchCv },
+    { $unwind: { path: '$work_schedule', preserveNullAndEmptyArrays: true } },
+    {
+      $group: {
+        _id: '$work_schedule',
+        count: { $sum: 1 },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        workSchedule: '$_id',
+        count: 1,
+      },
+    },
+    { $sort: { count: -1 } },
+  ]);
+
+  // ---------- CV POR AÑO DE RECEPCIÓN (histórico completo) ----------
+  // aquí NO aplico matchCv para que veas todos los años
+  const byCreatedYear = await UserCv.aggregate([
+    {
+      $group: {
+        _id: { $year: '$createdAt' },
+        count: { $sum: 1 },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        year: '$_id',
+        count: 1,
+      },
+    },
+    { $sort: { year: 1 } },
+  ]);
+
+  // ---------- CONTRATACIONES (CRUCE CON USER) ----------
+  const userMatch = {};
+
+  if (yearNum !== null) {
+    const start = new Date(yearNum, 0, 1);
+    const end = new Date(yearNum + 1, 0, 1);
+    // año de contratación = createdAt del User
+    userMatch['user.createdAt'] = { $gte: start, $lt: end };
+  }
+
+  if (apafa === 'true') userMatch['user.apafa'] = true;
+  else if (apafa === 'false') userMatch['user.apafa'] = false;
+
+  // Hires por año + apafa
+  const hiresByYearApafa = await UserCv.aggregate([
+    { $match: matchCv },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'dni',
+        foreignField: 'dni',
+        as: 'user',
+      },
+    },
+    { $unwind: { path: '$user', preserveNullAndEmptyArrays: false } },
+    { $match: userMatch },
+    {
+      $group: {
+        _id: {
+          year: { $year: '$user.createdAt' },
+          apafa: '$user.apafa',
+        },
+        count: { $sum: 1 },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        year: '$_id.year',
+        apafa: '$_id.apafa',
+        count: 1,
+      },
+    },
+    { $sort: { year: 1 } },
+  ]);
+
+  // Total de CV que han acabado en contratación dentro de ese filtro
+  const [hiredAgg] = await UserCv.aggregate([
+    { $match: matchCv },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'dni',
+        foreignField: 'dni',
+        as: 'user',
+      },
+    },
+    { $unwind: { path: '$user', preserveNullAndEmptyArrays: false } },
+    { $match: userMatch },
+    {
+      $group: {
+        _id: null,
+        hiredCvs: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const totals = {
+    totalCvs: totalsAgg?.totalCvs || 0,
+    withDisability: totalsAgg?.withDisability || 0,
+    fostered: totalsAgg?.fostered || 0,
+    hiredCvs: hiredAgg?.hiredCvs || 0,
+  };
+
+  const result = {
+    totals,
+    byGender,
+    byProvince,
+    byJob,
+    byStudies,
+    byWorkSchedule,
+    byCreatedYear,
+    hiresByYearApafa,
+  };
+
+  response(res, 200, result);
+};
+
 
 module.exports = {
   getCvOverview: catchAsync(getCvOverview),
@@ -999,5 +1249,6 @@ module.exports = {
   auditWorkersStats: catchAsync(auditWorkersStats),
   getWorkersStats: catchAsync(getWorkersStats),
 
-  getCurrentHeadcountStats: catchAsync(getCurrentHeadcountStats)
+  getCurrentHeadcountStats: catchAsync(getCurrentHeadcountStats),
+  getUserCvStats:catchAsync(getUserCvStats)
 };

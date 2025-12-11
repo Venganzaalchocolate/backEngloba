@@ -12,7 +12,7 @@ const {sendEmail, generateEmailHTML, sendWelcomeEmail}=require("./emailControlle
 const { getDocumentation,getDocumentationUnified, getDocumentationProgramDispositive, addProgramOrDispositiveToDocumentation, syncProgramDocsToDevices } = require("./documentationController");
 const { confirmSignature, requestSignature } = require("./pdfSignController");
 const {auditInfoDevices, auditInfoPrograms, auditInfoUsers, auditActiveLeaves, auditDocsProgram, auditDocsDispo, auditPayrolls, auditDocsUser} = require("./auditorController");
-const { getCvOverview, getCvMonthly, getCvDistribution, getCvConversion, auditWorkersStats, getWorkersStats, getCurrentHeadcountStats} = require("./statisticsController");
+const { getCvOverview, getCvMonthly, getCvDistribution, getCvConversion, auditWorkersStats, getWorkersStats, getCurrentHeadcountStats, getUserCvStats} = require("./statisticsController");
 const {deleteGroupWS, deleteMemberGroupWS,addGroupWS, createGroupWS, infoGroupWS,addUserToGroup, createUserWS, deleteUserByEmailWS, deleteMemeberAllGroups } = require("./workspaceController");
 const { getPreferents, getPreferentById, createPreferent, updatePreferent, deletePreferent, filterPreferents } = require("./preferentsController");
 const {createLeave,updateLeave,closeLeave, softDeleteLeave, hardDeleteLeave, listLeaves, getLeaveById}= require("./leaveController");
@@ -44,7 +44,7 @@ module.exports = {
     auditDocsUser,auditInfoUsers,auditInfoPrograms, auditInfoDevices,auditActiveLeaves, auditDocsProgram, auditDocsDispo,auditPayrolls,
     getCvOverview,getCvMonthly,getCvDistribution, getCvConversion,auditWorkersStats, getWorkersStats,
 
-    getCurrentHeadcountStats,
+    getCurrentHeadcountStats, getUserCvStats,
     deleteGroupWS, deleteMemberGroupWS,addGroupWS, createGroupWS, infoGroupWS, addUserToGroup,createUserWS, deleteUserByEmailWS,deleteMemeberAllGroups,
     getPreferents,getPreferentById,createPreferent,updatePreferent,deletePreferent,filterPreferents,
     createLeave,updateLeave,closeLeave, softDeleteLeave, hardDeleteLeave, listLeaves, getLeaveById,

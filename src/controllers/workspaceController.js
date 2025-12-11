@@ -758,14 +758,16 @@ async function updateAllGroupsSettings() {
   // const groups = await listAllGroups();
   // console.log(`🔍 Encontrados ${groups.length} grupos.`);
 
-  // for (const g of groups) {
-  //   await patchWithBackoff(g.email, commonSettings);
-  // }
-  await patchWithBackoff('pimenoresgranada.dir@engloba.org.es', commonSettings);
+  const groups=['coilspaulofreire.tec@engloba.org.es']
+  for (const g of groups) {
+    await patchWithBackoff(g, commonSettings);
+  }
+
+  //await patchWithBackoff('juridico.migraciones@engloba.org.es', commonSettings);
 }
 
 
-//updateAllGroupsSettings()
+// updateAllGroupsSettings()
 // // // // Ejecuta la tarea:
 // updateAllGroupsSettings().catch(console.error);
 
