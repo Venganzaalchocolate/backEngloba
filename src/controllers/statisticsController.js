@@ -1,6 +1,6 @@
 const { UserCv, Program, Offer, User, Periods, Dispositive } = require('../models/indexModels');
 const mongoose = require('mongoose');
-const { catchAsync, response, ClientError } = require('../utils/indexUtils');
+const { catchAsync, response, ClientError, toId } = require('../utils/indexUtils');
 
 /* =====================================================================================
    HELPERS
@@ -629,6 +629,11 @@ const getWorkersStats = async (req, res) => {
 
 
 
+const EXCEDENCIA_TYPES = [
+  toId('673dba22eb7280f56e22b504'),
+  toId('673dba22eb7280f56e22b505'),
+  toId('673dba22eb7280f56e22b506'),
+];
 /**
  * Devuelve la foto de la plantilla actual:
  * - total plantilla (headcount + FTE)
@@ -639,7 +644,7 @@ const getWorkersStats = async (req, res) => {
  */
 
 const getCurrentHeadcountStats = async (req, res) => {
-  const { year, apafa } = req.body || {};
+  const { year, apafa, baja } = req.body || {};
 
   // 1) Fecha de referencia: ahora o fin de año seleccionado
   let refDate = new Date();
@@ -658,7 +663,7 @@ const getCurrentHeadcountStats = async (req, res) => {
         $or: [
           { endDate: null },
           { endDate: { $gte: refDate } }
-        ]
+        ],
       }
     },
     // 2) Join con usuario (para género, apafa, etc.)
@@ -670,7 +675,7 @@ const getCurrentHeadcountStats = async (req, res) => {
         as: 'user'
       }
     },
-    { $unwind: '$user' }
+    { $unwind: '$user' },
   ];
 
   // 2.bis) Filtro APAFA
@@ -678,6 +683,59 @@ const getCurrentHeadcountStats = async (req, res) => {
     pipeline.push({ $match: { 'user.apafa': true } });
   } else if (apafa === 'false') {
     pipeline.push({ $match: { 'user.apafa': false } });
+  }
+
+  // 2.ter) JOIN con Leaves para saber si el periodo tiene EXCEDENCIA ACTUAL
+  pipeline.push(
+    {
+      $lookup: {
+        from: 'leaves',          // colección del modelo Leaves
+        localField: '_id',       // Periods._id
+        foreignField: 'idPeriod',
+        as: 'leaves'
+      }
+    },
+    {
+      $addFields: {
+        hasExcedencia: {
+          $gt: [
+            {
+              $size: {
+                $filter: {
+                  input: '$leaves',
+                  as: 'lv',
+                  cond: {
+                    $and: [
+                      // tipos de excedencia que nos interesan
+                      { $in: ['$$lv.leaveType', EXCEDENCIA_TYPES] },
+                      // la excedencia ya ha empezado
+                      { $lte: ['$$lv.startLeaveDate', refDate] },
+                      // y no ha terminado aún (o no tiene fecha fin)
+                      {
+                        $or: [
+                          { $eq: ['$$lv.actualEndLeaveDate', null] },
+                          { $gte: ['$$lv.actualEndLeaveDate', refDate] }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            0
+          ]
+        }
+      }
+    }
+  );
+
+  // 2.quater) Filtro por "baja/excedencia" (igual patrón que apafa)
+  if (baja === 'true') {
+    // solo periodos con excedencia activa de esos tipos
+    pipeline.push({ $match: { hasExcedencia: true } });
+  } else if (baja === 'false') {
+    // solo periodos sin excedencia activa de esos tipos
+    pipeline.push({ $match: { hasExcedencia: { $ne: true } } });
   }
 
   // 3) Join con dispositivo / programa
@@ -718,13 +776,11 @@ const getCurrentHeadcountStats = async (req, res) => {
         programName: '$program.name',
         programArea: '$program.area',
 
-        // solo id, el nombre lo resuelves en el front con enumsData.provincesIndex
         provinceId: '$dispositive.province',
 
         dispositiveId: '$dispositive._id',
         dispositiveName: '$dispositive.name',
 
-        // IMPORTANTE: jobId = position (ObjectId de Jobs)
         jobId: '$position'
       }
     },
@@ -997,7 +1053,7 @@ const getCurrentHeadcountStats = async (req, res) => {
 
 const getUserCvStats = async (req, res) => {
   const { year, apafa } = req.body || {};
-
+  
   // ---------- MATCH BASE PARA TODOS LOS CV ----------
   const matchCv = {};
   let yearNum = null;
@@ -1241,14 +1297,8 @@ const getUserCvStats = async (req, res) => {
 };
 
 
-module.exports = {
-  getCvOverview: catchAsync(getCvOverview),
-  getCvMonthly: catchAsync(getCvMonthly),
-  getCvDistribution: catchAsync(getCvDistribution),
-  getCvConversion: catchAsync(getCvConversion),
-  auditWorkersStats: catchAsync(auditWorkersStats),
-  getWorkersStats: catchAsync(getWorkersStats),
 
+module.exports = {
   getCurrentHeadcountStats: catchAsync(getCurrentHeadcountStats),
   getUserCvStats:catchAsync(getUserCvStats)
 };
