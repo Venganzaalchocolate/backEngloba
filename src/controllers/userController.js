@@ -830,6 +830,30 @@ const userPut = async (req, res) => {
 
       updateFields.employmentStatus = "ya no trabaja con nosotros";
       updateFields.email = "";
+      
+      // 3) Eliminar responsabilidades y coordinaciones en DISPOSITIVOS y PROGRAMAS
+      //    - Dispositive.responsible[]
+      //    - Dispositive.coordinators[]
+      //    - Program.responsible[]
+      await Dispositive.updateMany(
+        {
+          $or: [
+            { responsible: userObjectId },
+            { coordinators: userObjectId },
+          ],
+        },
+        {
+          $pull: {
+            responsible: userObjectId,
+            coordinators: userObjectId,
+          },
+        }
+      );
+
+      await Program.updateMany(
+        { responsible: userObjectId },
+        { $pull: { responsible: userObjectId } }
+      );
     } else {
       updateFields.employmentStatus = req.body.employmentStatus;
 

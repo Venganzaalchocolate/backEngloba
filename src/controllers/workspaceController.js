@@ -1,6 +1,6 @@
 
 const { google } = require('googleapis');
-const { User, Program, Provinces } = require('../models/indexModels');
+const { User, Program, Provinces, Dispositive } = require('../models/indexModels');
 const mongoose = require('mongoose');
 const { catchAsync } = require('../utils/catchAsync');
 const { response } = require('../utils/response');
@@ -336,19 +336,19 @@ const deleteMemeberAllGroups = async (email) => {
 
 const infoGroupWS = async (req, res) => {
   const { idGroup, idProgram, idDevice } = req.body
-  let idGroupWorkSpace=null
-  if(!!idDevice && !!idProgram){
-      const doc = await Program.findOne(
+  let idGroupWorkSpace = null
+  if (!!idDevice && !!idProgram) {
+    const doc = await Program.findOne(
       { _id: idProgram, 'devices._id': idDevice },
       { 'devices.$': 1, _id: 0 }
     )
     console.log(doc)
-    idGroupWorkSpace=doc.devices[0].groupWorkspace
-  } else if(!!idProgram){
-    const programInfo=await Program.findById(idProgram).select('groupWorkspace');
-    idGroupWorkSpace=programInfo.groupWorkspace
-  } else if(!!idGroup){
-    idGroupWorkSpace=idGroup
+    idGroupWorkSpace = doc.devices[0].groupWorkspace
+  } else if (!!idProgram) {
+    const programInfo = await Program.findById(idProgram).select('groupWorkspace');
+    idGroupWorkSpace = programInfo.groupWorkspace
+  } else if (!!idGroup) {
+    idGroupWorkSpace = idGroup
   } else {
     throw new ClientError('Faltan datos para obtener los grupos de Workspace', 400);
   }
@@ -386,6 +386,7 @@ const infoGroup = async (idGroup) => {
             role: m.role,                   // OWNER | MANAGER | MEMBER
             type: m.type,                   // USER | GROUP | SERVICE_ACCOUNT
             status: m.status,                // ACTIVE, SUSPENDED, etc.
+            
           })),
         );
       }
@@ -398,6 +399,7 @@ const infoGroup = async (idGroup) => {
       descripcion: group.description,
       totalMiembros: members.length,
       miembros: members,
+      aliases: group.aliases || [],   
     }
     return dataGroup;
   } catch (error) {
@@ -457,104 +459,212 @@ const addGroupWS = async (req, res) => {
 }
 
 const createGroupWS = async (req, res) => {
-  //idGroupFather id del grupo padre si exite
-  // typeGroup que tipo de extensión tendrá
-  //id del Program o Device 
-  // type si es un Program o Device
+  // idGroupFather: id del grupo padre si existe
+  // typeGroup: tipo de extensión (coor, dir, etc. o 'blank')
+  // id: _id del Program o Dispositive
+  // type: 'program' | 'device'
   const { idGroupFather, typeGroup, id, type } = req.body;
 
-  const suffixMap = { coordination: 'coor', direction: 'dir', social: 'trab', psychology: 'psico', education: 'edu', tecnicos: 'tec' };
-  const typeGroupOptions = [...Object.keys(suffixMap), 'blank'];
-  const typeOptions = ['program', 'device'];
+  const suffixMap = {
+    coordination: "coor",
+    direction: "dir",
+    social: "trab",
+    psychology: "psico",
+    education: "edu",
+    tecnicos: "tec",
+  };
+
+  const namePrefixMap = {
+    direction: "Dirección de",
+    social: "Equipo trabajadores sociales",
+    tecnicos: "Equipo Técnico",
+    psychology: "Equipo de Psicólogos",
+    education: "Equipo de Educadores",
+    coordination: "Equipo de Coordinadores",
+    blank: "Subgrupo de",
+  };
+
+  const typeGroupOptions = [...Object.keys(suffixMap), "blank"];
+  const typeOptions = ["program", "device"];
 
   /* ───────── VALIDACIONES ───────── */
-  if (!typeGroupOptions.includes(typeGroup)) throw new ClientError('typeGroup no válido', 400);
-  if (!typeOptions.includes(type)) throw new ClientError('type no válido', 400);
-  if (!id) throw new ClientError('id requerido', 400);
+  if (!typeGroupOptions.includes(typeGroup)) {
+    throw new ClientError("typeGroup no válido", 400);
+  }
+  if (!typeOptions.includes(type)) {
+    throw new ClientError("type no válido", 400);
+  }
+  if (!id) {
+    throw new ClientError("id requerido", 400);
+  }
 
+  // Evitar crear subgrupos con "blank" (duplicaría el grupo principal)
+  if (idGroupFather && typeGroup === "blank") {
+    throw new ClientError(
+      'El tipo "blank" solo se puede usar para el grupo principal (sin padre).',
+      400
+    );
+  }
 
   /* ───────── BUSCAR PROGRAMA / DISPOSITIVO ───────── */
-  const programDoc = await Program.findOne(
-    type === 'program' ? { _id: id } : { 'devices._id': id },
-    { devices: 1, acronym: 1, name: 1 }
-  ).lean();
-  if (!programDoc) throw new ClientError('Programa / dispositivo no encontrado', 404);
+  let programDoc = null;
+  let deviceDoc = null;
 
-  const deviceDoc = type === 'device'
-    ? programDoc.devices.find(d => String(d._id) === String(id))
-    : null;
-  if (type === 'device' && !deviceDoc) throw new ClientError('Dispositivo no encontrado', 404);
+  if (type === "program") {
+    programDoc = await Program.findById(id)
+      .select("name acronym groupWorkspace subGroupWorkspace")
+      .lean();
+    if (!programDoc) {
+      throw new ClientError("Programa no encontrado", 404);
+    }
+  } else {
+    // type === 'device'
+    deviceDoc = await Dispositive.findById(id)
+      .select("name email groupWorkspace subGroupWorkspace")
+      .lean();
+    if (!deviceDoc) {
+      throw new ClientError("Dispositivo no encontrado", 404);
+    }
+  }
 
-  const baseName = type === 'program' ? programDoc.acronym : deviceDoc.name;
-  const normalized = normalizeString(baseName);
+  const baseLabel =
+    type === "program"
+      ? programDoc.acronym || programDoc.name
+      : deviceDoc.name;
+
+  if (!baseLabel) {
+    throw new ClientError(
+      "No se pudo determinar un nombre base para el grupo",
+      500
+    );
+  }
+
+  const normalized = normalizeString(baseLabel);
 
   /* ───────── E-MAIL DEL NUEVO GRUPO ───────── */
-  const suffix = typeGroup === 'blank' ? '' : `.${suffixMap[typeGroup]}`;
+  const suffix =
+    typeGroup === "blank" ? "" : `.${suffixMap[typeGroup] || ""}`;
   const groupEmail = `${normalized}${suffix}@${DOMAIN}`;
 
-  /* ───────── CREAR GRUPO EN GOOGLE ───────── */
-  const displayName = type === 'program'
-    ? `Programa: ${programDoc.acronym}`
-    : `Dispositivo: ${deviceDoc.name}`;
+  /* ───────── NOMBRE DEL GRUPO ───────── */
+  let displayName;
 
-  const created = await directory.groups.insert({
-    requestBody: {
-      email: groupEmail,
-      name: displayName,
-      description: `Grupo ${typeGroup === 'blank' ? 'principal' : typeGroup} de ${displayName}`,
-    },
-  }).catch(err => {
-    if (err.errors?.[0]?.reason !== 'duplicate') throw err;
-    return directory.groups.get({ groupKey: groupEmail }); // ya existía
-  });
+  if (!idGroupFather && typeGroup === "blank") {
+    // Grupo principal
+    displayName =
+      type === "program"
+        ? `Programa: ${baseLabel}`
+        : `Dispositivo: ${baseLabel}`;
+  } else {
+    const prefix = namePrefixMap[typeGroup] || namePrefixMap.blank;
+    displayName = `${prefix}: ${baseLabel}`;
+  }
 
-  const newGroupId = created.data.id;       // ← ID del grupo recién creado
+  const description =
+    typeGroup === "blank" && !idGroupFather
+      ? `Grupo principal de ${baseLabel}`
+      : `Grupo ${typeGroup} de ${baseLabel}`;
 
-  /* ───────── AÑADIR AL PADRE (si lo mandan) ───────── */
-  if (idGroupFather) {
-    // groupKey = ID del padre, memberKey = ID del hijo
-    await directory.members.insert({
-      groupKey: idGroupFather,
-      requestBody: { id: newGroupId, role: 'MEMBER', type: 'GROUP' },
-    }).catch(err => {
-      if (err.errors?.[0]?.reason === 'notFound') {
-        throw new ClientError('Grupo padre inexistente en Workspace', 404);
+  /* ───────── CREAR / RECUPERAR GRUPO EN GOOGLE ───────── */
+  const created = await directory.groups
+    .insert({
+      requestBody: {
+        email: groupEmail,
+        name: displayName,
+        description,
+      },
+    })
+    .catch((err) => {
+      const reason = err?.errors?.[0]?.reason;
+      // Si ya existe el grupo, lo recuperamos
+      if (reason === "duplicate" || err.code === 409) {
+        return directory.groups.get({ groupKey: groupEmail });
       }
       throw err;
     });
+
+  const groupData = created.data || created; // por si viene en .data
+  const newGroupId = groupData.id;
+  const finalEmail = groupData.email || groupEmail;
+
+  if (!newGroupId) {
+    throw new ClientError(
+      "No se ha podido crear ni recuperar el grupo de Workspace",
+      500
+    );
   }
 
+  /* ───────── AÑADIR AL PADRE (si lo mandan) ───────── */
+  if (idGroupFather) {
+    await directory.members
+      .insert({
+        groupKey: idGroupFather, // ID o email del padre
+        requestBody: { id: newGroupId, role: "MEMBER", type: "GROUP" },
+      })
+      .catch((err) => {
+        const reason = err?.errors?.[0]?.reason;
+        if (reason === "notFound") {
+          throw new ClientError("Grupo padre inexistente en Workspace", 404);
+        }
+        throw err;
+      });
+  }
 
-
-  await groupsSettings.groups.patch({
-    groupUniqueId: groupEmail,
-    requestBody: commonSettings
-  });
-
+  /* ───────── CONFIGURAR AJUSTES DEL GRUPO ───────── */
+  try {
+    await patchWithBackoff(finalEmail, commonSettings);
+  } catch (e) {
+    // No queremos romper por fallo de settings
+    console.warn("No se pudieron aplicar los ajustes al grupo:", finalEmail);
+  }
 
   /* ───────── ACTUALIZAR MONGODB ───────── */
-if (type === 'program') {
-  await Program.updateOne(
-    { _id: id },
-    idGroupFather
-      ? { $addToSet: { subGroupWorkspace: newGroupId } }
-      : { $set: { groupWorkspace: newGroupId } }   // <-- $set
-  );
-} else {
-  const device=await Program.updateOne(
-    { 'devices._id': id },
-    idGroupFather
-      ? { $addToSet: { 'devices.$[d].subGroupWorkspace': newGroupId } }
-      : { $set: { 'devices.$[d].groupWorkspace': newGroupId } }, // <-- $set
-    { arrayFilters: [{ 'd._id': id }] } // asegúrate del casteo a ObjectId si aplica
-  );
-}
+  if (type === "program") {
+    // Programa raíz o subgrupo
+    if (idGroupFather) {
+      await Program.updateOne(
+        { _id: id },
+        { $addToSet: { subGroupWorkspace: newGroupId } }
+      );
+    } else {
+      await Program.updateOne(
+        { _id: id },
+        { $set: { groupWorkspace: newGroupId } }
+      );
+    }
+  } else {
+    // type === 'device' → Dispositive (colección propia)
+    if (idGroupFather) {
+      await Dispositive.updateOne(
+        { _id: id },
+        { $addToSet: { subGroupWorkspace: newGroupId } }
+      );
+    } else {
+      await Dispositive.updateOne(
+        { _id: id },
+        {
+          $set: {
+            groupWorkspace: newGroupId,
+            email: finalEmail,
+          },
+        }
+      );
+    }
+  }
 
+  /* ───────── RESPUESTA ───────── */
+  const groupResponse = {
+    id: newGroupId,
+    email: finalEmail,
+    nombre: groupData.name || displayName,
+    descripcion: groupData.description || description,
+    totalMiembros: 0,
+    miembros: [],
+  };
 
-
-
-  response(res, 200, { id: newGroupId, email: groupEmail, miembros: [] });
+  response(res, 200, { group: groupResponse });
 };
+
 
 
 
@@ -592,62 +702,152 @@ const deleteMemberGroupWS = async (req, res) => {
   response(res, 200, { groupID: groupId });
 }
 
+const deleteDeviceGroupsWS=async(dispositive)=>{
+  if (!dispositive) return;
+
+  const mainGroupId = dispositive.groupWorkspace;
+  const subGroups = Array.isArray(dispositive.subGroupWorkspace)
+    ? dispositive.subGroupWorkspace
+    : [];
+
+  // 1) Borrar subgrupos primero
+  for (const sgId of subGroups) {
+    if (!sgId) continue;
+
+    try {
+      await directory.groups.delete({ groupKey: sgId });
+    } catch (err) {
+      const reason = err?.errors?.[0]?.reason;
+      if (reason !== 'notFound') {
+        console.warn(
+          `⚠️ No se pudo borrar el subgrupo de dispositivo ${sgId}:`,
+          reason || err.message
+        );
+      }
+    }
+  }
+
+  // 2) Borrar grupo principal
+  if (mainGroupId) {
+    try {
+      await directory.groups.delete({ groupKey: mainGroupId });
+    } catch (err) {
+      const reason = err?.errors?.[0]?.reason;
+      if (reason !== 'notFound') {
+        console.warn(
+          `⚠️ No se pudo borrar el grupo principal de dispositivo ${mainGroupId}:`,
+          reason || err.message
+        );
+      }
+    }
+  }
+}
+
+
 const deleteGroupWS = async (req, res) => {
+  console.log("🧨 deleteGroupWS :: body recibido →", req.body);
+
   const {
-    groupId,          // id o email del grupo a borrar            (OBLIG.)
-    idGroupFather,    // id/email del padre si el grupo es hijo   (opcional)
-    id,               // _id de programa o dispositivo asociado   (OBLIG.)
-    type,             // 'program' | 'device'                     (OBLIG.)
+    groupId,       // id o email del grupo a borrar            (OBLIG.)
+    idGroupFather, // id/email del padre si el grupo es hijo   (opcional)
+    id,            // _id de programa o dispositivo asociado   (OBLIG.)
+    type,          // 'program' | 'device'                     (OBLIG.)
   } = req.body;
 
-  /* ─── validaciones mínimas ─── */
-  if (!groupId) throw new ClientError('groupId requerido', 400);
-  if (!['program', 'device'].includes(type)) {
-    throw new ClientError('type no válido', 400);
-  }
-  if (!id) throw new ClientError('id requerido', 400);
-
-  /* ─── 1. Borrar en Google Directory ─── */
-  await directory.groups.delete({ groupKey: groupId }).catch(err => {
-    const reason = err?.errors?.[0]?.reason;
-    if (reason === 'notFound') {
-      throw new ClientError('Grupo inexistente en Workspace', 404);
-    }
-    throw err;   // cualquier otro  → 500
-  });
-
-  /* ─── 2. Quitar-lo-del-padre (si procede) ─── */
-  if (idGroupFather) {
-    await directory.members.delete({
-      groupKey: idGroupFather,
-      memberKey: groupId,          // el hijo era miembro-grupo del padre
-    }).catch(err => {
-      if (err?.errors?.[0]?.reason !== 'notFound') throw err;
+  try {
+    console.log("🔎 deleteGroupWS :: parámetros normalizados", {
+      groupId,
+      idGroupFather,
+      id,
+      type,
     });
-  }
 
-  /* ─── 3. Actualizar MongoDB ─── */
-  if (type === 'program') {
-    // programa raíz
-    await Program.updateOne(
-      { _id: id },
-      idGroupFather
-        ? { $pull: { subGroupWorkspace: groupId } }
-        : { $unset: { groupWorkspace: '' } }
-    );
-  } else { // dispositivo
-    const arrayFilter = { 'd._id': id };
-    await Program.updateOne(
-      { 'devices._id': id },
-      idGroupFather
-        ? { $pull: { 'devices.$[d].subGroupWorkspace': groupId } }
-        : { $unset: { 'devices.$[d].groupWorkspace': '' } },
-      { arrayFilters: [arrayFilter] }
-    );
-  }
+    /* ─── VALIDACIONES ─── */
+    if (!groupId) {
+      console.error("❌ deleteGroupWS :: falta groupId");
+      throw new ClientError("groupId requerido", 400);
+    }
+    if (!["program", "device"].includes(type)) {
+      console.error("❌ deleteGroupWS :: type no válido →", type);
+      throw new ClientError("type no válido", 400);
+    }
+    if (!id) {
+      console.error("❌ deleteGroupWS :: falta id");
+      throw new ClientError("id requerido", 400);
+    }
 
-  response(res, 200, { id: groupId });
+    await directory.groups
+      .delete({ groupKey: groupId })
+      .then(() => {
+        console.log("✅ deleteGroupWS :: grupo borrado (o intento) en Directory", groupId);
+      })
+      .catch((err) => {
+        const reason = err?.errors?.[0]?.reason;
+        console.error(
+          "⚠️ deleteGroupWS :: error al borrar grupo en Directory",
+          { groupId, reason, code: err.code, msg: err.message }
+        );
+
+        // 👉 Si ya no existe (404) seguimos igualmente para limpiar Mongo
+        if (reason === "notFound" || err.code === 404) {
+          console.warn(
+            `⚠️ deleteGroupWS :: grupo ${groupId} no existe en Workspace, se procede a limpiar Mongo igualmente.`
+          );
+          return;
+        }
+
+        throw err; // cualquier otro → sube al try/catch externo
+      });
+
+    /* ─── 3. Actualizar MongoDB ─── */
+    if (type === "program") {
+      if (idGroupFather) {
+        
+        await Program.updateOne(
+          { _id: id },
+          { $pull: { subGroupWorkspace: groupId } }
+        );
+      } else {
+        
+        await Program.updateOne(
+          { _id: id },
+          { $unset: { groupWorkspace: "" } }
+        );
+      }
+    } else {
+      // type === 'device'
+      if (idGroupFather) {
+        await Dispositive.updateOne(
+          { _id: id },
+          { $pull: { subGroupWorkspace: groupId } }
+        );
+      } else {
+               await Dispositive.updateOne(
+          { _id: id },
+          {
+            $unset: {
+              groupWorkspace: "",
+              email: "",
+            },
+          }
+        );
+      }
+    }
+
+    response(res, 200, { id: groupId });
+  } catch (err) {
+    console.error("💥 deleteGroupWS :: ERROR atrapado en try/catch externo", {
+      message: err.message,
+      code: err.code,
+      name: err.name,
+      stack: err.stack,
+    });
+    throw err; // que lo recoja tu catchAsync/middleware
+  }
 };
+
+
+
 
 
 
@@ -659,76 +859,263 @@ const deleteGroupWS = async (req, res) => {
  * Devuelve { id, email } del grupo.
  */
 async function ensureProgramGroup(program) {
-  const base = normalizeString(program.acronym);
-  const email = `${base}@${DOMAIN}`;
-  const displayName = `Programa: ${program.acronym}`;
-
-  let group;
   try {
-    group = (await directory.groups.insert({
-      requestBody: { email, name: displayName }
-    })).data;
-  } catch (err) {
-    if (err?.errors?.[0]?.reason !== 'duplicate') throw err;
-    group = (await directory.groups.get({ groupKey: email })).data;
-  }
+    const baseLabel = program.acronym || program.name;
+    if (!baseLabel) {
+      throw new ClientError(
+        "El programa no tiene acrónimo ni nombre válido para generar el grupo",
+        400
+      );
+    }
 
-  // Guarda la referencia si aún no estaba
-  if (!program.groupWorkspace || program.groupWorkspace !== group.id) {
+    const base = normalizeString(baseLabel);
+    const email = `${base}@${DOMAIN}`;
+    const displayName = `Programa: ${baseLabel}`;
+
+    // Subgrupos por defecto (mismo patrón que ensureDeviceGroup)
+    const extensions = [
+      { name: `Dirección: ${baseLabel}`, ex: ".dir" },
+    ];
+
+    let group;
+    const subGroups = [];
+
+    // 1) Asegurar grupo principal del programa
+    try {
+      group = (
+        await directory.groups.insert({
+          requestBody: { email, name: displayName },
+        })
+      ).data;
+    } catch (err) {
+      const reason = err?.errors?.[0]?.reason;
+      if (err.code === 409 || reason === "duplicate") {
+        // Ya existe → lo recuperamos
+        group = (await directory.groups.get({ groupKey: email })).data;
+      } else {
+        throw err;
+      }
+    }
+
+    if (!group || !group.id) {
+      throw new ClientError(
+        "No se ha podido crear ni recuperar el grupo de Workspace para el programa",
+        500
+      );
+    }
+
+    // 2) Crear / asegurar subgrupos y añadirlos como miembros del grupo principal
+    for (const extension of extensions) {
+      const emailSub = `${base}${extension.ex}@${DOMAIN}`;
+      let dataSub;
+
+      try {
+        dataSub = (
+          await directory.groups.insert({
+            requestBody: { email: emailSub, name: extension.name },
+          })
+        ).data;
+      } catch (err) {
+        const reason = err?.errors?.[0]?.reason;
+        if (err.code === 409 || reason === "duplicate") {
+          // Ya existe → lo recuperamos
+          dataSub = (await directory.groups.get({ groupKey: emailSub })).data;
+        } else {
+          throw err;
+        }
+      }
+
+      subGroups.push(dataSub);
+
+      // Añadir subgrupo como miembro del grupo principal
+      if (group.id && dataSub.id) {
+        await directory.members
+          .insert({
+            groupKey: group.id,
+            requestBody: { id: dataSub.id, role: "MEMBER", type: "GROUP" },
+          })
+          .catch((err) => {
+            const reason = err?.errors?.[0]?.reason;
+            if (reason === "notFound") {
+              throw new ClientError("Grupo padre inexistente en Workspace", 404);
+            }
+            throw err;
+          });
+      }
+    }
+
+    // 3) Persistir en Mongo: actualizar Program
     await Program.updateOne(
       { _id: program._id },
-      { groupWorkspace: group.id }
+      {
+        $set: {
+          email: group.email,
+          groupWorkspace: group.id,
+          subGroupWorkspace: subGroups.map((sg) => sg.id),
+        },
+      }
     );
-  }
+
+    // 4) Aplicar configuración común (no crítico)
     try {
-    await patchWithBackoff(email, commonSettings)
+      await patchWithBackoff(email, commonSettings);
+      for (const extension of extensions) {
+        const emailSub = `${base}${extension.ex}@${DOMAIN}`;
+        await patchWithBackoff(emailSub, commonSettings);
+      }
+    } catch (_) {
+      console.warn(
+        "No se ha podido aplicar la configuración común al grupo de programa",
+        email
+      );
+    }
+
+    // 5) Devolver info usable por quien llame
+    return {
+      id: group.id,
+      email: group.email,
+      subGroups: subGroups.map((sg) => ({
+        id: sg.id,
+        email: sg.email,
+      })),
+    };
   } catch (error) {
-    console.log('No se ha podido configurar el grupo')
+    // Se propaga para que lo gestione el caller
+    throw error;
   }
-  return { id: group.id, email: group.email };
 }
+
 
 /**
  * Crea (o recupera) el grupo propio de un Dispositivo y lo mete
  * como “hijo” del grupo del Programa.
  * Devuelve { id, email } del nuevo grupo.
  */
+
+// ===================== ensureDeviceGroup =====================
+
 async function ensureDeviceGroup(device, program) {
-
-  const base = normalizeString(device.name);
-  const email = `${base}@${DOMAIN}`;
-  const displayName = `Dispositivo: ${device.name}`;
-
-  let group;
   try {
-    group = (await directory.groups.insert({
-      requestBody: { email, name: displayName }
-    })).data;
-  } catch (err) {
-    console.log(err)
-    group = (await directory.groups.get({ groupKey: email })).data;
-  }
+    const base = normalizeString(device.name);
+    const email = `${base}@${DOMAIN}`;
+    const displayName = `Dispositivo: ${device.name}`;
 
-  /* — persistir en Mongo — */
-const p=await Program.updateOne(
-  { _id: program._id, 'devices._id': device._id },
-  { $set: { 'devices.$.groupWorkspace': group.id } }
-);
+    const extensions = [
+      { name: `Dirección: ${device.name}`, ex: ".dir" },
+      { name: `Equipo técnico: ${device.name}`, ex: ".tec" },
+    ];
 
-  try {
-    await patchWithBackoff(email, commonSettings)
+    let group;
+    const subGroups = [];
+
+    // 1) Asegurar grupo padre
+    try {
+      group = (
+        await directory.groups.insert({
+          requestBody: { email, name: displayName },
+        })
+      ).data;
+    } catch (err) {
+      // Si ya existe, lo recuperamos
+      if (err.code === 409 || err.errors?.[0]?.reason === "duplicate") {
+        group = (await directory.groups.get({ groupKey: email })).data;
+      } else {
+        throw err;
+      }
+    }
+
+    if (!group || !group.id) {
+      throw new ClientError(
+        "No se ha podido crear ni recuperar el grupo de Workspace para el dispositivo",
+        500
+      );
+    }
+
+    // 2) Crear / asegurar subgrupos y añadirlos como miembros del padre
+    for (const extension of extensions) {
+      const emailSub = `${base}${extension.ex}@${DOMAIN}`;
+      let dataSub;
+
+      try {
+        dataSub = (
+          await directory.groups.insert({
+            requestBody: { email: emailSub, name: extension.name },
+          })
+        ).data;
+      } catch (err) {
+        if (err.code === 409 || err.errors?.[0]?.reason === "duplicate") {
+          dataSub = (await directory.groups.get({ groupKey: emailSub })).data;
+        } else {
+          throw err;
+        }
+      }
+
+      subGroups.push(dataSub);
+
+      // Añadir subgrupo como miembro del grupo padre
+      if (group.id && dataSub.id) {
+        await directory.members
+          .insert({
+            groupKey: group.id,
+            requestBody: { id: dataSub.id, role: "MEMBER", type: "GROUP" },
+          })
+          .catch((err) => {
+            // Si el grupo padre no existe, error "real"
+            if (err.errors?.[0]?.reason === "notFound") {
+              throw new ClientError("Grupo padre inexistente en Workspace", 404);
+            }
+            throw err;
+          });
+      }
+    }
+
+    // 3) Persistir en Mongo: actualizar Dispositive
+    await Dispositive.updateOne(
+      { _id: device._id },
+      {
+        $set: {
+          email: group.email,
+          groupWorkspace: group.id,
+          subGroupWorkspace: subGroups.map((sg) => sg.id),
+        },
+      }
+    );
+
+    // 4) Aplicar configuración común (no crítico)
+    try {
+      await patchWithBackoff(email, commonSettings);
+      for (const extension of extensions) {
+        const emailSub = `${base}${extension.ex}@${DOMAIN}`;
+        await patchWithBackoff(emailSub, commonSettings);
+      }
+    } catch (_) {
+      // No debe romper la creación / vinculación
+    }
+
+    // 5) Devolver info por si la quieres usar fuera
+    return {
+      id: group.id,
+      email: group.email,
+      subGroups: subGroups.map((sg) => ({
+        id: sg.id,
+        email: sg.email,
+      })),
+    };
   } catch (error) {
-    console.log('No se ha podido configurar el grupo')
+    // Se propaga para que lo gestione el caller (createDispositive)
+    throw error;
   }
-  return { id: group.id, email: group.email };
 }
+
+
+
 
 
 async function patchWithBackoff(groupEmail, requestBody) {
   let delay = 400;
   for (let attempt = 1; attempt <= 6; attempt++) {
     try {
-      const res=await groupsSettings.groups.patch({
+      const res = await groupsSettings.groups.patch({
         groupUniqueId: groupEmail,
         requestBody
       });
@@ -751,6 +1138,61 @@ async function patchWithBackoff(groupEmail, requestBody) {
   console.error(`❌ Agotados reintentos en ${groupEmail}`);
 }
 
+const getModelWorkspaceGroups = async (req, res) => {
+  const { type, id } = req.body;
+
+  if (!type || !id) {
+    throw new ClientError('Faltan parámetros: type o id', 400);
+  }
+  if (!['program', 'device'].includes(type)) {
+    throw new ClientError('type debe ser "program" o "device"', 400);
+  }
+
+  let mainGroup = null;
+  let subGroups = [];
+
+  if (type === 'program') {
+    const program = await Program.findById(id)
+      .select('groupWorkspace subGroupWorkspace')
+      .lean();
+
+    if (!program) throw new ClientError('Programa no encontrado', 404);
+
+    mainGroup = program.groupWorkspace || null;
+    subGroups = Array.isArray(program.subGroupWorkspace)
+      ? program.subGroupWorkspace
+      : [];
+  } else {
+    const dispositive = await Dispositive.findById(id)
+      .select('groupWorkspace subGroupWorkspace')
+      .lean();
+
+    if (!dispositive) throw new ClientError('Dispositivo no encontrado', 404);
+
+    mainGroup = dispositive.groupWorkspace || null;
+    subGroups = Array.isArray(dispositive.subGroupWorkspace)
+      ? dispositive.subGroupWorkspace
+      : [];
+  }
+
+  const groupIds = [mainGroup, ...subGroups].filter(Boolean);
+
+  if (!groupIds.length) {
+    return response(res, 200, []); // sin grupos configurados
+  }
+
+  const result = [];
+  for (const groupId of groupIds) {
+    const info = await infoGroup(groupId);
+    if (info) {
+      result.push(info);
+    }
+  }
+
+  return response(res, 200, result);
+};
+
+
 /**
  * Recorre todos los grupos del dominio y les aplica el mismo conjunto de ajustes.
  */
@@ -758,7 +1200,7 @@ async function updateAllGroupsSettings() {
   // const groups = await listAllGroups();
   // console.log(`🔍 Encontrados ${groups.length} grupos.`);
 
-  const groups=['coilspaulofreire.tec@engloba.org.es']
+  const groups = ['coilspaulofreire.tec@engloba.org.es']
   for (const g of groups) {
     await patchWithBackoff(g, commonSettings);
   }
@@ -792,6 +1234,20 @@ async function updateAllGroupsSettings() {
 //  prueba('pimenoresalameda.edu@engloba.org.es')
 
 
+// ===================== SINCRONIZAR TODOS LOS DISPOSITIVOS CON WORKSPACE =====================
+
+/**
+ * Recorre todos los dispositivos y, para cada uno, intenta:
+ *  - Localizar su grupo principal en Workspace a partir de su nombre.
+ *  - Actualizar en Mongo:
+ *      - email              -> email del grupo principal
+ *      - groupWorkspace     -> id del grupo principal
+ *      - subGroupWorkspace  -> ids de los subgrupos (miembros de tipo GROUP)
+ *
+ * Si algo falla con un dispositivo, se registra el error y se pasa al siguiente.
+ */
+
+
 module.exports = {
   addUserToGroup,
   deleteMemeberAllGroups,
@@ -800,8 +1256,9 @@ module.exports = {
   createGroupWS: catchAsync(createGroupWS),
   deleteMemberGroupWS: catchAsync(deleteMemberGroupWS),
   deleteGroupWS: catchAsync(deleteGroupWS),
+  getModelWorkspaceGroups:catchAsync(getModelWorkspaceGroups),
   createUserWS,
   deleteUserByEmailWS,
-  ensureProgramGroup, ensureDeviceGroup,
+  ensureProgramGroup, ensureDeviceGroup,deleteDeviceGroupsWS,
   infoGroup
 };

@@ -18,6 +18,9 @@ const programSchema = new Schema({
         enum: ['igualdad', 'desarrollo comunitario', 'lgtbiq', 'infancia y juventud', 'personas con discapacidad', 'mayores', 'no identificado'],
         default: 'no identificado'
     },
+    email:{
+        type:String
+    },
     active:{
         type: Boolean,
         default: true

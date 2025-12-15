@@ -3,7 +3,7 @@ const { Provinces, Dispositive, Program, Documentation, Filedrive, Periods } = r
 const { catchAsync, response, ClientError, toId } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { generateEmailHTML, sendEmail } = require('./emailControllerGoogle');
-const { ensureDeviceGroup, infoGroup } = require('./workspaceController');
+const { ensureDeviceGroup, infoGroup, deleteDeviceGroupsWS } = require('./workspaceController');
 
 const isValidId = (v) => mongoose.Types.ObjectId.isValid(v);
 const isDetach = (v) => v === null || v === '' || v === false;
@@ -14,113 +14,147 @@ const isDupKey = (err) => err && err.code === 11000; // índice único { program
  * - Si "program" (o "programId") viene, se vincula y se añade su _id a Program.devicesId
  * - Si no, se crea huérfano (program null)
  */
+// ===================== createDispositive =====================
+
 const createDispositive = async (req, res) => {
-  const {
-    name,
-    active,
-    address,
-    email,
-    phone,
-    province,
-    program,
-    programId,
-  } = req.body;
+  try {
+    const {
+      name,
+      active,
+      address,
+      phone,
+      province,
+      program,
+      programId,
+    } = req.body;
 
-  if (!name) throw new ClientError("Falta el nombre del dispositivo", 400);
+    if (!name) {
+      throw new ClientError("Falta el nombre del dispositivo", 400);
+    }
 
-  const programRef = program ?? programId ?? null;
-  let programDoc = null;
+    const programRef = program ?? programId ?? null;
+    let programDoc = null;
 
-  // 🧩 Validar programa
-  if (programRef) {
-    if (!isValidId(programRef)) throw new ClientError("program inválido", 400);
-    programDoc = await Program.findById(programRef);
-    if (!programDoc)
-      throw new ClientError("No existe el programa especificado", 404);
-  }
+    // Validar programa (si viene)
+    if (programRef) {
+      if (!isValidId(programRef)) {
+        throw new ClientError("program inválido", 400);
+      }
 
-  // 🧱 Crear dispositivo base
-  const payload = {
-    name,
-    active: active,
-    address: address || "",
-    email: email || "",
-    phone: phone || "",
-    responsible: [],
-    coordinators: [],
-    province: isValidId(province) ? province : null,
-    files: [],
-    program: programDoc ? programDoc._id : undefined,
-  };
-
-  // 🚀 Crear dispositivo
-  const created = await Dispositive.create(payload);
-
-  // 🧩 Asociar al programa padre
-  if (programDoc) {
-    await Program.updateOne(
-      { _id: programDoc._id },
-      { $addToSet: { devicesId: created._id } }
-    );
-  }
-
-  // ⚙️ Asegurar grupo Workspace
-  if (programDoc) await ensureDeviceGroup(created, programDoc);
-
-  // 🧾 Propagar documentación tipo “Dispositive” del programa
-  if (programDoc) {
-    const programObjectId = new mongoose.Types.ObjectId(programDoc._id);
-
-    const docs = await Documentation.find({
-      model: "Dispositive",
-      $or: [
-        { programs: { $in: [programObjectId] } },
-        { programs: { $in: [String(programDoc._id)] } },
-      ],
-    })
-      .select("_id")
-      .lean();
-
-    if (docs.length) {
-      for (const d of docs) {
-        await Documentation.updateOne(
-          { _id: d._id },
-          { $addToSet: { dispositives: created._id } }
-        );
+      programDoc = await Program.findById(programRef);
+      if (!programDoc) {
+        throw new ClientError("No existe el programa especificado", 404);
       }
     }
-  }
 
-  // 📬 Email informativo (no crítico)
-  const asunto = "Creación de un nuevo dispositivo";
-  const textoPlano = `Programa padre: ${programDoc ? programDoc.name : "—"}
+    // Crear dispositivo base
+    const payload = {
+      name,
+      active: active,
+      address: address || "",
+      email: "",
+      phone: phone || "",
+      responsible: [],
+      coordinators: [],
+      province: isValidId(province) ? province : null,
+      files: [],
+      program: programDoc ? programDoc._id : undefined,
+    };
+
+    const created = await Dispositive.create(payload);
+
+    // Asociar al programa padre (si hay)
+    if (programDoc) {
+      await Program.updateOne(
+        { _id: programDoc._id },
+        { $addToSet: { devicesId: created._id } }
+      );
+    }
+
+    // Crear/asegurar grupos de Workspace (no crítico para la creación)
+    if (programDoc) {
+      try {
+        //crear grupo workspace
+        await ensureDeviceGroup(created, programDoc);
+        // ensureDeviceGroup ya actualiza el Dispositive con email / groupWorkspace / subGroupWorkspace
+      } catch (_) {
+        // Si falla Workspace, el dispositivo sigue existiendo en Mongo
+      }
+    }
+
+    // Propagar documentación tipo "Dispositive" del programa
+    if (programDoc) {
+      const programObjectId = new mongoose.Types.ObjectId(programDoc._id);
+
+      const docs = await Documentation.find({
+        model: "Dispositive",
+        $or: [
+          { programs: { $in: [programObjectId] } },
+          { programs: { $in: [String(programDoc._id)] } },
+        ],
+      })
+        .select("_id")
+        .lean();
+
+      if (docs.length) {
+        for (const d of docs) {
+          await Documentation.updateOne(
+            { _id: d._id },
+            { $addToSet: { dispositives: created._id } }
+          );
+        }
+      }
+    }
+
+    // Email informativo (no crítico)
+    const asunto = "Creación de un nuevo dispositivo";
+    const textoPlano = `Programa padre: ${programDoc ? programDoc.name : "—"}
 Nombre del Dispositivo: ${created.name}
 Creador: ${req.body?.userCreate || "—"}`;
-  const htmlContent = generateEmailHTML({
-    logoUrl: "https://app.engloba.org.es/graphic/logotipo_blanco.png",
-    title: "Creación de un nuevo dispositivo",
-    greetingName: "Persona maravillosa",
-    bodyText: "Se ha creado un nuevo dispositivo",
-    highlightText: textoPlano,
-    footerText:
-      "Gracias por usar nuestra plataforma. Si tienes dudas, contáctanos.",
-  });
 
-  try {
-    await sendEmail(
-      ["comunicacion@engloba.org.es", "web@engloba.org.es"],
-      asunto,
-      textoPlano,
-      htmlContent
-    );
-  } catch (_) {}
+    const htmlContent = generateEmailHTML({
+      logoUrl: "https://app.engloba.org.es/graphic/logotipo_blanco.png",
+      title: "Creación de un nuevo dispositivo",
+      greetingName: "Persona maravillosa",
+      bodyText: "Se ha creado un nuevo dispositivo",
+      highlightText: textoPlano,
+      footerText:
+        "Gracias por usar nuestra plataforma. Si tienes dudas, contáctanos.",
+    });
 
-  // ✅ Respuesta final
-  return response(res, 200, {
-    dispositive: created,
-    programId: created.program || null,
-  });
+    try {
+      await sendEmail(
+        ["comunicacion@engloba.org.es", "web@engloba.org.es"],
+        asunto,
+        textoPlano,
+        htmlContent
+      );
+    } catch (_) {
+      // Ignoramos error de correo: no debe romper la creación
+    }
+
+    return response(res, 200, {
+      dispositive: created,
+      programId: created.program || null,
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      const [[, dupValue]] = Object.entries(error.keyValue || {});
+      throw new ClientError(
+        `'${dupValue}' ya existe. No se pudo crear el dispositivo porque debe ser único`,
+        400
+      );
+    }
+
+    if (error instanceof ClientError) {
+      throw error;
+    }
+
+    throw new ClientError("Error al crear el dispositivo", 500);
+  }
 };
+
+
 
 /** Obtener un Dispositive por id (sin programId) */
 const getDispositiveId = async (req, res) => {
@@ -283,6 +317,17 @@ const deleteDispositive = async (req, res) => {
   if (!doc) throw new ClientError('No existe el dispositivo', 400);
 
   const oldProgramId = doc.program ? String(doc.program) : null;
+
+  // 2) Intentar borrar grupo principal y subgrupos en Workspace (no crítico)
+  try {
+    await deleteDeviceGroupsWS(doc);
+  } catch (err) {
+    console.warn(
+      `⚠️ Error al intentar borrar grupos de Workspace del dispositivo ${dispositiveId}:`,
+      err.message || err
+    );
+    // NO lanzamos el error: el dispositivo se sigue borrando en Mongo
+  }
 
   await Dispositive.deleteOne({ _id: dispositiveId });
 
