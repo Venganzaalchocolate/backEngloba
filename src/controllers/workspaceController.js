@@ -485,7 +485,7 @@ const addGroupWS = async (req, res) => {
   response(res, 200, { groupID: groupId });
 }
 
-async function createGroupWSCore({ idGroupFather, typeGroup, id, type }) {
+async function createGroupWSCore({ idGroupFather, typeGroup, id, type, baseLocalOverride  }) {
   /* ───────── VALIDACIONES ───────── */
   if (!groupTypeGroupOptions.includes(typeGroup)) {
     throw new ClientError("typeGroup no válido", 400);
@@ -530,18 +530,9 @@ async function createGroupWSCore({ idGroupFather, typeGroup, id, type }) {
       ? programDoc.acronym || programDoc.name
       : deviceDoc.name;
 
-  if (!baseLabel) {
-    throw new ClientError(
-      "No se pudo determinar un nombre base para el grupo",
-      500
-    );
-  }
+  const normalized = baseLocalOverride || normalizeString(baseLabel);
 
-  const normalized = normalizeString(baseLabel);
-
-  /* ───────── E-MAIL DEL NUEVO GRUPO ───────── */
-  const suffix =
-    typeGroup === "blank" ? "" : `.${groupSuffixMap[typeGroup] || ""}`;
+  const suffix = typeGroup === "blank" ? "" : `.${groupSuffixMap[typeGroup] || ""}`;
   const groupEmail = `${normalized}${suffix}@${DOMAIN}`;
 
   /* ───────── NOMBRE DEL GRUPO ───────── */
@@ -697,45 +688,23 @@ function parseDeviceGroupPattern(deviceName, groupEmail) {
  *  - no rompe nada en Mongo (solo Workspace)
  */
 
-async function ensureSubgroupByParentEmail({ parentGroupId, typeGroup }) {
+async function ensureSubgroupByParentEmail({ parentGroupId, typeGroup, id, type }) {
   const parent = await safeGetGroup(parentGroupId, 'ensureSubgroupByParentEmail.parentGroupId');
   if (!parent?.email) {
     throw new ClientError(`Grupo padre inexistente en Workspace: ${parentGroupId}`, 404);
   }
 
-  const parentLocal = getLocalPart(parent.email);   // base REAL del grupo principal
-  const suf = groupSuffixMap[typeGroup];            // direction -> dir, tecnicos -> tec...
-  if (!suf) throw new ClientError(`typeGroup inválido: ${typeGroup}`, 400);
+  const parentLocal = getLocalPart(parent.email); // base REAL
 
-  const subEmail = `${parentLocal}.${suf}@${DOMAIN}`;
+  const result = await createGroupWSCore({
+    idGroupFather: parentGroupId,
+    typeGroup,
+    id,         // id del dispositivo destino (o programa)
+    type,       // 'device' o 'program'
+    baseLocalOverride: parentLocal,
+  });
 
-  // 1) crear o recuperar
-  let sub;
-  try {
-    sub = (await directory.groups.insert({ requestBody: { email: subEmail, name: subEmail } })).data;
-  } catch (err) {
-    const reason = err?.errors?.[0]?.reason;
-    if (reason === 'duplicate' || err.code === 409) {
-      sub = (await directory.groups.get({ groupKey: subEmail })).data;
-    } else {
-      throw err;
-    }
-  }
-
-  if (!sub?.id) throw new ClientError(`No se pudo asegurar subgrupo: ${subEmail}`, 500);
-
-  // 2) colgar del padre (duplicate = OK)
-  try {
-    await directory.members.insert({
-      groupKey: parentGroupId,
-      requestBody: { id: sub.id, role: 'MEMBER', type: 'GROUP' },
-    });
-  } catch (err) {
-    const reason = err?.errors?.[0]?.reason;
-    if (!(reason === 'duplicate' || err.code === 409)) throw err;
-  }
-
-  return { id: sub.id, email: sub.email || subEmail };
+  return { id: result.group.id, email: result.group.email };
 }
 
 
@@ -772,22 +741,28 @@ function classifyByEmail(groupEmail) {
 }
 
 
+function uniqById(list) {
+  const seen = new Set();
+  return list.filter(g => {
+    if (!g?.id) return false;
+    if (seen.has(g.id)) return false;
+    seen.add(g.id);
+    return true;
+  });
+}
+
 async function moveUserBetweenDevicesWS({ email, originDispositiveId, targetDispositiveId }) {
   if (!email || !originDispositiveId || !targetDispositiveId) return;
 
   const [origin, target] = await Promise.all([
-    Dispositive.findById(originDispositiveId).select('groupWorkspace subGroupWorkspace').lean(),
-    Dispositive.findById(targetDispositiveId).select('groupWorkspace subGroupWorkspace').lean(),
+    Dispositive.findById(originDispositiveId).select('name groupWorkspace subGroupWorkspace').lean(),
+    Dispositive.findById(targetDispositiveId).select('name groupWorkspace subGroupWorkspace').lean(),
   ]);
 
   if (!origin?.groupWorkspace) return;
+  if (!target?.groupWorkspace) throw new ClientError('El dispositivo destino no tiene groupWorkspace configurado', 400);
 
-  // Asegurar que destino tiene grupo principal (si no lo tiene, aquí lo mejor es que lo asegures antes en tu flujo)
-  if (!target?.groupWorkspace) {
-    throw new ClientError('El dispositivo destino no tiene groupWorkspace configurado', 400);
-  }
-
-  // 1) Listar grupos del usuario
+  // 1) grupos del usuario
   const userGroups = [];
   let pageToken;
   do {
@@ -795,66 +770,68 @@ async function moveUserBetweenDevicesWS({ email, originDispositiveId, targetDisp
     userGroups.push(...(data.groups || []));
     pageToken = data.nextPageToken;
   } while (pageToken);
-
   if (!userGroups.length) return;
 
-  // 2) Intento A (fiable): filtrar por IDs de Mongo
-  const originIds = new Set([origin.groupWorkspace, ...(origin.subGroupWorkspace || [])].filter(Boolean));
-  let originGroups = userGroups
-    .filter(g => originIds.has(g.id))
-    .map(g => ({ ...g, ...classifyByEmail(g.email) }));
+  // 2) base real del ORIGEN por email del grupo principal
+  const originMain = await safeGetGroup(origin.groupWorkspace, 'move.origin.groupWorkspace');
+  const originBaseLocal = getLocalPart(originMain?.email) || normalizeString(origin.name);
+  if (!originBaseLocal) return;
 
-  // 2b) Fallback B (sin name): si Mongo está “sucio”, usa el email real del grupo principal origen
-  //     y filtra por base de email (base / base.sufijo)
-  if (!originGroups.length) {
-    const originMain = await safeGetGroup(origin.groupWorkspace, 'move.origin.groupWorkspace');
-    const baseLocal = getLocalPart(originMain?.email);
-    if (baseLocal) {
-      originGroups = userGroups
-        .filter(g => {
-          const local = getLocalPart(g.email);
-          return local === baseLocal || local.startsWith(`${baseLocal}.`);
-        })
-        .map(g => ({ ...g, ...classifyByEmail(g.email) }));
-    }
-  }
+  // A) por email-base (robusto)
+  const originByEmail = userGroups.filter(g => {
+    const local = getLocalPart(g.email);
+    return local === originBaseLocal || local.startsWith(`${originBaseLocal}.`);
+  });
+
+  // B) por IDs Mongo (útil si originBaseLocal no pillara algo raro)
+  const originIds = new Set([origin.groupWorkspace, ...(origin.subGroupWorkspace || [])].filter(Boolean));
+  const originByIds = userGroups.filter(g => originIds.has(g.id));
+
+  // UNION
+  let originGroups = uniqById([...originByEmail, ...originByIds])
+    .map(g => ({ ...g, ...classifyByEmail(g.email) }));
 
   if (!originGroups.length) return;
 
-  // 3) Si hay subgrupos, NO tocamos el principal (evita duplicados por derivada)
-  const hasSubs = originGroups.some(g => !g.isMain);
-  const groupsToMove = hasSubs ? originGroups.filter(g => !g.isMain) : originGroups;
+// 3) Si hay subgrupos, antes descartabas el principal siempre.
+//    Pero si el usuario estaba EN el principal, también hay que moverlo.
+const originMainWasMember = originGroups.some(
+  g => g.isMain && String(g.id) === String(origin.groupWorkspace)
+);
 
-  // 4) Mapa subgrupos destino por sufijo leyendo IDs de Mongo (pero SIN romper si hay IDs muertos)
-  const targetSubMap = {}; // suffix -> groupId
+// mueve: subgrupos siempre, y principal solo si estaba
+const groupsToMove = originGroups.filter(g => !g.isMain || originMainWasMember);
+  // 4) mapa de subgrupos destino por sufijo (si Mongo tiene IDs muertos, safeGetGroup devuelve null y se ignora)
+  const targetSubMap = {};
   for (const gid of (target.subGroupWorkspace || []).filter(Boolean)) {
     const g = await safeGetGroup(gid, 'move.target.subGroupWorkspace');
-    if (!g?.email) continue; // <- ID roto en Mongo, lo ignoramos
+    if (!g?.email) continue;
     const c = classifyByEmail(g.email);
-    if (!c.isMain) targetSubMap[c.suffix] = g.id; // g.id es el id real
+    if (!c.isMain) targetSubMap[c.suffix] = g.id;
   }
 
-  // 5) Mover
+  // 5) mover
   for (const og of groupsToMove) {
     let targetGroupKey;
 
     if (og.isMain) {
       targetGroupKey = target.groupWorkspace;
     } else {
-      // si ya existe subgrupo equivalente en destino
       targetGroupKey = targetSubMap[og.suffix];
 
-      // si no existe, lo creamos/recuperamos por email base del grupo principal destino (sin name)
       if (!targetGroupKey) {
         const ensured = await ensureSubgroupByParentEmail({
           parentGroupId: target.groupWorkspace,
-          typeGroup: og.typeGroup,
+          typeGroup: og.typeGroup,    // social/direction/...
+          id: targetDispositiveId,    // <- para que createGroupWSCore actualice Dispositive.subGroupWorkspace
+          type: 'device',
         });
         targetGroupKey = ensured.id;
+        targetSubMap[og.suffix] = ensured.id; // cache
       }
     }
 
-    // 5.1) Añadir al destino (duplicate OK)
+    // añadir (duplicate OK)
     try {
       await directory.members.insert({
         groupKey: targetGroupKey,
@@ -865,7 +842,7 @@ async function moveUserBetweenDevicesWS({ email, originDispositiveId, targetDisp
       if (!(reason === 'duplicate' || err.code === 409)) throw err;
     }
 
-    // 5.2) Quitar del origen (notFound OK)
+    // quitar (notFound OK)
     try {
       await directory.members.delete({ groupKey: og.id, memberKey: email });
     } catch (err) {
@@ -874,6 +851,7 @@ async function moveUserBetweenDevicesWS({ email, originDispositiveId, targetDisp
     }
   }
 }
+
 
 
 
