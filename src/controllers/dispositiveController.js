@@ -3,7 +3,8 @@ const { Provinces, Dispositive, Program, Documentation, Filedrive, Periods } = r
 const { catchAsync, response, ClientError, toId } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { generateEmailHTML, sendEmail } = require('./emailControllerGoogle');
-const { ensureDeviceGroup, infoGroup, deleteDeviceGroupsWS } = require('./workspaceController');
+const { deleteDeviceGroupsWS, ensureWorkspaceGroupsForModel } = require('./workspaceController');
+
 
 const isValidId = (v) => mongoose.Types.ObjectId.isValid(v);
 const isDetach = (v) => v === null || v === '' || v === false;
@@ -71,15 +72,16 @@ const createDispositive = async (req, res) => {
       );
     }
 
-    // Crear/asegurar grupos de Workspace (no crítico para la creación)
+    //crear grupos de workspace no critico y no espera 
     if (programDoc) {
-      try {
-        //crear grupo workspace
-        await ensureDeviceGroup(created, programDoc);
-        // ensureDeviceGroup ya actualiza el Dispositive con email / groupWorkspace / subGroupWorkspace
-      } catch (_) {
-        // Si falla Workspace, el dispositivo sigue existiendo en Mongo
-      }
+      // Fire-and-forget (evita unhandled rejection con catch)
+      void ensureWorkspaceGroupsForModel({
+        type: 'device',
+        id: created._id,
+        requiredSubgroups: ['direction'], // los que quieras por defecto
+      }).catch(err => {
+        console.warn('⚠️ Workspace groups (device) falló:', created._id, err?.message || err);
+      });
     }
 
     // Propagar documentación tipo "Dispositive" del programa
@@ -168,7 +170,7 @@ const getDispositiveId = async (req, res) => {
 
   // 1) Obtener todos los archivos asociados directamente al dispositivo
   const files = await Filedrive.find({ idModel: id })
- 
+
   // 2) Obtener el dispositivo con responsables + coordinadores
   let dispositive = await Dispositive.findById(id)
     .populate([
@@ -204,8 +206,8 @@ const getDispositiveId = async (req, res) => {
  * - Si llega program = null/''/false: desvincula del programa y lo saca de devicesId
  */
 const updateDispositive = async (req, res) => {
-  const { dispositiveId, active, name, address, email, phone, province, program, cronology, type} = req.body;
-if (!dispositiveId) throw new ClientError('Falta dispositiveId', 400);
+  const { dispositiveId, active, name, address, email, phone, province, program, cronology, type } = req.body;
+  if (!dispositiveId) throw new ClientError('Falta dispositiveId', 400);
 
   const current = await Dispositive.findById(dispositiveId);
   if (!current) throw new ClientError('Dispositivo no encontrado', 404);
@@ -217,19 +219,21 @@ if (!dispositiveId) throw new ClientError('Falta dispositiveId', 400);
   const oldProgramId = current.program ? String(current.program) : null;
 
   // Campos generales
-  if (active !== undefined){
+  if (active !== undefined) {
     update.active = active;
-    if(!active){
+    if (!active) {
       //active:true o no existe el campo endDate o no tiene fecha
-      const existHiringActive=await Periods.findOne({dispositiveId:dispositiveId, $or: [           // activo explícitamente
-      { endDate: { $exists: false } }, // sin campo endDate
-      { endDate: null },          // o endDate = null
-    ],})
-    if (existHiringActive) {
-    throw new ClientError('No se puede cerrar un dispositivo si tiene trabajadores con un periodo de contratación activo', 400);
-  }
+      const existHiringActive = await Periods.findOne({
+        dispositiveId: dispositiveId, $or: [           // activo explícitamente
+          { endDate: { $exists: false } }, // sin campo endDate
+          { endDate: null },          // o endDate = null
+        ],
+      })
+      if (existHiringActive) {
+        throw new ClientError('No se puede cerrar un dispositivo si tiene trabajadores con un periodo de contratación activo', 400);
+      }
     }
-  } 
+  }
 
   if (name !== undefined) update.name = name;
   if (address !== undefined) update.address = address;
@@ -528,34 +532,34 @@ const listsResponsiblesAndCoordinators = async (req, res) => {
   // --- Programas (solo responsables, sin coordinadores ni campo program) ---
   const programs = wantResponsibles
     ? await Program.find({ responsible: { $exists: true, $ne: [] } })
-        .select('name province responsible')
-        .populate({
-          path: 'responsible',
-          select: 'firstName lastName email phone phoneJob.number phoneJob.extension'
-        })
-        .lean()
+      .select('name province responsible')
+      .populate({
+        path: 'responsible',
+        select: 'firstName lastName email phone phoneJob.number phoneJob.extension'
+      })
+      .lean()
     : [];
 
   const list = [];
 
   for (const d of dispositives) {
     const programName = d.program?.acronym ?? d.program?.name;
-    const deviceName  = d.name ?? '';
+    const deviceName = d.name ?? '';
     const provinceName = d.province ? (provinceMap.get(String(d.province)) || null) : null;
 
     if (wantResponsibles && Array.isArray(d.responsible)) {
       for (const u of d.responsible) {
         list.push({
-          program:   programName,
-          device:    deviceName,
-          province:  provinceName,
-          role:      'responsible',
-          firstName: u?.firstName  ?? '',
-          lastName:  u?.lastName   ?? '',
-          email:     u?.email      ?? '',
-          phone:     u?.phone      ?? '',
+          program: programName,
+          device: deviceName,
+          province: provinceName,
+          role: 'responsible',
+          firstName: u?.firstName ?? '',
+          lastName: u?.lastName ?? '',
+          email: u?.email ?? '',
+          phone: u?.phone ?? '',
           phoneJob: {
-            number:    u?.phoneJob?.number    ?? '',
+            number: u?.phoneJob?.number ?? '',
             extension: u?.phoneJob?.extension ?? ''
           }
         });
@@ -565,16 +569,16 @@ const listsResponsiblesAndCoordinators = async (req, res) => {
     if (wantCoordinators && Array.isArray(d.coordinators)) {
       for (const u of d.coordinators) {
         list.push({
-          program:   programName,
-          device:    deviceName,
-          province:  provinceName,
-          role:      'coordinator',
-          firstName: u?.firstName  ?? '',
-          lastName:  u?.lastName   ?? '',
-          email:     u?.email      ?? '',
-          phone:     u?.phone      ?? '',
+          program: programName,
+          device: deviceName,
+          province: provinceName,
+          role: 'coordinator',
+          firstName: u?.firstName ?? '',
+          lastName: u?.lastName ?? '',
+          email: u?.email ?? '',
+          phone: u?.phone ?? '',
           phoneJob: {
-            number:    u?.phoneJob?.number    ?? '',
+            number: u?.phoneJob?.number ?? '',
             extension: u?.phoneJob?.extension ?? ''
           }
         });
@@ -582,30 +586,30 @@ const listsResponsiblesAndCoordinators = async (req, res) => {
     }
   }
 
-    // --- Datos desde Program ---
+  // --- Datos desde Program ---
   for (const p of programs) {
-    const programName  = p.acronym ?? p.name;
+    const programName = p.acronym ?? p.name;
 
     if (Array.isArray(p.responsible)) {
       for (const u of p.responsible) {
         list.push({
-          program:   programName,
-          device:    null, // No aplica
-          province:  null,
-          role:      'responsible-program',
-          firstName: u?.firstName  ?? '',
-          lastName:  u?.lastName   ?? '',
-          email:     u?.email      ?? '',
-          phone:     u?.phone      ?? '',
+          program: programName,
+          device: null, // No aplica
+          province: null,
+          role: 'responsible-program',
+          firstName: u?.firstName ?? '',
+          lastName: u?.lastName ?? '',
+          email: u?.email ?? '',
+          phone: u?.phone ?? '',
           phoneJob: {
-            number:    u?.phoneJob?.number    ?? '',
+            number: u?.phoneJob?.number ?? '',
             extension: u?.phoneJob?.extension ?? ''
           }
         });
       }
     }
   }
- 
+
   response(res, 200, list);
 };
 
@@ -644,8 +648,8 @@ const getDispositiveResponsable = async (req, res) => {
     const progId = d.program ? (d.program._id ?? d.program) : null;
     const progIdStr = progId ? String(progId) : null;
 
-    const isDeviceResponsible  = Array.isArray(d.responsible)  && d.responsible.some(x => String(x) === String(userId));
-    const isDeviceCoordinator  = Array.isArray(d.coordinators) && d.coordinators.some(x => String(x) === String(userId));
+    const isDeviceResponsible = Array.isArray(d.responsible) && d.responsible.some(x => String(x) === String(userId));
+    const isDeviceCoordinator = Array.isArray(d.coordinators) && d.coordinators.some(x => String(x) === String(userId));
     const isProgramResponsible = progIdStr ? progRespSet.has(progIdStr) : false;
 
     result.push({
@@ -688,7 +692,7 @@ module.exports = {
   deleteDispositive: catchAsync(deleteDispositive),
   handleCoordinators: catchAsync(handleCoordinators),
   handleResponsibles: catchAsync(handleResponsibles),
-  listsResponsiblesAndCoordinators:catchAsync(listsResponsiblesAndCoordinators),
-  getDispositiveResponsable:catchAsync(getDispositiveResponsable),
-  getDispositiveId:catchAsync(getDispositiveId)
+  listsResponsiblesAndCoordinators: catchAsync(listsResponsiblesAndCoordinators),
+  getDispositiveResponsable: catchAsync(getDispositiveResponsable),
+  getDispositiveId: catchAsync(getDispositiveId)
 };

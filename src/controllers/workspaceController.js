@@ -6,6 +6,8 @@ const { catchAsync } = require('../utils/catchAsync');
 const { response } = require('../utils/response');
 const { error } = require('pdf-lib');
 const { ClientError } = require('../utils/clientError');
+// arriba del archivo (ajusta rutas)
+const { generateEmailHTML, sendEmail } = require('./emailControllerGoogle'); 
 
 // 1. Decodificamos las credenciales
 const credentials = JSON.parse(
@@ -163,36 +165,7 @@ async function listAllGroups() {
   return groups;
 }
 
-/** Hace patch(isArchived='true') con hasta 6 reintentos y back-off exponencial. */
-async function patchWithBackoff(email) {
-  let delay = 400;                     // empieza en 0,4 s
-  for (let attempt = 1; attempt <= 6; attempt++) {
-    try {
-      await groupsSettings.groups.patch({
-        groupUniqueId: email,
-        requestBody: { isArchived: 'true' },
-      });
-      return;
-    } catch (err) {
-      const apiErr = err?.errors?.[0] || {};
-      const retryable =
-        ['rateLimitExceeded', 'userRateLimitExceeded', 'backendError'].includes(apiErr.reason) ||
-        [429, 503].includes(err.code);
 
-      if (!retryable) {                        // error permanente
-        console.error(`❌ Error definitivo en ${email}:`,
-          apiErr.message || err.message);
-        return;
-      }
-
-      // error de cuota o backend: back-off
-      console.warn(`↻ Reintento ${attempt} en ${email} (${apiErr.reason || err.code})`);
-      await new Promise(r => setTimeout(r, delay + Math.random() * 200));
-      delay *= 2;                              // 0,4 → 0,8 → 1,6 → …
-    }
-  }
-  console.error(`❌ No se pudo actualizar ${email} tras 6 intentos`);
-}
 
 
 function normalizeString(str) {
@@ -485,6 +458,44 @@ const addGroupWS = async (req, res) => {
   response(res, 200, { groupID: groupId });
 }
 
+async function notifyWorkspaceGroupCreated({
+  type,          // 'program'|'device'
+  typeGroup,     // 'blank'|'direction'|...
+  idGroupFather, // id padre o null
+  baseLabel,     // nombre humano (program acronym/name o device name)
+  groupEmail,
+}) {
+  const isSubgroup = !!idGroupFather;
+  const kindText = isSubgroup ? `Subgrupo (${typeGroup})` : 'Grupo principal';
+
+  const asunto = `Workspace: creado ${kindText} para ${type === 'program' ? 'programa' : 'dispositivo'}`;
+
+  const textoPlano = [
+    `Nombre del  ${type === 'program' ? 'programa' : 'dispositivo'}: ${baseLabel || '—'}`,
+    `Grupo creado: ${groupEmail || '—'}`,
+    `Tipo de grupo: ${isSubgroup ? 'Subgrupo' : 'Principal'}`,
+    '',
+    'No te olvides de configurar el grupo en Workspace.',
+  ].filter(Boolean).join('\n');
+
+  const htmlContent = generateEmailHTML({
+    logoUrl: "https://app.engloba.org.es/graphic/logotipo_blanco.png",
+    title: "Creación de grupo de Workspace",
+    greetingName: "Persona maravillosa",
+    bodyText: "Se ha creado un grupo en Google Workspace asociado a un modelo.",
+    highlightText: textoPlano,
+    footerText: "Gracias por usar nuestra plataforma. Si tienes dudas, contáctanos.",
+  });
+
+  await sendEmail(
+    ["comunicacion@engloba.org.es", "web@engloba.org.es"],
+    asunto,
+    textoPlano,
+    htmlContent
+  );
+}
+
+
 async function createGroupWSCore({ idGroupFather, typeGroup, id, type, baseLocalOverride  }) {
   /* ───────── VALIDACIONES ───────── */
   if (!groupTypeGroupOptions.includes(typeGroup)) {
@@ -555,6 +566,9 @@ async function createGroupWSCore({ idGroupFather, typeGroup, id, type, baseLocal
       : `Grupo ${typeGroup} de ${baseLabel}`;
 
   /* ───────── CREAR / RECUPERAR GRUPO EN GOOGLE ───────── */
+    /* ───────── CREAR / RECUPERAR GRUPO EN GOOGLE ───────── */
+  let createdNew = true;
+
   const created = await directory.groups
     .insert({
       requestBody: {
@@ -565,12 +579,14 @@ async function createGroupWSCore({ idGroupFather, typeGroup, id, type, baseLocal
     })
     .catch((err) => {
       const reason = err?.errors?.[0]?.reason;
-      // Si ya existe el grupo, lo recuperamos
       if (reason === "duplicate" || err.code === 409) {
+        createdNew = false; // <-- IMPORTANTE: no es creación nueva
         return directory.groups.get({ groupKey: groupEmail });
       }
       throw err;
     });
+
+
 
   const groupData = created.data || created; // por si viene en .data
   const newGroupId = groupData.id;
@@ -622,7 +638,7 @@ if (idGroupFather) {
     } else {
       await Program.updateOne(
         { _id: id },
-        { $set: { groupWorkspace: newGroupId } }
+        { $set: { groupWorkspace: newGroupId, email: finalEmail } }
       );
     }
   } else {
@@ -645,6 +661,20 @@ if (idGroupFather) {
     }
   }
 
+    // Email informativo NO crítico: solo si el grupo se creó de verdad
+  if (createdNew) {
+    void notifyWorkspaceGroupCreated({
+      type,
+      typeGroup,
+      idGroupFather: idGroupFather || null,
+      baseLabel,
+      groupEmail: finalEmail,
+    }).catch((err) => {
+      console.warn("⚠️ notifyWorkspaceGroupCreated falló:", err?.message || err);
+    });
+  }
+
+
   return {
     group: {
       id: newGroupId,
@@ -662,24 +692,62 @@ const createGroupWS = async (req, res) => {
   response(res, 200, result);
 };
 
-// Detecta si un email de grupo pertenece a un dispositivo dado y extrae sufijo
-function parseDeviceGroupPattern(deviceName, groupEmail) {
-  const base = normalizeString(deviceName);
-  if (!base || !groupEmail) return null;
+async function ensureWorkspaceGroupsForModel({
+  type,                 // 'program' | 'device'
+  id,                   // _id mongo
+  requiredSubgroups = [] // ['direction','social','tecnicos','education','psychology','coordination',...]
+}) {
+  if (!['program', 'device'].includes(type)) {
+    throw new ClientError('type inválido', 400);
+  }
+  if (!id) throw new ClientError('id requerido', 400);
 
-  const local = (groupEmail.split('@')[0] || '').toLowerCase();
+  // 1) Intentar sacar baseLocal real desde el grupo actual (si existe)
+  let baseLocalOverride = null;
 
-  if (local === base) {
-    // grupo principal
-    return { isMain: true, suffix: '' };
+  const modelDoc = type === 'program'
+    ? await Program.findById(id).select('groupWorkspace email acronym name').lean()
+    : await Dispositive.findById(id).select('groupWorkspace email name').lean();
+
+  if (modelDoc?.groupWorkspace) {
+    const g = await safeGetGroup(modelDoc.groupWorkspace, `ensure.main.${type}.${id}`);
+    if (g?.email) baseLocalOverride = getLocalPart(g.email);
   }
 
-  const prefix = `${base}.`;
-  if (!local.startsWith(prefix)) return null;
+  // fallback: si Mongo tiene email pero el id está roto
+  if (!baseLocalOverride && modelDoc?.email) {
+    baseLocalOverride = getLocalPart(modelDoc.email);
+  }
 
-  const suffix = local.slice(prefix.length); // "edu", "tec", etc.
-  return { isMain: false, suffix };
+  // 2) Asegurar grupo principal (blank)
+  const mainResult = await createGroupWSCore({
+    type,
+    id,
+    typeGroup: 'blank',
+    idGroupFather: null,
+    baseLocalOverride,
+  });
+
+  const mainId = mainResult.group.id;
+  const mainEmail = mainResult.group.email;
+
+  // baseLocal definitivo para que los subgrupos usen EXACTAMENTE la misma base
+  const finalBaseLocal = getLocalPart(mainEmail);
+
+  // 3) Asegurar subgrupos requeridos
+  for (const tg of requiredSubgroups) {
+    await createGroupWSCore({
+      type,
+      id,
+      typeGroup: tg,
+      idGroupFather: mainId,
+      baseLocalOverride: finalBaseLocal,
+    });
+  }
+
+  return { mainId, mainEmail };
 }
+
 
 /**
  * Mueve la pertenencia de un usuario entre dispositivos en Workspace:
@@ -851,14 +919,6 @@ const groupsToMove = originGroups.filter(g => !g.isMain || originMainWasMember);
     }
   }
 }
-
-
-
-
-
-
-
-
 
 
 const deleteMemberGroupWS = async (req, res) => {
@@ -1040,264 +1100,7 @@ const deleteGroupWS = async (req, res) => {
 
 
 
-
-
-
-// auditarResponsablesUnificados()
-
-/**
- * Crea (o recupera, si ya existe) un grupo principal para un Programa.
- * Devuelve { id, email } del grupo.
- */
-async function ensureProgramGroup(program) {
-  try {
-    const baseLabel = program.acronym || program.name;
-    if (!baseLabel) {
-      throw new ClientError(
-        "El programa no tiene acrónimo ni nombre válido para generar el grupo",
-        400
-      );
-    }
-
-    const base = normalizeString(baseLabel);
-    const email = `${base}@${DOMAIN}`;
-    const displayName = `Programa: ${baseLabel}`;
-
-    // Subgrupos por defecto (mismo patrón que ensureDeviceGroup)
-    const extensions = [
-      { name: `Dirección: ${baseLabel}`, ex: ".dir" },
-    ];
-
-    let group;
-    const subGroups = [];
-
-    // 1) Asegurar grupo principal del programa
-    try {
-      group = (
-        await directory.groups.insert({
-          requestBody: { email, name: displayName },
-        })
-      ).data;
-    } catch (err) {
-      const reason = err?.errors?.[0]?.reason;
-      if (err.code === 409 || reason === "duplicate") {
-        // Ya existe → lo recuperamos
-        group = (await directory.groups.get({ groupKey: email })).data;
-      } else {
-        throw err;
-      }
-    }
-
-    if (!group || !group.id) {
-      throw new ClientError(
-        "No se ha podido crear ni recuperar el grupo de Workspace para el programa",
-        500
-      );
-    }
-
-    // 2) Crear / asegurar subgrupos y añadirlos como miembros del grupo principal
-    for (const extension of extensions) {
-      const emailSub = `${base}${extension.ex}@${DOMAIN}`;
-      let dataSub;
-
-      try {
-        dataSub = (
-          await directory.groups.insert({
-            requestBody: { email: emailSub, name: extension.name },
-          })
-        ).data;
-      } catch (err) {
-        const reason = err?.errors?.[0]?.reason;
-        if (err.code === 409 || reason === "duplicate") {
-          // Ya existe → lo recuperamos
-          dataSub = (await directory.groups.get({ groupKey: emailSub })).data;
-        } else {
-          throw err;
-        }
-      }
-
-      subGroups.push(dataSub);
-
-      // Añadir subgrupo como miembro del grupo principal
-      if (group.id && dataSub.id) {
-        await directory.members
-          .insert({
-            groupKey: group.id,
-            requestBody: { id: dataSub.id, role: "MEMBER", type: "GROUP" },
-          })
-          .catch((err) => {
-            const reason = err?.errors?.[0]?.reason;
-            if (reason === "notFound") {
-              throw new ClientError("Grupo padre inexistente en Workspace", 404);
-            }
-            throw err;
-          });
-      }
-    }
-
-    // 3) Persistir en Mongo: actualizar Program
-    await Program.updateOne(
-      { _id: program._id },
-      {
-        $set: {
-          email: group.email,
-          groupWorkspace: group.id,
-          subGroupWorkspace: subGroups.map((sg) => sg.id),
-        },
-      }
-    );
-
-    // 4) Aplicar configuración común (no crítico)
-    try {
-      await patchWithBackoff(email, commonSettings);
-      for (const extension of extensions) {
-        const emailSub = `${base}${extension.ex}@${DOMAIN}`;
-        await patchWithBackoff(emailSub, commonSettings);
-      }
-    } catch (_) {
-      console.warn(
-        "No se ha podido aplicar la configuración común al grupo de programa",
-        email
-      );
-    }
-
-    // 5) Devolver info usable por quien llame
-    return {
-      id: group.id,
-      email: group.email,
-      subGroups: subGroups.map((sg) => ({
-        id: sg.id,
-        email: sg.email,
-      })),
-    };
-  } catch (error) {
-    // Se propaga para que lo gestione el caller
-    throw error;
-  }
-}
-
-
-/**
- * Crea (o recupera) el grupo propio de un Dispositivo y lo mete
- * como “hijo” del grupo del Programa.
- * Devuelve { id, email } del nuevo grupo.
- */
-
 // ===================== ensureDeviceGroup =====================
-
-async function ensureDeviceGroup(device, program) {
-  try {
-    const base = normalizeString(device.name);
-    const email = `${base}@${DOMAIN}`;
-    const displayName = `Dispositivo: ${device.name}`;
-
-    const extensions = [
-      { name: `Dirección: ${device.name}`, ex: ".dir" },
-      { name: `Equipo técnico: ${device.name}`, ex: ".tec" },
-    ];
-
-    let group;
-    const subGroups = [];
-
-    // 1) Asegurar grupo padre
-    try {
-      group = (
-        await directory.groups.insert({
-          requestBody: { email, name: displayName },
-        })
-      ).data;
-    } catch (err) {
-      // Si ya existe, lo recuperamos
-      if (err.code === 409 || err.errors?.[0]?.reason === "duplicate") {
-        group = (await directory.groups.get({ groupKey: email })).data;
-      } else {
-        throw err;
-      }
-    }
-
-    if (!group || !group.id) {
-      throw new ClientError(
-        "No se ha podido crear ni recuperar el grupo de Workspace para el dispositivo",
-        500
-      );
-    }
-
-    // 2) Crear / asegurar subgrupos y añadirlos como miembros del padre
-    for (const extension of extensions) {
-      const emailSub = `${base}${extension.ex}@${DOMAIN}`;
-      let dataSub;
-
-      try {
-        dataSub = (
-          await directory.groups.insert({
-            requestBody: { email: emailSub, name: extension.name },
-          })
-        ).data;
-      } catch (err) {
-        if (err.code === 409 || err.errors?.[0]?.reason === "duplicate") {
-          dataSub = (await directory.groups.get({ groupKey: emailSub })).data;
-        } else {
-          throw err;
-        }
-      }
-
-      subGroups.push(dataSub);
-
-      // Añadir subgrupo como miembro del grupo padre
-      if (group.id && dataSub.id) {
-        await directory.members
-          .insert({
-            groupKey: group.id,
-            requestBody: { id: dataSub.id, role: "MEMBER", type: "GROUP" },
-          })
-          .catch((err) => {
-            // Si el grupo padre no existe, error "real"
-            if (err.errors?.[0]?.reason === "notFound") {
-              throw new ClientError("Grupo padre inexistente en Workspace", 404);
-            }
-            throw err;
-          });
-      }
-    }
-
-    // 3) Persistir en Mongo: actualizar Dispositive
-    await Dispositive.updateOne(
-      { _id: device._id },
-      {
-        $set: {
-          email: group.email,
-          groupWorkspace: group.id,
-          subGroupWorkspace: subGroups.map((sg) => sg.id),
-        },
-      }
-    );
-
-    // 4) Aplicar configuración común (no crítico)
-    try {
-      await patchWithBackoff(email, commonSettings);
-      for (const extension of extensions) {
-        const emailSub = `${base}${extension.ex}@${DOMAIN}`;
-        await patchWithBackoff(emailSub, commonSettings);
-      }
-    } catch (_) {
-      // No debe romper la creación / vinculación
-    }
-
-    // 5) Devolver info por si la quieres usar fuera
-    return {
-      id: group.id,
-      email: group.email,
-      subGroups: subGroups.map((sg) => ({
-        id: sg.id,
-        email: sg.email,
-      })),
-    };
-  } catch (error) {
-    // Se propaga para que lo gestione el caller (createDispositive)
-    throw error;
-  }
-}
-
 
 
 
@@ -1310,7 +1113,7 @@ async function patchWithBackoff(groupEmail, requestBody) {
         groupUniqueId: groupEmail,
         requestBody
       });
-      console.log('hecho')
+
       return;
     } catch (err) {
       const apiErr = err?.errors?.[0] || {};
@@ -1450,7 +1253,8 @@ module.exports = {
   getModelWorkspaceGroups:catchAsync(getModelWorkspaceGroups),
   createUserWS,
   deleteUserByEmailWS,
-  ensureProgramGroup, ensureDeviceGroup,deleteDeviceGroupsWS,
+  deleteDeviceGroupsWS,
   infoGroup,
-  moveUserBetweenDevicesWS
+  moveUserBetweenDevicesWS,
+  ensureWorkspaceGroupsForModel
 };

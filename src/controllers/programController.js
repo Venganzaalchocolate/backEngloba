@@ -2,7 +2,7 @@ const { Program, Provinces, Dispositive, Filedrive } = require('../models/indexM
 const { catchAsync, response, ClientError, toId } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { generateEmailHTML, sendEmail } = require('./emailControllerGoogle');
-const { ensureProgramGroup, ensureDeviceGroup } = require('./workspaceController');
+const { ensureWorkspaceGroupsForModel } = require('./workspaceController');
 
 
 
@@ -31,7 +31,15 @@ const postCreateProgram = async (req, res) => {
 
 
   const savedProgram = await newProgram.save();
-  await ensureProgramGroup(savedProgram);
+  //crear grupos de workspace no critico y no espera
+  void ensureWorkspaceGroupsForModel({
+    type: 'program',
+    id: savedProgram._id,
+    requiredSubgroups: ['direction'],
+  }).catch(err => {
+    console.warn('⚠️ Workspace groups (program) falló:', savedProgram._id, err?.message || err);
+  });
+
   // 5. Enviar el email al usuario con el código
   const asunto = "Creación de un nuevo programa";
   const textoPlano = `Area: ${savedProgram.area}
@@ -86,7 +94,7 @@ const ProgramPut = async (req, res) => {
   if (name !== undefined) update.name = name;
   if (acronym !== undefined) update.acronym = acronym;
   if (area !== undefined) update.area = area;
-  if (active !==undefined) update.active = active;
+  if (active !== undefined) update.active = active;
   if (Array.isArray(finantial)) update.finantial = finantial.filter(i => mongoose.Types.ObjectId.isValid(i));
   if (about) {
     if (about.description !== undefined) update['about.description'] = about.description;
@@ -180,5 +188,5 @@ module.exports = {
   getProgramID: catchAsync(getProgramID),
   ProgramDeleteId: catchAsync(ProgramDeleteId),
   ProgramPut: catchAsync(ProgramPut),
-  getProgramId:catchAsync(getProgramId)
+  getProgramId: catchAsync(getProgramId)
 }
