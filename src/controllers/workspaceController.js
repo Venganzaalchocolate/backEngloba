@@ -119,6 +119,33 @@ const DOMAIN = 'engloba.org.es';
 // -----------------------------------------------------------------------------
 // client y scopes ya definidos más arriba (auth, directory, groupsSettings)
 // -----------------------------------------------------------------------------
+// Mapas compartidos para grupos de Workspace
+const groupSuffixMap = {
+  coordination: "coor",
+  direction: "dir",
+  social: "trab",
+  psychology: "psico",
+  education: "edu",
+  tecnicos: "tec",
+};
+
+const groupNamePrefixMap = {
+  direction: "Dirección de",
+  social: "Equipo trabajadores sociales",
+  tecnicos: "Equipo Técnico",
+  psychology: "Equipo de Psicólogos",
+  education: "Equipo de Educadores",
+  coordination: "Equipo de Coordinadores",
+  blank: "Subgrupo de",
+};
+
+const groupTypeGroupOptions = [...Object.keys(groupSuffixMap), "blank"];
+const groupTypeOptions = ["program", "device"];
+
+// Inverso para ir de ".edu" → "education", ".tec" → "tecnicos", etc.
+const suffixToTypeGroup = Object.fromEntries(
+  Object.entries(groupSuffixMap).map(([type, suf]) => [suf, type])
+);
 
 /** Devuelve todos los grupos del dominio, paginando de 200 en 200. */
 async function listAllGroups() {
@@ -458,40 +485,12 @@ const addGroupWS = async (req, res) => {
   response(res, 200, { groupID: groupId });
 }
 
-const createGroupWS = async (req, res) => {
-  // idGroupFather: id del grupo padre si existe
-  // typeGroup: tipo de extensión (coor, dir, etc. o 'blank')
-  // id: _id del Program o Dispositive
-  // type: 'program' | 'device'
-  const { idGroupFather, typeGroup, id, type } = req.body;
-
-  const suffixMap = {
-    coordination: "coor",
-    direction: "dir",
-    social: "trab",
-    psychology: "psico",
-    education: "edu",
-    tecnicos: "tec",
-  };
-
-  const namePrefixMap = {
-    direction: "Dirección de",
-    social: "Equipo trabajadores sociales",
-    tecnicos: "Equipo Técnico",
-    psychology: "Equipo de Psicólogos",
-    education: "Equipo de Educadores",
-    coordination: "Equipo de Coordinadores",
-    blank: "Subgrupo de",
-  };
-
-  const typeGroupOptions = [...Object.keys(suffixMap), "blank"];
-  const typeOptions = ["program", "device"];
-
+async function createGroupWSCore({ idGroupFather, typeGroup, id, type }) {
   /* ───────── VALIDACIONES ───────── */
-  if (!typeGroupOptions.includes(typeGroup)) {
+  if (!groupTypeGroupOptions.includes(typeGroup)) {
     throw new ClientError("typeGroup no válido", 400);
   }
-  if (!typeOptions.includes(type)) {
+  if (!groupTypeOptions.includes(type)) {
     throw new ClientError("type no válido", 400);
   }
   if (!id) {
@@ -518,7 +517,6 @@ const createGroupWS = async (req, res) => {
       throw new ClientError("Programa no encontrado", 404);
     }
   } else {
-    // type === 'device'
     deviceDoc = await Dispositive.findById(id)
       .select("name email groupWorkspace subGroupWorkspace")
       .lean();
@@ -543,7 +541,7 @@ const createGroupWS = async (req, res) => {
 
   /* ───────── E-MAIL DEL NUEVO GRUPO ───────── */
   const suffix =
-    typeGroup === "blank" ? "" : `.${suffixMap[typeGroup] || ""}`;
+    typeGroup === "blank" ? "" : `.${groupSuffixMap[typeGroup] || ""}`;
   const groupEmail = `${normalized}${suffix}@${DOMAIN}`;
 
   /* ───────── NOMBRE DEL GRUPO ───────── */
@@ -556,7 +554,7 @@ const createGroupWS = async (req, res) => {
         ? `Programa: ${baseLabel}`
         : `Dispositivo: ${baseLabel}`;
   } else {
-    const prefix = namePrefixMap[typeGroup] || namePrefixMap.blank;
+    const prefix = groupNamePrefixMap[typeGroup] || groupNamePrefixMap.blank;
     displayName = `${prefix}: ${baseLabel}`;
   }
 
@@ -595,20 +593,25 @@ const createGroupWS = async (req, res) => {
   }
 
   /* ───────── AÑADIR AL PADRE (si lo mandan) ───────── */
-  if (idGroupFather) {
-    await directory.members
-      .insert({
-        groupKey: idGroupFather, // ID o email del padre
-        requestBody: { id: newGroupId, role: "MEMBER", type: "GROUP" },
-      })
-      .catch((err) => {
-        const reason = err?.errors?.[0]?.reason;
-        if (reason === "notFound") {
-          throw new ClientError("Grupo padre inexistente en Workspace", 404);
-        }
-        throw err;
-      });
-  }
+if (idGroupFather) {
+  await directory.members
+    .insert({
+      groupKey: idGroupFather,
+      requestBody: { id: newGroupId, role: "MEMBER", type: "GROUP" },
+    })
+    .catch((err) => {
+      const reason = err?.errors?.[0]?.reason;
+      if (reason === "duplicate" || err.code === 409) {
+        console.warn(`⚠️ Subgrupo ya era miembro del padre: ${newGroupId} -> ${idGroupFather}`);
+        return; // <-- clave: no romper
+      }
+      if (reason === "notFound") {
+        throw new ClientError("Grupo padre inexistente en Workspace", 404);
+      }
+      throw err;
+    });
+}
+
 
   /* ───────── CONFIGURAR AJUSTES DEL GRUPO ───────── */
   try {
@@ -620,7 +623,6 @@ const createGroupWS = async (req, res) => {
 
   /* ───────── ACTUALIZAR MONGODB ───────── */
   if (type === "program") {
-    // Programa raíz o subgrupo
     if (idGroupFather) {
       await Program.updateOne(
         { _id: id },
@@ -633,7 +635,7 @@ const createGroupWS = async (req, res) => {
       );
     }
   } else {
-    // type === 'device' → Dispositive (colección propia)
+    // type === 'device'
     if (idGroupFather) {
       await Dispositive.updateOne(
         { _id: id },
@@ -652,18 +654,229 @@ const createGroupWS = async (req, res) => {
     }
   }
 
-  /* ───────── RESPUESTA ───────── */
-  const groupResponse = {
-    id: newGroupId,
-    email: finalEmail,
-    nombre: groupData.name || displayName,
-    descripcion: groupData.description || description,
-    totalMiembros: 0,
-    miembros: [],
+  return {
+    group: {
+      id: newGroupId,
+      email: finalEmail,
+      nombre: groupData.name || displayName,
+      descripcion: groupData.description || description,
+      totalMiembros: 0,
+      miembros: [],
+    },
   };
+}
 
-  response(res, 200, { group: groupResponse });
+const createGroupWS = async (req, res) => {
+  const result = await createGroupWSCore(req.body);
+  response(res, 200, result);
 };
+
+// Detecta si un email de grupo pertenece a un dispositivo dado y extrae sufijo
+function parseDeviceGroupPattern(deviceName, groupEmail) {
+  const base = normalizeString(deviceName);
+  if (!base || !groupEmail) return null;
+
+  const local = (groupEmail.split('@')[0] || '').toLowerCase();
+
+  if (local === base) {
+    // grupo principal
+    return { isMain: true, suffix: '' };
+  }
+
+  const prefix = `${base}.`;
+  if (!local.startsWith(prefix)) return null;
+
+  const suffix = local.slice(prefix.length); // "edu", "tec", etc.
+  return { isMain: false, suffix };
+}
+
+/**
+ * Mueve la pertenencia de un usuario entre dispositivos en Workspace:
+ *  - respeta si solo estaba en .edu, .tec, etc.
+ *  - si falta el subgrupo en el nuevo dispositivo, lo crea con createGroupWSCore
+ *  - no rompe nada en Mongo (solo Workspace)
+ */
+
+async function ensureSubgroupByParentEmail({ parentGroupId, typeGroup }) {
+  const parent = await safeGetGroup(parentGroupId, 'ensureSubgroupByParentEmail.parentGroupId');
+  if (!parent?.email) {
+    throw new ClientError(`Grupo padre inexistente en Workspace: ${parentGroupId}`, 404);
+  }
+
+  const parentLocal = getLocalPart(parent.email);   // base REAL del grupo principal
+  const suf = groupSuffixMap[typeGroup];            // direction -> dir, tecnicos -> tec...
+  if (!suf) throw new ClientError(`typeGroup inválido: ${typeGroup}`, 400);
+
+  const subEmail = `${parentLocal}.${suf}@${DOMAIN}`;
+
+  // 1) crear o recuperar
+  let sub;
+  try {
+    sub = (await directory.groups.insert({ requestBody: { email: subEmail, name: subEmail } })).data;
+  } catch (err) {
+    const reason = err?.errors?.[0]?.reason;
+    if (reason === 'duplicate' || err.code === 409) {
+      sub = (await directory.groups.get({ groupKey: subEmail })).data;
+    } else {
+      throw err;
+    }
+  }
+
+  if (!sub?.id) throw new ClientError(`No se pudo asegurar subgrupo: ${subEmail}`, 500);
+
+  // 2) colgar del padre (duplicate = OK)
+  try {
+    await directory.members.insert({
+      groupKey: parentGroupId,
+      requestBody: { id: sub.id, role: 'MEMBER', type: 'GROUP' },
+    });
+  } catch (err) {
+    const reason = err?.errors?.[0]?.reason;
+    if (!(reason === 'duplicate' || err.code === 409)) throw err;
+  }
+
+  return { id: sub.id, email: sub.email || subEmail };
+}
+
+
+async function safeGetGroup(groupKey, ctx = '') {
+  if (!groupKey) return null;
+  try {
+    const { data } = await directory.groups.get({ groupKey });
+    return data;
+  } catch (err) {
+    const reason = err?.errors?.[0]?.reason;
+    if (err?.code === 404 || reason === 'notFound') {
+      console.warn(`[safeGetGroup] NOT FOUND`, { ctx, groupKey, reason, code: err?.code, msg: err?.message });
+      return null;
+    }
+    throw err;
+  }
+}
+
+function getLocalPart(email) {
+  return (email?.split('@')[0] || '').toLowerCase();
+}
+
+// ya la tienes, pero por claridad:
+function classifyByEmail(groupEmail) {
+  const local = getLocalPart(groupEmail);
+  if (!local) return { isMain: true, suffix: '', typeGroup: null };
+
+  const parts = local.split('.');
+  const last = parts[parts.length - 1];      // "dir", "tec", etc.
+  const typeGroup = suffixToTypeGroup[last]; // "direction", "tecnicos", ...
+
+  if (typeGroup) return { isMain: false, suffix: last, typeGroup };
+  return { isMain: true, suffix: '', typeGroup: null };
+}
+
+
+async function moveUserBetweenDevicesWS({ email, originDispositiveId, targetDispositiveId }) {
+  if (!email || !originDispositiveId || !targetDispositiveId) return;
+
+  const [origin, target] = await Promise.all([
+    Dispositive.findById(originDispositiveId).select('groupWorkspace subGroupWorkspace').lean(),
+    Dispositive.findById(targetDispositiveId).select('groupWorkspace subGroupWorkspace').lean(),
+  ]);
+
+  if (!origin?.groupWorkspace) return;
+
+  // Asegurar que destino tiene grupo principal (si no lo tiene, aquí lo mejor es que lo asegures antes en tu flujo)
+  if (!target?.groupWorkspace) {
+    throw new ClientError('El dispositivo destino no tiene groupWorkspace configurado', 400);
+  }
+
+  // 1) Listar grupos del usuario
+  const userGroups = [];
+  let pageToken;
+  do {
+    const { data } = await directory.groups.list({ userKey: email, maxResults: 200, pageToken });
+    userGroups.push(...(data.groups || []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  if (!userGroups.length) return;
+
+  // 2) Intento A (fiable): filtrar por IDs de Mongo
+  const originIds = new Set([origin.groupWorkspace, ...(origin.subGroupWorkspace || [])].filter(Boolean));
+  let originGroups = userGroups
+    .filter(g => originIds.has(g.id))
+    .map(g => ({ ...g, ...classifyByEmail(g.email) }));
+
+  // 2b) Fallback B (sin name): si Mongo está “sucio”, usa el email real del grupo principal origen
+  //     y filtra por base de email (base / base.sufijo)
+  if (!originGroups.length) {
+    const originMain = await safeGetGroup(origin.groupWorkspace, 'move.origin.groupWorkspace');
+    const baseLocal = getLocalPart(originMain?.email);
+    if (baseLocal) {
+      originGroups = userGroups
+        .filter(g => {
+          const local = getLocalPart(g.email);
+          return local === baseLocal || local.startsWith(`${baseLocal}.`);
+        })
+        .map(g => ({ ...g, ...classifyByEmail(g.email) }));
+    }
+  }
+
+  if (!originGroups.length) return;
+
+  // 3) Si hay subgrupos, NO tocamos el principal (evita duplicados por derivada)
+  const hasSubs = originGroups.some(g => !g.isMain);
+  const groupsToMove = hasSubs ? originGroups.filter(g => !g.isMain) : originGroups;
+
+  // 4) Mapa subgrupos destino por sufijo leyendo IDs de Mongo (pero SIN romper si hay IDs muertos)
+  const targetSubMap = {}; // suffix -> groupId
+  for (const gid of (target.subGroupWorkspace || []).filter(Boolean)) {
+    const g = await safeGetGroup(gid, 'move.target.subGroupWorkspace');
+    if (!g?.email) continue; // <- ID roto en Mongo, lo ignoramos
+    const c = classifyByEmail(g.email);
+    if (!c.isMain) targetSubMap[c.suffix] = g.id; // g.id es el id real
+  }
+
+  // 5) Mover
+  for (const og of groupsToMove) {
+    let targetGroupKey;
+
+    if (og.isMain) {
+      targetGroupKey = target.groupWorkspace;
+    } else {
+      // si ya existe subgrupo equivalente en destino
+      targetGroupKey = targetSubMap[og.suffix];
+
+      // si no existe, lo creamos/recuperamos por email base del grupo principal destino (sin name)
+      if (!targetGroupKey) {
+        const ensured = await ensureSubgroupByParentEmail({
+          parentGroupId: target.groupWorkspace,
+          typeGroup: og.typeGroup,
+        });
+        targetGroupKey = ensured.id;
+      }
+    }
+
+    // 5.1) Añadir al destino (duplicate OK)
+    try {
+      await directory.members.insert({
+        groupKey: targetGroupKey,
+        requestBody: { email, role: 'MEMBER', type: 'USER' },
+      });
+    } catch (err) {
+      const reason = err?.errors?.[0]?.reason;
+      if (!(reason === 'duplicate' || err.code === 409)) throw err;
+    }
+
+    // 5.2) Quitar del origen (notFound OK)
+    try {
+      await directory.members.delete({ groupKey: og.id, memberKey: email });
+    } catch (err) {
+      const reason = err?.errors?.[0]?.reason;
+      if (!(reason === 'notFound' || err.code === 404)) throw err;
+    }
+  }
+}
+
+
+
 
 
 
@@ -1260,5 +1473,6 @@ module.exports = {
   createUserWS,
   deleteUserByEmailWS,
   ensureProgramGroup, ensureDeviceGroup,deleteDeviceGroupsWS,
-  infoGroup
+  infoGroup,
+  moveUserBetweenDevicesWS
 };

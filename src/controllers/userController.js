@@ -812,7 +812,7 @@ const userPut = async (req, res) => {
   }
 
   const updateFields = {};
-  const userId = req.body._id;
+  const userId = toId(req.body._id);
 
   // =============== EMPLOYMENT STATUS (requiere lógica especial) ===============
   if (req.body.employmentStatus) {
@@ -830,29 +830,30 @@ const userPut = async (req, res) => {
 
       updateFields.employmentStatus = "ya no trabaja con nosotros";
       updateFields.email = "";
-      
+
       // 3) Eliminar responsabilidades y coordinaciones en DISPOSITIVOS y PROGRAMAS
       //    - Dispositive.responsible[]
       //    - Dispositive.coordinators[]
       //    - Program.responsible[]
+      
       await Dispositive.updateMany(
         {
           $or: [
-            { responsible: userObjectId },
-            { coordinators: userObjectId },
+            { responsible: userId },
+            { coordinators: userId },
           ],
         },
         {
           $pull: {
-            responsible: userObjectId,
-            coordinators: userObjectId,
+            responsible: userId,
+            coordinators: userId,
           },
         }
       );
 
       await Program.updateMany(
-        { responsible: userObjectId },
-        { $pull: { responsible: userObjectId } }
+        { responsible: userId },
+        { $pull: { responsible: userId } }
       );
     } else {
       updateFields.employmentStatus = req.body.employmentStatus;
@@ -950,6 +951,7 @@ if (Array.isArray(req.body.personalHours)) {
     }
     return response(res, 200, updatedUser);
   } catch (error) {
+    
     if (error.code === 11000) {
       const [[, dupValue]] = Object.entries(error.keyValue);
       throw new ClientError(

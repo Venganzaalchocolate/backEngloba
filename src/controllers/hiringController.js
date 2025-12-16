@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const { User, Periods, Leaves, Preferents, Dispositive, Jobs } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const { actualizacionHiringyLeave, backfillSelectionProcessFromOffers, repairExistingPeriods, fullFreshMigration, migrateOffersNewdispositiveId, migrateUserCvNameFieldsToRefs, backfillPeriodsFromEmbedded, getAllManagerEmails } = require('./periodoTransicionController');
+const { moveUserBetweenDevicesWS } = require('./workspaceController');
 // Opcional si lo usas en un script aparte:
 // const { backfillSelectionProcessFromOffers, backfillPeriodsdispositiveId } = require('./periodoTransicionController');
 
@@ -22,10 +23,9 @@ async function getProvinceIdsFromDispositive(dispositiveId) {
 }
 
 // === Cerrar Preferents coincidentes (post) ===
-async function closeMatchingPreferentsForPeriod(periodLike) {
+async function closeMatchingPreferentsForPeriod(periodLike, session = null) {
   const userId = periodLike?.idUser ? toId(periodLike.idUser) : null;
   const jobId = periodLike?.position ? toId(periodLike.position) : null;
-  // ⚠️ ahora usamos dispositiveId
   const dispId = periodLike?.dispositiveId ? toId(periodLike.dispositiveId) : null;
 
   if (!userId || !jobId || !dispId) return;
@@ -33,16 +33,19 @@ async function closeMatchingPreferentsForPeriod(periodLike) {
   const provinceIds = await getProvinceIdsFromDispositive(dispId);
   if (!provinceIds.length) return;
 
-  await Preferents.updateMany(
-    {
-      user: userId,
-      active: true,
-      jobs: jobId,
-      provinces: { $in: provinceIds }
-    },
-    { $set: { active: false, moveDone: true } }
-  );
+  const query = {
+    user: userId,
+    active: true,
+    jobs: jobId,
+    provinces: { $in: provinceIds },
+  };
+
+  const update = { $set: { active: false, moveDone: true } };
+  const options = session ? { session } : {};
+
+  await Preferents.updateMany(query, update, options);
 }
+
 
 // === Libera espacio cerrando periodos de Preferents antes de validar ===
 async function ensureSpaceWithPreferents(periodLike, { excludePeriodId = null } = {}) {
@@ -538,6 +541,8 @@ async function closeHiring(req, res) {
   return response(res, 200, out);
 }
 
+
+
 // REUBICAR PERSONAL (mass transfer)
 async function relocateHirings(req, res) {
   const { originDispositiveId, targetDispositiveId, startDateNewPeriod } = req.body;
@@ -549,14 +554,19 @@ async function relocateHirings(req, res) {
   const originId = toId(originDispositiveId);
   const targetId = toId(targetDispositiveId);
 
+  if (String(originId) === String(targetId)) {
+    throw new ClientError('originDispositiveId y targetDispositiveId no pueden ser iguales', 400);
+  }
+
   const startNew = startDateNewPeriod
     ? new Date(startDateNewPeriod)
     : new Date();
 
-  if (Number.isNaN(startNew.getTime()))
+  if (Number.isNaN(startNew.getTime())) {
     throw new ClientError('startDateNewPeriod no válida', 400);
+  }
 
-  // 1) Buscar periodos abiertos en el dispositivo origen
+  // 1) Buscar periodos abiertos en el dispositivo origen (solo lectura)
   const openPeriods = await Periods.find({
     dispositiveId: originId,
     active: { $ne: false },
@@ -567,52 +577,108 @@ async function relocateHirings(req, res) {
     return response(res, 200, {
       moved: 0,
       created: [],
-      msg: 'No había periodos abiertos en el dispositivo origen.'
+      msg: 'No había periodos abiertos en el dispositivo origen.',
     });
   }
 
-  const createdList = [];
+  const session = await mongoose.startSession();
 
-  for (const p of openPeriods) {
-    const periodId = p._id;
+  try {
+    session.startTransaction();
 
-    // 2) Cerrar el periodo actual
-    await Periods.findByIdAndUpdate(
-      periodId,
-      { $set: { endDate: startNew } },
-      { new: false }
-    );
+    const createdList = [];
+    const affectedUsers = new Set(); // usuarios afectados por la reubicación
 
-    // 3) Construir el nuevo periodo
-    const newPayload = {
-      idUser: p.idUser,
-      position: p.position,
-      startDate: startNew,
-      endDate: null,
-      dispositiveId: targetId,
-      workShift: p.workShift,
-      selectionProcess: p.selectionProcess ?? undefined,
-      active: true,
-      replacement: p.replacement ? {
-        user: p.replacement.user ?? undefined,
-        leave: p.replacement.leave ?? undefined,
-      } : undefined,
-    };
+    // 2) Cerrar periodos en origen y crear los nuevos en destino (TODO dentro de la transacción)
+    for (const p of openPeriods) {
+      const periodId = p._id;
 
-    // 4) Crear nuevo hiring
-    const created = await Periods.create(newPayload);
-    createdList.push(created._id);
+      // 2.1) Cerrar el periodo actual en el dispositivo origen
+      await Periods.findByIdAndUpdate(
+        periodId,
+        { $set: { endDate: startNew } },
+        { new: false, session }
+      );
 
-    // 5) Cerrar Preferents que coincidan con el nuevo periodo
-    await closeMatchingPreferentsForPeriod(newPayload);
+      // 2.2) Construir el nuevo periodo en el dispositivo destino
+      const newPayload = {
+        idUser: p.idUser,
+        position: p.position,
+        startDate: startNew,
+        endDate: null,
+        dispositiveId: targetId,
+        workShift: p.workShift,
+        selectionProcess: p.selectionProcess ?? undefined,
+        active: true,
+        replacement: p.replacement
+          ? {
+              user: p.replacement.user ?? undefined,
+              leave: p.replacement.leave ?? undefined,
+            }
+          : undefined,
+      };
+
+      // 2.3) Crear nuevo hiring en destino
+      const createdArr = await Periods.create([newPayload], { session });
+      const created = Array.isArray(createdArr) ? createdArr[0] : createdArr;
+      createdList.push(created._id);
+      affectedUsers.add(String(p.idUser));
+
+      // 2.4) Cerrar Preferents coincidentes con el nuevo periodo (DENTRO de la transacción)
+      await closeMatchingPreferentsForPeriod(newPayload, session);
+    }
+
+    // 2.5) Commit de la transacción → si algo de lo anterior falla, se hará abort en el catch
+    await session.commitTransaction();
+
+    // Sincronización Workspace en background (no esperamos)
+    void (async () => {
+      try {
+        const users = await User.find({
+          _id: { $in: Array.from(affectedUsers).map(toId) },
+        })
+          .select('email')
+          .lean();
+
+        for (const u of users) {
+          if (!u.email) continue;
+          try {
+            await moveUserBetweenDevicesWS({
+              email: u.email,
+              originDispositiveId: originId,
+              targetDispositiveId: targetId,
+            });
+          } catch (err) {
+            console.warn(
+              `⚠️ Error sincronizando Workspace para ${u.email}:`,
+              err.message
+            );
+          }
+        }
+      } catch (err) {
+        console.error(
+          '⚠️ Error inesperado en sincronización masiva de Workspace:',
+          err.message
+        );
+      }
+    })();
+
+    // 4) Respuesta final
+    return response(res, 200, {
+      moved: openPeriods.length,
+      created: createdList,
+      msg: 'Reubicación completada',
+    });
+  } catch (err) {
+    // Si algo falla en la parte de "añadir y cerrar periodos" o en Preferents, se revierte todo
+    await session.abortTransaction();
+    throw err;
+  } finally {
+    session.endSession();
   }
-
-  return response(res, 200, {
-    moved: openPeriods.length,
-    created: createdList,
-    msg: 'Reubicación completada'
-  });
 }
+
+
 
 
 
