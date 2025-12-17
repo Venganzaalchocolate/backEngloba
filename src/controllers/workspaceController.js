@@ -392,6 +392,14 @@ const infoGroup = async (idGroup) => {
       }
       pageToken = data.nextPageToken;
     } while (pageToken);
+    let aliases = [];
+    try {
+      aliases = await listGroupAliases(idGroup);
+    } catch (e) {
+      // no romper por esto
+      aliases = [];
+    }
+
     const dataGroup = {
       id: group.id,
       email: group.email,
@@ -399,7 +407,8 @@ const infoGroup = async (idGroup) => {
       descripcion: group.description,
       totalMiembros: members.length,
       miembros: members,
-      aliases: group.aliases || [],   
+      aliases,
+      totalAliases: aliases.length,   
     }
     return dataGroup;
   } catch (error) {
@@ -1186,6 +1195,88 @@ const getModelWorkspaceGroups = async (req, res) => {
   return response(res, 200, result);
 };
 
+//--------------------------------
+//--------------------------------
+//ALIAS DE GRUPO//
+//--------------------------------
+//--------------------------------
+
+function isValidEmail(email) {
+  return /^[\w.+-]+@[\w.-]+\.[\w]{2,}$/i.test(email);
+}
+
+async function listGroupAliases(groupKey) {
+  const aliases = [];
+  let pageToken;
+
+  do {
+    const { data } = await directory.groups.aliases.list({
+      groupKey,
+      maxResults: 200,
+      pageToken,
+    });
+
+    if (data.aliases?.length) {
+      aliases.push(...data.aliases.map(a => a.alias).filter(Boolean));
+    }
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  // únicos y ordenados
+  return Array.from(new Set(aliases)).sort();
+}
+
+async function addGroupAliasCore({ groupKey, aliasEmail }) {
+  if (!groupKey) throw new ClientError("groupKey requerido", 400);
+  if (!aliasEmail || !isValidEmail(aliasEmail)) throw new ClientError("aliasEmail no válido", 400);
+
+  await directory.groups.aliases.insert({
+    groupKey,
+    requestBody: { alias: aliasEmail },
+  }).catch((err) => {
+    const reason = err?.errors?.[0]?.reason;
+    if (reason === "duplicate" || err.code === 409) {
+      throw new ClientError(`El alias ${aliasEmail} ya existe o ya está asignado`, 409);
+    }
+    if (reason === "notFound" || err.code === 404) {
+      throw new ClientError("Grupo inexistente en Workspace", 404);
+    }
+    throw err;
+  });
+
+  return { groupKey, alias: aliasEmail };
+}
+
+async function deleteGroupAliasCore({ groupKey, aliasEmail }) {
+  if (!groupKey) throw new ClientError("groupKey requerido", 400);
+  if (!aliasEmail || !isValidEmail(aliasEmail)) throw new ClientError("aliasEmail no válido", 400);
+
+  await directory.groups.aliases.delete({
+    groupKey,
+    alias: aliasEmail,
+  }).catch((err) => {
+    const reason = err?.errors?.[0]?.reason;
+    if (reason === "notFound" || err.code === 404) {
+      throw new ClientError("Grupo o alias inexistente en Workspace", 404);
+    }
+    throw err;
+  });
+
+  return { groupKey, alias: aliasEmail };
+}
+
+const addGroupAliasWS = async (req, res) => {
+  const { groupKey, aliasEmail } = req.body;
+  const data = await addGroupAliasCore({ groupKey, aliasEmail });
+  return response(res, 200, data);
+};
+
+const deleteGroupAliasWS = async (req, res) => {
+  const { groupKey, aliasEmail } = req.body;
+  const data = await deleteGroupAliasCore({ groupKey, aliasEmail });
+  return response(res, 200, data);
+};
+
 
 /**
  * Recorre todos los grupos del dominio y les aplica el mismo conjunto de ajustes.
@@ -1251,6 +1342,8 @@ module.exports = {
   deleteMemberGroupWS: catchAsync(deleteMemberGroupWS),
   deleteGroupWS: catchAsync(deleteGroupWS),
   getModelWorkspaceGroups:catchAsync(getModelWorkspaceGroups),
+  addGroupAliasWS: catchAsync(addGroupAliasWS),
+  deleteGroupAliasWS: catchAsync(deleteGroupAliasWS),
   createUserWS,
   deleteUserByEmailWS,
   deleteDeviceGroupsWS,
