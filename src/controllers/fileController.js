@@ -167,7 +167,7 @@ const deleteIdFile = async (req, res) => {
 // FileDriveService.js
 
 const getFileDrive = async (req, res, next) => {
-
+ try {
   const fileId = req.body.idFile;
   const { file, stream } = await getFileById(fileId);
 
@@ -184,7 +184,11 @@ const getFileDrive = async (req, res, next) => {
 
   // Envías el contenido "en streaming"
   stream.pipe(res);
-};
+
+ } catch (error) {
+  console.log(error)
+ }
+}
 
 
 const createFileDrive = async (req, res, next) => {

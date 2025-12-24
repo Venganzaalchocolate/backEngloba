@@ -149,6 +149,15 @@ const suffixToTypeGroup = Object.fromEntries(
   Object.entries(groupSuffixMap).map(([type, suf]) => [suf, type])
 );
 
+function parseGoogleError(err) {
+  const code = err?.code || err?.response?.status;
+  const e0 = err?.errors?.[0] || err?.response?.data?.error?.errors?.[0] || {};
+  const reason = e0?.reason;
+  const message = e0?.message || err?.response?.data?.error?.message || err?.message;
+  return { code, reason, message };
+}
+
+
 /** Devuelve todos los grupos del dominio, paginando de 200 en 200. */
 async function listAllGroups() {
   const groups = [];
@@ -199,7 +208,6 @@ function buildUserEmail(user) {
 
 //------------------USUARIOS---------------------
 const createUserWS = async (userId, contador = 0) => {
-
   if (!userId) throw new ClientError('Falta el ID del usuario', 400);
 
   const user = await User.findById(userId).lean();
@@ -208,8 +216,9 @@ const createUserWS = async (userId, contador = 0) => {
   let userEmail = buildUserEmail(user);
   if (contador > 0) {
     const [local, domain] = userEmail.split('@');
-    userEmail = `${local}${contador}@${domain}`; // Ej: juan.perez1@dominio.com
+    userEmail = `${local}${contador}@${domain}`;
   }
+
   const givenName = (user.firstName || '').trim();
   const familyName = (user.lastName || '').trim();
 
@@ -217,29 +226,21 @@ const createUserWS = async (userId, contador = 0) => {
     const { data } = await directory.users.insert({
       requestBody: {
         primaryEmail: userEmail,
-        name: {
-          givenName,
-          familyName
-        },
-        password: 'Temporal123*',  // Puedes hacer esto configurable
+        name: { givenName, familyName },
+        password: 'Temporal123*',
         changePasswordAtNextLogin: true,
       }
     });
 
-    return {
-      id: data.id,
-      email: data.primaryEmail,
-      name: data.name,
-    };
+    return { id: data.id, email: data.primaryEmail, name: data.name };
   } catch (err) {
-    const reason = err?.errors?.[0]?.reason;
-    if (reason === 'duplicate') {
-      // Llamada recursiva, importante usar return
-      return await createUserWS(userId, contador + 1);
-    }
+    const { code, reason, message } = parseGoogleError(err);
+    const isDup = reason === 'duplicate' || code === 409 || /already exists/i.test(message || '');
+    if (isDup) return await createUserWS(userId, contador + 1);
     throw err;
   }
 };
+
 
 
 const deleteUserByEmailWS = async (email) => {
@@ -247,14 +248,18 @@ const deleteUserByEmailWS = async (email) => {
     throw new ClientError('Email requerido y debe ser válido', 400);
   }
 
-  await directory.users.delete({
-    userKey: email
-  }).catch(err => {
-    return { email, deleted: false };
-  });
-
-  return { email, deleted: true };
+  try {
+    await directory.users.delete({ userKey: email });
+    return { email, deleted: true };
+  } catch (err) {
+    const { code, reason } = parseGoogleError(err);
+    if (code === 404 || reason === 'notFound') {
+      return { email, deleted: false, notFound: true };
+    }
+    throw err;
+  }
 };
+
 
 
 //------------GRUPOS--------------------------
@@ -1281,20 +1286,20 @@ const deleteGroupAliasWS = async (req, res) => {
 /**
  * Recorre todos los grupos del dominio y les aplica el mismo conjunto de ajustes.
  */
-async function updateAllGroupsSettings() {
-  // const groups = await listAllGroups();
-  // console.log(`🔍 Encontrados ${groups.length} grupos.`);
+// async function updateAllGroupsSettings() {
+//   // const groups = await listAllGroups();
+//   // console.log(`🔍 Encontrados ${groups.length} grupos.`);
 
-  const groups = ['coilspaulofreire.tec@engloba.org.es']
-  for (const g of groups) {
-    await patchWithBackoff(g, commonSettings);
-  }
+//   const groups = ['pimenorestapiafem@engloba.org.es']
+//   for (const g of groups) {
+//     await patchWithBackoff(g, commonSettings);
+//   }
 
-  //await patchWithBackoff('juridico.migraciones@engloba.org.es', commonSettings);
-}
+//   //await patchWithBackoff('juridico.migraciones@engloba.org.es', commonSettings);
+// }
 
 
-// updateAllGroupsSettings()
+//updateAllGroupsSettings()
 // // // // Ejecuta la tarea:
 // updateAllGroupsSettings().catch(console.error);
 

@@ -1459,3 +1459,236 @@ export function buildPayrollAttachmentHtmlEmail(
 </body>
 </html>`;
 }
+
+// ===================================================
+// FELICITACIÓN NAVIDAD · EMPLEADOS (PLAIN + HTML)
+// ===================================================
+
+export function buildChristmasEmployeesPlainText(
+  name = '',
+  {
+    year = new Date().getFullYear() + 1,
+    supportEmail = 'comunicacion@engloba.org.es',
+  } = {}
+) {
+  const who = name ? capitalizeWords(name) : 'equipo';
+
+  return (
+`Hola ${who},
+
+Con la llegada de estas fechas, queremos parar un momento para mirar atrás y, sobre todo, daros las gracias. Porque si algo define a Asociación Engloba no son solo los proyectos, los centros o los resultados: es la manera en la que cada día acompañamos, sostenemos y construimos oportunidades reales para las personas con las que trabajamos.
+
+Este año ha tenido días intensos, retos que han exigido paciencia, coordinación y mucha energía, y también momentos que nos recuerdan por qué estamos aquí: una persona que encuentra empleo, un joven que recupera confianza, una familia que vuelve a respirar un poco más tranquila, un trámite que se desbloquea, un equipo que se apoya cuando las cosas aprietan, una intervención a tiempo, un “gracias” que llega justo cuando hacía falta.
+
+En Engloba, el trabajo no se mide solo por tareas, turnos o informes. Se mide en algo más difícil de cuantificar: la presencia, la mirada, la constancia, el cuidado, la profesionalidad y la humanidad con la que hacéis vuestro trabajo. Y eso —lo que ponéis cada día— es lo que marca la diferencia.
+
+Por eso, hoy queremos reconocer y agradecer:
+- El compromiso con el bienestar y los derechos de las personas a las que acompañamos.
+- La responsabilidad con la que sostenéis el día a día, incluso cuando no se ve.
+- La coordinación entre equipos y recursos, que hace posible que todo encaje.
+- La sensibilidad para acompañar procesos complejos, muchas veces con historias difíciles detrás.
+- El compañerismo, que convierte el trabajo en equipo en algo real.
+
+Sabemos que esta época del año también puede remover emociones: para algunas personas es una celebración; para otras, es nostalgia, cansancio o simplemente una etapa de cerrar ciclo. Sea como sea, queremos enviaros un mensaje claro: vuestra labor importa. No solo por lo que conseguís, sino por cómo lo conseguís.
+
+De parte de todo el equipo de coordinación/dirección (y de la entidad en su conjunto), os deseamos una Feliz Navidad y un ${year} lleno de salud, estabilidad, buenas noticias y motivos para seguir creyendo en lo que hacemos.
+
+Gracias por ser Engloba.
+
+Un abrazo grande,
+[Nombre y cargo / Equipo de Dirección o Coordinación]
+Asociación Engloba
+
+Contacto: ${supportEmail}`
+  );
+}
+
+
+/* ─────────────────────────────────────────────────────────────
+   Plantilla: Navidad empleados (HTML con cabecera imagen)
+   ──────────────────────────────────────────────────────────── */
+export function buildChristmasEmployeesHtmlEmail(
+  name = '',
+  {
+    headerImageUrl = 'http://engloba.org.es/wp-content/uploads/2025/12/felicitacion.png',
+    year = new Date().getFullYear() + 1,
+    supportEmail = 'comunicacion@engloba.org.es',
+
+    // Puedes tocar estos 3 si quieres afinar marca
+    brandPrimary = '#4f529f',
+    brandSecondary = '#8f96d0',
+    surfaceTint = '#eef0ff',
+  } = {}
+) {
+  const who = name ? capitalizeWords(name) : 'equipo';
+
+  return `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="x-apple-disable-message-reformatting" />
+<title>Feliz Navidad</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+
+<body style="margin:0;padding:0;background:#f3f4f8;-webkit-text-size-adjust:100%;">
+  <!-- Preheader -->
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+    Gracias por vuestro trabajo y por ser parte de Asociación Engloba. Felices fiestas.
+  </div>
+
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f3f4f8;padding:26px 12px;">
+    <tr>
+      <td align="center">
+
+        <!-- Card -->
+        <table role="presentation" width="680" cellspacing="0" cellpadding="0" border="0" style="width:680px;max-width:680px;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 14px 38px rgba(0,0,0,.12);">
+
+          <!-- Hero image -->
+          <tr>
+            <td style="padding:0;background:#ffffff;">
+              ${headerImageUrl ? `
+              <img
+                src="${headerImageUrl}"
+                alt="Te deseamos Felices Fiestas - Asociación Engloba"
+                width="680"
+                style="display:block;width:100%;max-width:680px;height:auto;border:0;outline:none;text-decoration:none;"
+              />` : ''}
+            </td>
+          </tr>
+
+          <!-- Top ribbon -->
+          <tr>
+            <td style="padding:0;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td style="background:linear-gradient(90deg, ${brandPrimary} 0%, ${brandSecondary} 100%);padding:18px 22px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td style="font-family:Roboto,Arial,Helvetica,sans-serif;color:#ffffff;">
+                          <div style="font-size:20px;line-height:1.2;font-weight:700;margin:0;">
+                            Felices Fiestas, ${who} 💚
+                          </div>
+                          <div style="font-size:14px;line-height:1.55;opacity:.92;margin-top:6px;">
+                            Gracias por todo lo que hacemos juntos/as en Asociación Engloba
+                          </div>
+                        </td>
+                        <td align="right" style="font-family:Roboto,Arial,Helvetica,sans-serif;">
+                          <span style="display:inline-block;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.28);color:#fff;
+                          padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.2px;">
+                            Fiestas ${year - 1}/${year}
+                          </span>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Content -->
+          <tr>
+            <td style="padding:26px 28px 10px 28px;">
+              <div style="font-family:Roboto,Arial,Helvetica,sans-serif;color:#111827;font-size:16px;line-height:1.85;">
+                <p style="margin:0 0 14px 0;">Hola equipo,</p>
+
+                <p style="margin:0 0 14px 0;">
+                  Con la llegada de estas fechas, queremos parar un momento para mirar atrás y, sobre todo,
+                  <strong>daros las gracias</strong>. Porque si algo define a Asociación Engloba es la manera en la que cada día <strong>acompañamos, sostenemos y construimos
+                  oportunidades reales</strong> para las personas con las que trabajamos.
+                </p>
+
+                <p style="margin:0 0 16px 0;">
+                  Este año ha tenido días intensos, retos que han exigido paciencia, coordinación y mucha energía, y también
+                  momentos que nos recuerdan por qué estamos aquí: una persona que encuentra empleo, un joven que recupera confianza,
+                  una familia que vuelve a respirar un poco más tranquila, un trámite que se desbloquea, un equipo que se apoya cuando
+                  las cosas aprietan, una intervención a tiempo, un “gracias” que llega justo cuando hacía falta.
+                </p>
+
+                <!-- Premium highlight -->
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:18px 0 18px 0;">
+                  <tr>
+                    <td style="background:${surfaceTint};border:1px solid rgba(79,82,159,.18);border-radius:14px;padding:16px 16px;">
+                      <div style="font-size:14.8px;line-height:1.75;color:#241a35;">
+                        En Engloba, el trabajo no se mide solo por tareas, turnos o informes. Se mide en algo más difícil de cuantificar:
+                        <strong>la presencia, la mirada, la constancia, el cuidado, la profesionalidad y la humanidad</strong> con la que hacéis vuestro trabajo.
+                        <strong>Y eso marca la diferencia.</strong>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+
+                <p style="margin:0 0 10px 0;">Por eso, hoy queremos reconocer y agradecer:</p>
+
+                <!-- Bullets (email-safe) -->
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:8px 0 14px 0;">
+                  ${[
+                    'El <strong>compromiso</strong> con el bienestar y los derechos de las personas a las que acompañamos.',
+                    'La <strong>responsabilidad</strong> con la que sostenéis el día a día, incluso cuando no se ve.',
+                    'La <strong>coordinación</strong> entre equipos y recursos, que hace posible que todo encaje.',
+                    'La <strong>sensibilidad</strong> para acompañar procesos complejos, muchas veces con historias difíciles detrás.',
+                    'El <strong>compañerismo</strong>, que convierte el trabajo en equipo en algo real.'
+                  ].map(item => `
+                    <tr>
+                      <td style="width:28px;vertical-align:top;padding:6px 0;">✨</td>
+                      <td style="vertical-align:top;padding:6px 0;color:#111827;">${item}</td>
+                    </tr>
+                  `).join('')}
+                </table>
+
+                <p style="margin:0 0 14px 0;">
+                  Sabemos que esta época del año también puede remover emociones: para algunas personas es una celebración; para otras,
+                  es nostalgia, cansancio o simplemente una etapa de cerrar ciclo. Sea como sea, queremos enviaros un mensaje claro:
+                  <strong>vuestra labor importa</strong>. No solo por lo que conseguís, sino por cómo lo conseguís.
+                </p>
+
+                <!-- Signature block -->
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:18px 0 6px 0;">
+                  <tr>
+                    <td style="border-top:1px solid #eef0f3;padding-top:14px;">
+                      <div style="color:#111827;">
+                        De parte de todo el equipo de coordinación/dirección (y de la entidad en su conjunto), os deseamos una
+                        <strong>Feliz Navidad</strong> y un <strong>${year}</strong> lleno de salud, estabilidad, buenas noticias y motivos para seguir creyendo en lo que hacemos.
+                        <br /><br />
+                        Gracias por ser Engloba.
+                        <br /><br />
+                        Un abrazo grande,<br />
+                        <strong>Asociación Engloba</strong><br />
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+
+              </div>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:16px 18px;background:linear-gradient(90deg, ${brandPrimary} 0%, ${brandSecondary} 100%);">
+              <div style="font-family:Roboto,Arial,Helvetica,sans-serif;color:#ffffff;text-align:center;">
+                <div style="font-size:13px;line-height:1.6;opacity:.95;">
+                  Contacto: <a href="mailto:${supportEmail}" style="color:#ffffff;text-decoration:none;font-weight:700;">${supportEmail}</a>
+                </div>
+                <div style="font-size:12px;line-height:1.6;opacity:.85;margin-top:6px;">
+                  Este mensaje está dirigido al equipo interno de Asociación Engloba.
+                </div>
+              </div>
+            </td>
+          </tr>
+
+        </table>
+        <!-- /Card -->
+
+        <div style="font-family:Roboto,Arial,Helvetica,sans-serif;color:#9ca3af;font-size:12px;margin-top:10px;text-align:center;">
+          © ${new Date().getFullYear()} Asociación Engloba
+        </div>
+
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}

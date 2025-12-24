@@ -1613,6 +1613,58 @@ const getUserListDays = async (req, res) => {
   });
 };
 
+// Rehacer correo corporativo por DNI, eliminando primero el usuario WS existente
+async function recreateCorporateEmailByDni(dniRaw = '', {
+  deleteFirst = true,
+  delayAfterDeleteMs = 0,
+  sendWelcome = false,          // normalmente false
+  logger = console,
+} = {}) {
+  const dni = String(dniRaw).replace(/\s+/g, '').trim().toUpperCase();
+
+  const user = await User.findOne({ dni: { $regex: `^${dni}$`, $options: 'i' } });
+  if (!user) return { ok: false, reason: 'USER_NOT_FOUND', dni };
+
+  const oldEmail = (user.email || '').trim().toLowerCase();
+
+  try {
+    // 1) eliminar el usuario WS del correo corporativo actual (si existe)
+    if (deleteFirst && oldEmail) {
+      const del = await deleteUserByEmailWS(oldEmail);
+      logger.log(`[recreateCorporateEmailByDni] deleteUserByEmailWS:`, del);
+    }
+
+    // 2) limpiar email en Mongo
+    user.email = '';
+    await user.save();
+
+    if (delayAfterDeleteMs) {
+      await new Promise(r => setTimeout(r, delayAfterDeleteMs));
+    }
+
+    // 3) crear de nuevo en WS (con fallback contador si hay duplicados)
+    const ws = await createUserWS(user._id);
+
+    if (!ws?.email) return { ok: false, reason: 'NO_EMAIL_RETURNED', dni, userId: String(user._id) };
+
+    // 4) guardar y (opcional) welcome
+    const email_cor = String(ws.email).toLowerCase().trim();
+    user.email = email_cor;
+    await user.save();
+
+    if (sendWelcome) await sendWelcomeEmail(user, email_cor);
+
+    return { ok: true, dni, userId: String(user._id), oldEmail: oldEmail || null, email: email_cor };
+  } catch (e) {
+    const { code, reason, message } = parseGoogleError(e);
+    logger.error(`[recreateCorporateEmailByDni] ERROR ${dni}:`, { code, reason, message });
+    return { ok: false, dni, userId: String(user._id), error: message, code, reason };
+  }
+}
+
+
+
+// recreateCorporateEmailByDni('4890989802G');
 
 module.exports = {
   postCreateUser: catchAsync(postCreateUser),

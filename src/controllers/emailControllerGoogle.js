@@ -2,7 +2,7 @@
 const { google }   = require('googleapis');
 const MailComposer = require('nodemailer/lib/mail-composer');
 const { User, Periods, UserChangeRequest, Dispositive , Program, UserCv } = require('../models/indexModels');
-const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail } = require('../templates/emailTemplates');
+const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail } = require('../templates/emailTemplates');
 const { default: mongoose } = require('mongoose');
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -663,6 +663,98 @@ async function moveMailToTrashByDate(
 //   after: '2000/01/01',
 //   before: '2024/05/01'
 // });
+
+// ──────────────────────────────────────────────────────────────
+// NAVIDAD · Envío masivo (solo corporativo) + modo PREVIEW
+// ──────────────────────────────────────────────────────────────
+async function sendChristmasEmployeesEmail({
+  previewOnly = true,
+  previewToList = ['comunicacion@engloba.org.es', 'web@engloba.org.es'],
+  query = {},                 // para envío real masivo (ej: { employmentStatus: "activo" })
+  delayMs = 250,
+  logger = console.log,
+  errorLogger = console.error,
+} = {}) {
+  const ts = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+  // --- 1) Obtener usuarios ---
+  // Preview: buscamos SOLO esos 2 correos, para personalizar nombre/apellidos
+  // Real: usamos query genérica
+  const findQuery = previewOnly
+    ? { email: { $in: previewToList.map(e => String(e).trim().toLowerCase()) } }
+    : query;
+
+  const users = await User.find(findQuery, { email: 1, firstName: 1, lastName: 1 }).lean();
+
+  // --- 2) Normalizar corporativos ---
+  const corpEmails = Array.from(
+    new Set(
+      users
+        .map(u => (u?.email || '').trim().toLowerCase())
+        .filter(e => e && e.includes('@'))
+    )
+  );
+
+  if (!corpEmails.length) {
+    logger(`[${ts()}] No hay correos corporativos para el envío.`);
+    return { ok: false, total: 0, sent: 0, skipped: 0, recipients: [] };
+  }
+
+  // --- 3) Config común ---
+  const subject = 'Feliz Navidad y gracias por todo lo que hacemos juntos/as';
+
+  logger(`[${ts()}] Navidad: usuarios encontrados: ${users.length}`);
+  logger(`[${ts()}] Navidad: correos corporativos únicos: ${corpEmails.length}`);
+  logger(`[${ts()}] Modo: ${previewOnly ? `PREVIEW (${previewToList.join(', ')})` : 'REAL (envío masivo)'}`);
+
+  const results = { ok: true, total: corpEmails.length, sent: 0, skipped: 0, errors: [], recipients: corpEmails };
+
+  // --- 4) Enviar 1 a 1 (personalizado) ---
+  for (let i = 0; i < corpEmails.length; i++) {
+    const to = corpEmails[i];
+    const idx = `${i + 1}/${corpEmails.length}`;
+
+    // buscar el user para personalizar nombre
+    const u = users.find(x => (x?.email || '').trim().toLowerCase() === to);
+    const fullName = u ? `${u.firstName || ''} ${u.lastName || ''}`.trim() : '';
+    const displayName = fullName || 'equipo';
+
+    const text = buildChristmasEmployeesPlainText(displayName, {
+      supportEmail: 'comunicacion@engloba.org.es',
+      year: 2026,
+    });
+
+    const html = buildChristmasEmployeesHtmlEmail(displayName, {
+      supportEmail: 'comunicacion@engloba.org.es',
+      headerImageUrl: 'http://engloba.org.es/wp-content/uploads/2025/12/felicitacion-1.png',
+      year: 2026,
+    });
+
+    try {
+      await sendEmail([to], subject, text, html);
+      results.sent += 1;
+      logger(`✅ [${ts()}] [${idx}] Enviado → ${to} (${displayName})`);
+    } catch (err) {
+      results.skipped += 1;
+      const msg = err?.message || String(err);
+      results.errors.push({ to, error: msg });
+      errorLogger(`❌ [${ts()}] [${idx}] Error → ${to}: ${msg}`);
+    }
+
+    if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+  }
+
+  logger(`— Resumen Navidad: total ${results.total} | OK ${results.sent} | Errores ${results.skipped}`);
+  return results;
+}
+
+// Atajo: preview (solo a comunicacion)
+// Enviar solo a comunicacion + web (personalizado)
+// sendChristmasEmployeesEmail({
+//   previewOnly: true,
+//     previewToList: ['diego@engloba.org.es'],
+// });
+// previewChristmasEmployeesEmail()
 
 
 module.exports = {

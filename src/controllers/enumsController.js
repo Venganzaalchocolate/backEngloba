@@ -2,24 +2,60 @@ const { Jobs, Studies, Provinces, Work_schedule, Finantial, Offer, Program, User
 const leavetype = require('../models/leavetype');
 const { default: cache } = require('../utils/cache');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
+const mongoose = require('mongoose');
+
 
 /* -------------------------------
    Helpers para construir índices
 ---------------------------------*/
-function createSubcategoriesIndex(list = []) {
-  // Espera docs con { _id, name, subcategories: [{ _id, name }] }
-  const out = {};
-  for (const it of list) {
-    out[String(it._id)] = {
-      name: it.name || '',
-      subcategories: (it.subcategories || []).map(sc => ({
-        _id: sc._id,
-        name: sc.name || ''
-      }))
-    };
+
+const { uploadFileToDrive, updateFileInDrive, deleteFileById } = require('./googleController');
+
+const sanitizeDriveName = (text) =>
+  String(text || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9_\- ]/g, "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .slice(0, 80);
+
+const parseSiNo = (v) => {
+  if (typeof v === "boolean") return v;
+  const s = String(v || "").trim().toLowerCase();
+  return s === "si" || s === "true" || s === "1";
+};
+
+const resolveModelsFolderId = () => {
+  // fallback seguro: modelos -> files
+  return (
+    process.env.GOOGLE_DRIVE_FILES ||
+    null
+  );
+};
+
+
+
+// Upload con fallback si el env apunta a un FILE (y no a carpeta)
+async function uploadModelPdfWithFallback({ reqFile, folderId, driveName }) {
+  try {
+    return await uploadFileToDrive(reqFile, folderId, driveName, false);
+  } catch (err) {
+    const msg = String(err?.message || "");
+    const isNotFound =
+      msg.includes("File not found") || msg.includes("notFound") || msg.includes("404");
+
+    if (isNotFound) {
+      const parentId = await obtenerCarpetaContenedora(folderId).catch(() => null);
+      if (parentId && parentId !== folderId) {
+        console.log("🟨 [documentation] folderId era un fileId, reintentando con parent:", parentId);
+        return await uploadFileToDrive(reqFile, parentId, driveName, false);
+      }
+    }
+    throw err;
   }
-  return out;
 }
+
 
 // utils de índice (reemplaza createCategoryAndSubcategoryIndex por esta versión)
 function createCategoryAndSubcategoryIndex(list = []) {
@@ -196,69 +232,7 @@ const getModelByType = (type) => {
   if (!Model) throw new ClientError("Tipo no válido", 400);
   return Model;
 };
-const putEnums = async (req, res) => {
-  const allowedTypes = ['jobs', 'studies', 'provinces', 'work_schedule', 'finantial', 'documentation', 'leavetype'];
-  if (!req.body.id || !req.body.name || !req.body.type)
-    throw new ClientError("Los datos no son correctos", 400);
-  if (!allowedTypes.includes(req.body.type))
-    throw new ClientError("El tipo no es correcto", 400);
 
-  const Model = getModelByType(req.body.type);
-
-  // Actualización de subcategorías (no aplicable para documentation)
-  if (req.body.subId) {
-    if (req.body.type === "documentation") {
-      throw new ClientError("Documentation no tiene subcategorías", 400);
-    }
-    const updateData = { "subcategories.$[elem].name": req.body.name };
-    if (req.body.type === "jobs") {
-      updateData["subcategories.$[elem].public"] = req.body.public === 'si';
-    }
-    const updatedEnum = await Model.findOneAndUpdate(
-      { _id: req.body.id },
-      { $set: updateData },
-      { new: true, arrayFilters: [{ "elem._id": req.body.subId }] }
-    );
-    if (!updatedEnum) throw new ClientError("Elemento no encontrado", 404);
-    response(res, 200, updatedEnum);
-    return;
-  }
-
-  // Actualización del documento principal
-  const updateData = { name: req.body.name };
-  if (req.body.type === 'documentation') {
-    // Se requieren los campos label y model
-    if (!req.body.name || !req.body.model)
-      throw new ClientError("El campo nombre y el modelo son obligatorios para documentation", 400);
-    updateData.name = req.body.name;
-    updateData.model = req.body.model;
-    updateData.date = req.body.date === 'si'; // Se guarda como boolean
-    if ('requiresSignature' in req.body) {
-      updateData.requiresSignature = req.body.requiresSignature;
-    }
-    if (!!req.body.categoryFiles) updateData.categoryFiles = req.body.categoryFiles
-    if (!!updateData.date) updateData.duration = req.body.duration;
-  }
-  if (req.body.type === 'jobs') {
-    updateData.public = req.body.public === 'si';
-  }
-
-  const updatedEnum = await Model.findByIdAndUpdate(req.body.id, updateData, { new: true });
-  if (!updatedEnum) throw new ClientError("Elemento no encontrado", 404);
-  response(res, 200, updatedEnum);
-};
-
-
-// DELETE: Eliminar un documento existente
-const deleteEnums = async (req, res) => {
-  if (!req.body.id || !req.body.type)
-    throw new ClientError("Los datos no son correctos", 400);
-  const Model = getModelByType(req.body.type);
-  const result = await Model.deleteOne({ _id: req.body.id });
-  if (result.deletedCount === 0)
-    throw new ClientError("No se encontró el documento para eliminar", 404);
-  response(res, 200, result);
-};
 
 // POST Subcategoría: Agrega una subcategoría a un documento existente
 const postSubcategory = async (req, res) => {
@@ -275,41 +249,7 @@ const postSubcategory = async (req, res) => {
   const updatedEnum = await Model.findOneAndUpdate(filter, update, { new: true });
   response(res, 200, updatedEnum);
 };
-const postEnums = async (req, res) => {
-  if (!req.body.name || !req.body.type)
-    throw new ClientError("Los datos no son correctos", 400);
 
-  const { name, date, type, public: pub } = req.body;
-  const Model = getModelByType(type);
-
-  const newData = { name };
-  if (type === 'documentation') {
-    // Se requiere el campo label y el campo model al crear documentation
-    if (!name)
-      throw new ClientError("El campo nombre es obligatorio para documentation", 400);
-    if (!req.body.model)
-      throw new ClientError("El campo model es obligatorio para documentation", 400);
-    newData.name = name;
-    newData.model = req.body.model;
-    newData.date = date === 'si'; // Convertir 'si' a true, 'no' a false
-    newData.requiresSignature = !!req.body.requiresSignature;
-    if (!!req.body.categoryFiles) newData.categoryFiles = req.body.categoryFiles
-    if (!!newData.date) {
-      if (!req.body.duration) {
-        throw new ClientError("El campo duración, la duración debe ser en días, y es obligatorio si el documento tiene fecha", 400);
-      } else {
-        newData.duration = req.body.duration
-      }
-    }
-  }
-  if (type === 'jobs') {
-    newData.public = pub === 'si';
-  }
-
-  const newEnum = new Model(newData);
-  const savedEnum = await newEnum.save();
-  response(res, 200, savedEnum);
-};
 
 
 // DELETE Subcategoría: Eliminar una subcategoría de un documento existente
@@ -321,6 +261,197 @@ const deleteSubcategory = async (req, res) => {
   const Model = getModelByType(req.body.type);
   const updatedEnum = await Model.findOneAndUpdate(filter, update, { new: true });
   response(res, 200, updatedEnum);
+};
+
+const postEnums = async (req, res) => {
+  if (!req.body?.name || !req.body?.type) {
+    throw new ClientError("Los datos no son correctos", 400);
+  }
+
+  const { name, type, public: pub } = req.body;
+  const Model = getModelByType(type);
+
+  const newData = { name };
+
+  if (type === "documentation") {
+    if (!req.body.model) {
+      throw new ClientError("El campo model es obligatorio para documentation", 400);
+    }
+
+    newData.model = req.body.model;
+    newData.date = parseSiNo(req.body.date);
+    newData.requiresSignature = parseSiNo(req.body.requiresSignature);
+    if (req.body.categoryFiles) newData.categoryFiles = req.body.categoryFiles;
+
+    if (newData.date) {
+      if (!req.body.duration) {
+        throw new ClientError("Duración obligatoria si el documento tiene fecha", 400);
+      }
+      newData.duration = Number(req.body.duration);
+    }
+  }
+
+  if (type === "jobs") {
+    newData.public = pub === "si";
+  }
+
+  // 1) Crear documento Mongo
+  const savedEnum = await new Model(newData).save();
+
+  // 2) Subir modelo PDF si viene archivo
+  if (type === "documentation" && req.file) {
+    const folderId = resolveModelsFolderId();
+
+    if (!folderId) {
+      await Model.deleteOne({ _id: savedEnum._id }).catch(() => {});
+      throw new ClientError("Carpeta destino inválida o sin acceso ", 500);
+    }
+
+    const driveName = `modelo_${sanitizeDriveName(savedEnum.name)}`;
+
+    let uploadedId = null;
+    try {
+      const up = await uploadFileToDrive(req.file, folderId, driveName, false);
+
+      uploadedId = up?.id;
+      if (!uploadedId) throw new Error("uploadFileToDrive no devolvió id");
+
+      savedEnum.modeloPDF = uploadedId;
+      await savedEnum.save();
+    } catch (err) {
+      if (uploadedId) await deleteFileById(uploadedId).catch(() => {});
+      await Model.deleteOne({ _id: savedEnum._id }).catch(() => {});
+      throw err;
+    }
+  }
+
+  response(res, 200, savedEnum);
+};
+
+const putEnums = async (req, res) => {
+  const allowedTypes = [
+    "jobs",
+    "studies",
+    "provinces",
+    "work_schedule",
+    "finantial",
+    "documentation",
+    "leavetype",
+  ];
+
+  if (!req.body.id || !req.body.name || !req.body.type) {
+    throw new ClientError("Los datos no son correctos", 400);
+  }
+  if (!allowedTypes.includes(req.body.type)) {
+    throw new ClientError("El tipo no es correcto", 400);
+  }
+
+  const { id, type, subId } = req.body;
+  const Model = getModelByType(type);
+
+  // subcategorías
+  if (subId) {
+    if (type === "documentation") throw new ClientError("Documentation no tiene subcategorías", 400);
+
+    const updateData = { "subcategories.$[elem].name": req.body.name };
+    if (type === "jobs") updateData["subcategories.$[elem].public"] = req.body.public === "si";
+
+    const updatedEnum = await Model.findOneAndUpdate(
+      { _id: id },
+      { $set: updateData },
+      { new: true, arrayFilters: [{ "elem._id": subId }] }
+    );
+
+    if (!updatedEnum) throw new ClientError("Elemento no encontrado", 404);
+    return response(res, 200, updatedEnum);
+  }
+
+  // doc principal
+  const updateData = { name: req.body.name };
+
+  if (type === "documentation") {
+    if (!req.body.model) throw new ClientError("El campo model es obligatorio para documentation", 400);
+
+    updateData.model = req.body.model;
+    updateData.date = parseSiNo(req.body.date);
+    updateData.requiresSignature = parseSiNo(req.body.requiresSignature);
+
+    if (req.body.categoryFiles) updateData.categoryFiles = req.body.categoryFiles;
+
+    if (updateData.date) {
+      if (!req.body.duration) {
+        throw new ClientError("El campo duración (en días) es obligatorio si el documento tiene fecha", 400);
+      }
+      updateData.duration = Number(req.body.duration);
+    } else {
+      updateData.duration = undefined;
+    }
+
+    // Si viene archivo, actualizar/subir modeloPDF
+    if (req.file) {
+      const folderId = resolveModelsFolderId();
+      if (!folderId) {
+        throw new ClientError("Falta  GOOGLE_DRIVE_FILES para subir el modeloPDF", 500);
+      }
+
+      const prev = await Model.findById(id).lean();
+      if (!prev) throw new ClientError("Elemento no encontrado", 404);
+
+      const driveName = `modelo_${sanitizeDriveName(req.body.name)}`;
+
+      let newUploadedId = null;
+
+      try {
+        if (prev.modeloPDF) {
+          await updateFileInDrive(req.file, prev.modeloPDF, driveName);
+          updateData.modeloPDF = prev.modeloPDF;
+        } else {
+          const up = await uploadFileToDrive(req.file, folderId, driveName, false);
+          if (!up?.id) throw new ClientError("Error al subir modeloPDF a Drive", 500);
+          newUploadedId = up.id;
+          updateData.modeloPDF = newUploadedId;
+        }
+      } catch (err) {
+        if (newUploadedId) await deleteFileById(newUploadedId).catch(() => {});
+        throw err;
+      }
+    }
+  }
+
+  if (type === "jobs") updateData.public = req.body.public === "si";
+
+  const updated = await Model.findByIdAndUpdate(id, updateData, { new: true });
+  if (!updated) throw new ClientError("Elemento no encontrado", 404);
+
+  response(res, 200, updated);
+};
+
+const deleteEnums = async (req, res) => {
+  if (!req.body.id || !req.body.type) {
+    throw new ClientError("Los datos no son correctos", 400);
+  }
+
+  const { id, type } = req.body;
+  const Model = getModelByType(type);
+
+  let modeloPDF = null;
+
+  if (type === "documentation") {
+    const doc = await Model.findById(id).lean();
+    if (!doc) throw new ClientError("No se encontró el documento para eliminar", 404);
+    modeloPDF = doc.modeloPDF || null;
+  }
+
+  const result = await Model.deleteOne({ _id: id });
+  if (result.deletedCount === 0) {
+    throw new ClientError("No se encontró el documento para eliminar", 404);
+  }
+
+  if (modeloPDF) {
+    await deleteFileById(modeloPDF).catch(() => {});
+  }
+
+  response(res, 200, result);
 };
 
 

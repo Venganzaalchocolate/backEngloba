@@ -1,11 +1,13 @@
 const fs = require('fs');
 const { google } = require('googleapis');
-const { User, Program} = require('../models/indexModels');
+const { User, Program, Filedrive} = require('../models/indexModels');
 const mongoose = require('mongoose');
 const { PassThrough } = require('stream');
 const { sendEmail } = require('./emailControllerGoogle');
 const { buildPayrollAttachmentPlainText, buildPayrollAttachmentHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail } = require('../templates/emailTemplates');
+const path = require('path');
 const pLimit = require('p-limit').default;
+
 
 
 function normalizeString(str) {
@@ -46,6 +48,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/gmail.settings.basic',
   'https://www.googleapis.com/auth/gmail.settings.sharing',
+  "https://www.googleapis.com/auth/admin.reports.audit.readonly",
 
 ];
 // 3. Creamos la autenticación JWT con el 'subject'
@@ -58,6 +61,7 @@ const auth = new google.auth.JWT({
 });
 const drive = google.drive({ version: 'v3', auth });
 const directory = google.admin({ version: 'directory_v1', auth });
+const reports = google.admin({ version: 'reports_v1', auth }); // <-- AÑADE ESTO
 
 
 // googleController.js (añade esto)
@@ -70,6 +74,24 @@ async function moveDriveFile(fileId, addParentId, removeParentId, newName) {
     fields: 'id, parents, name'
   });
   return res.data;
+}
+
+// Helper: obtiene meta mínima y valida que NO sea carpeta
+async function assertNotFolder(fileId) {
+  const { data } = await drive.files.get({
+    fileId,
+    fields: 'id, name, mimeType, owners, trashed',
+    supportsAllDrives: true,
+  });
+
+  if (data.mimeType === 'application/vnd.google-apps.folder') {
+    const err = new Error(`❌ Bloqueado: intento de borrar CARPETA (${data.name || fileId})`);
+    err.code = 'FOLDER_DELETE_BLOCKED';
+    err.file = data;
+    throw err;
+  }
+
+  return data; // incluye owners etc.
 }
 
 async function appendFilesToArchiveOptimized(fileDocs, archive, concurrency = 5) {
@@ -144,31 +166,48 @@ async function adoptDriveFileIntoFiledrive({ driveId, originModel, idModel, meta
 
 
 const deleteFileById = async (fileId) => {
-  const response = await drive.files.get({
-    fileId,
-    fields: 'owners', // También puedes pedir name, emailAddress, etc.
-    supportsAllDrives: true
-  });
-
-  const owner = response.data.owners?.[0].emailAddress;
-  const authNew = new google.auth.JWT({
-    email: client_email,
-    key: private_key,
-    scopes: ['https://www.googleapis.com/auth/drive'],
-    subject: owner,  // aquí se “impersona” a este usuario
-  });
-  const driveNew = google.drive({ version: 'v3', auth:authNew });
-
   try {
-    // Eliminar el archivo en Google Drive usando el fileId
-    await driveNew.files.delete({
-      fileId: fileId,
+    // 1) Validación anti-borrado de carpetas
+    const meta = await assertNotFolder(fileId);
+
+    // 2) Impersonación por owner (tu patrón)
+    const owner = meta.owners?.[0]?.emailAddress;
+    if (!owner) {
+      const err = new Error(`No se pudo determinar owner para borrar ${fileId}`);
+      err.code = 'OWNER_NOT_FOUND';
+      throw err;
+    }
+
+    const authNew = new google.auth.JWT({
+      email: client_email,
+      key: private_key,
+      scopes: ['https://www.googleapis.com/auth/drive'],
+      subject: owner,
     });
-    return { success: true, message: 'Archivo eliminado correctamente' };
+
+    const driveNew = google.drive({ version: 'v3', auth: authNew });
+
+    // 3) Borrado individual (NO carpeta)
+    await driveNew.files.delete({
+      fileId,
+      supportsAllDrives: true,
+    });
+
+    return {
+      success: true,
+      message: 'Archivo eliminado correctamente',
+      deleted: { id: meta.id, name: meta.name, mimeType: meta.mimeType, owner }
+    };
 
   } catch (error) {
-    
-    return { success: false, message: 'Error al eliminar el archivo' };
+    // Si es carpeta, queremos que quede MUY claro en logs
+    if (error.code === 'FOLDER_DELETE_BLOCKED') {
+      console.error(error.message, error.file);
+      return { success: false, message: error.message, code: error.code, file: error.file };
+    }
+
+    console.error('Error al eliminar archivo:', error?.message || error);
+    return { success: false, message: 'Error al eliminar el archivo', error: error?.message || String(error) };
   }
 };
 
@@ -1122,6 +1161,8 @@ async function sendPayrollWithAttachmentEmail(user, { month, year, idFile }) {
 
   await sendEmail(to, subject, text, html, attachments);
 }
+
+
 
 
 module.exports = {
