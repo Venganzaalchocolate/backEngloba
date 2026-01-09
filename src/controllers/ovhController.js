@@ -105,7 +105,6 @@ const deleteFile = async (fileName) => {
   return retryOperation(async () => {
     const fileToDelete = `${fileName}.pdf`; // Construye el nombre del archivo a eliminar
     const exist =await minioClient.statObject(containerName, fileToDelete); // Verifica si el archivo existe
-    console.log(exist)
     await minioClient.removeObject(containerName, fileToDelete); // Elimina el archivo
     console.log(`Archivo eliminado: ${fileToDelete}`); // Mensaje de confirmación
     return true; // Devuelve true si la eliminación fue exitosa

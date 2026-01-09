@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router()
-const { getEnums, tokenValid, putEnums, postEnums, deleteEnums } = require('../controllers/indexController');
-const { postSubcategory, deleteSubcategory, getEnumEmployers } = require('../controllers/enumsController');
+const { getEnums, tokenValid, putEnums, postEnums, deleteEnums, deleteFileEnums, postSubcategory, deleteSubcategory, getEnumEmployers } = require('../controllers/indexController');
 const multer = require('multer');
 
 // Multer en memoria (CV, FileDrive)
@@ -13,5 +12,6 @@ router.post('/createdata', tokenValid, uploadMem.single('file'), postEnums)
 router.delete('/deletedata', tokenValid, deleteEnums)
 router.delete('/deletesubdata', tokenValid, deleteSubcategory)
 router.post('/createsubcategory', tokenValid, postSubcategory)
+router.delete('/deletefileenums', tokenValid, deleteFileEnums)
 
 module.exports = router;

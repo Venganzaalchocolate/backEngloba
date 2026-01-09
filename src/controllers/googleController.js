@@ -202,7 +202,6 @@ const deleteFileById = async (fileId) => {
   } catch (error) {
     // Si es carpeta, queremos que quede MUY claro en logs
     if (error.code === 'FOLDER_DELETE_BLOCKED') {
-      console.error(error.message, error.file);
       return { success: false, message: error.message, code: error.code, file: error.file };
     }
 

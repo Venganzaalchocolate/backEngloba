@@ -11,6 +11,7 @@ const mongoose = require('mongoose');
 
 const { uploadFileToDrive, updateFileInDrive, deleteFileById } = require('./googleController');
 
+
 const sanitizeDriveName = (text) =>
   String(text || "")
     .normalize("NFD")
@@ -454,6 +455,24 @@ const deleteEnums = async (req, res) => {
   response(res, 200, result);
 };
 
+const deleteFileEnums=async (req, res) =>{
+  console.log(req.body)
+  if (!req.body.modeloPDF || !req.body.id) {
+    throw new ClientError("Faltan datos", 400);
+  }
+  const infoDelete=await deleteFileById(req.body.modeloPDF)
+  if(infoDelete.success){
+    const data=await Documentation.updateOne(
+    { _id: req.body.id },
+    { $unset: { modeloPDF: 1 } },
+    { new: true }
+    );
+    response(res, 200, data);
+  } else {
+   response(res, 200, infoDelete); 
+  }
+  
+}
 
 
 
@@ -466,4 +485,5 @@ module.exports = {
   postSubcategory: catchAsync(postSubcategory),
   deleteSubcategory: catchAsync(deleteSubcategory),
   getEnumEmployers: catchAsync(getEnumEmployers),
+  deleteFileEnums: catchAsync(deleteFileEnums),
 }

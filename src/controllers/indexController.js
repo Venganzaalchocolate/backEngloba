@@ -7,7 +7,7 @@ const { postUploadFile, getFile, deleteIdFile, createFileDrive, updateFileDrive,
 const { postCreateBag, getBags, getBagID, bagDeactivateId, BagPut, getBagsFilter, BagPutDeleteUser } = require("./bagController");
 
 const { offerList,offerCreate,offerUpdate,offerHardDelete,offerId } = require("./offerController");
-const { getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers } = require("./enumsController");
+const { getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers, deleteFileEnums, postSubcategory } = require("./enumsController");
 const {sendEmail, generateEmailHTML, sendWelcomeEmail}=require("./emailControllerGoogle");
 const { getDocumentation,getDocumentationUnified, getDocumentationProgramDispositive, addProgramOrDispositiveToDocumentation, syncProgramDocsToDevices } = require("./documentationController");
 const { confirmSignature, requestSignature } = require("./pdfSignController");
@@ -37,7 +37,7 @@ module.exports = {
     postCreateBag, getBags, getBagID,bagDeactivateId, BagPut,getBagsFilter, BagPutDeleteUser,
     getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId,getProgramId,
     offerList,offerCreate,offerUpdate,offerHardDelete,offerId,
-    getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers,
+    getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers,deleteFileEnums,postSubcategory,
     sendEmail, generateEmailHTML, sendWelcomeEmail,
     getDocumentation, getDocumentationUnified,getDocumentationProgramDispositive,addProgramOrDispositiveToDocumentation,syncProgramDocsToDevices,
     requestSignature,confirmSignature,
@@ -49,7 +49,8 @@ module.exports = {
     createLeave,updateLeave,closeLeave, softDeleteLeave, hardDeleteLeave, listLeaves, getLeaveById,
     createHiring,updateHiring,closeHiring,softDeleteHiring,hardDeleteHiring,listHirings,getHiringById,getLastHiringForUser,relocateHirings,
     postCreateTimeOffChangeRequest, postCreateChangeRequest,getMyChangeRequests,getPendingChangeRequests,postApproveChangeRequest,postRejectChangeRequest,postCancelChangeRequest,
-    createDispositive,updateDispositive,deleteDispositive,handleCoordinators,handleResponsibles,listsResponsiblesAndCoordinators, getDispositiveResponsable,getDispositiveId
+    createDispositive,updateDispositive,deleteDispositive,handleCoordinators,handleResponsibles,listsResponsiblesAndCoordinators, getDispositiveResponsable,getDispositiveId,
+
 
     
 }
