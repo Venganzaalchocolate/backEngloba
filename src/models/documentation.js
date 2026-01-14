@@ -13,7 +13,7 @@ const documentation = mongoose.Schema({
     },
     model:{
         type:String,
-        enum:['User', 'UserCv', 'Program', 'Finantial', 'Estadistics', 'Dispositive'],
+        enum:['User', 'UserCv', 'Program', 'Finantial', 'Estadistics', 'Dispositive', 'VolunteerApplication'],
         required: true
     },
     visible:{

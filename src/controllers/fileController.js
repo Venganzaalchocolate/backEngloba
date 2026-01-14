@@ -3,7 +3,7 @@ const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const { uploadFile, getFileCv, deleteFile, getPresignedPut, getPresignedGet } = require('./ovhController');
 const mongoose = require('mongoose');
 const { uploadFileToDrive, deleteFileById, getFileById, updateFileInDrive, appendFilesToArchiveOptimized } = require('./googleController');
-const { User, Program, Jobs, Leavetype, Filedrive, Dispositive, Documentation } = require('../models/indexModels'); // 👈 añadimos Dispositive
+const { User, Program, Jobs, Leavetype, Filedrive, Dispositive, Documentation, VolunteerApplication } = require('../models/indexModels'); // 👈 añadimos Dispositive
 const archiver = require("archiver");
 
 const sanitize = (text) =>
@@ -259,6 +259,12 @@ const createFileDrive = async (req, res, next) => {
           { $push: { files: newFile._id } },
           { new: true, session }
         ).populate('files');
+      } else if(originModel.toLowerCase() === 'volunteerapplication'){
+        updated = await VolunteerApplication.findByIdAndUpdate(
+          idModel,
+          { $push: { files: newFile._id } },
+          { new: true, session }
+        ).populate('files');
       }
     });
   } catch (err) {
@@ -350,7 +356,13 @@ const updateFileDrive = async (req, res, next) => {
             { $addToSet: { files: fileDoc._id } },
             { new: true, session }
           ).populate('files');
-        }
+        }  else if(originModel.toLowerCase() === 'volunteerapplication'){
+        updatedParent = await VolunteerApplication.findByIdAndUpdate(
+          idModel,
+          { $addToSet: { files: fileDoc._id } },
+          { new: true, session }
+        ).populate('files');
+      }
       }
 
       await fileDoc.save({ session });
@@ -365,6 +377,8 @@ const updateFileDrive = async (req, res, next) => {
         updatedParent = await User.findById(fileDoc.idModel).populate('files.filesId');
       } else if (fileDoc.originModel.toLowerCase() === 'dispositive') {
         updatedParent = await Dispositive.findById(fileDoc.idModel).populate('files');
+      }  else if (fileDoc.originModel.toLowerCase() === 'volunteerapplication') {
+        updatedParent = await VolunteerApplication.findById(fileDoc.idModel).populate('files');
       }
     }
 
@@ -412,6 +426,12 @@ const deleteFileDrive = async (req, res, next) => {
       { $pull: { files: fileDoc._id } },
       { new: true }
     ).populate('files');
+  } else if (fileDoc.originModel.toLowerCase() === 'volunteerapplication') {
+    updatedParent = await VolunteerApplication.findByIdAndUpdate(
+      fileDoc.idModel,
+      { $pull: { files: fileDoc._id } },
+      { new: true }
+    ).populate('files');
   }
 
   await Filedrive.findByIdAndDelete(idFile);
@@ -433,6 +453,8 @@ const MODEL_MAP = {
   Estadistics: "Estadistics",
   usercv: "UserCv",
   UserCv: "UserCv",
+  VolunteerApplication:'VolunteerApplication',
+  volunteerapplication:'VolunteerApplication'
 };
 
 const listFile = async (req, res) => {

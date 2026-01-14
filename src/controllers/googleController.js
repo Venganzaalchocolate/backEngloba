@@ -370,14 +370,14 @@ async function listarArchivosDirecto(folderId) {
       fields: "files(id,name,parents),nextPageToken",
       pageToken,
     });
-
+    console.log(res)
     archivos.push(...res.data.files);
     pageToken = res.data.nextPageToken;
   } while (pageToken);
 
   return archivos;
 }
-
+// gestionAutomaticaNominas()
 /* ========================================
  *   MOVER + RENOMBRAR SOLO SI CAMBIA EL NOMBRE
  * ======================================== */
@@ -514,7 +514,7 @@ async function procesarArchivoNomina(archivo) {
 // }
 
 // prueba();
-//
+
 
 // FUNCION RECURSIVA: LISTA ARCHIVOS (Y SUBCARPETAS)
 //

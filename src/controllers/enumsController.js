@@ -127,12 +127,13 @@ const getEnums = async (req, res) => {
     const cached = cache.get('enums');
     if (cached) return response(res, 200, cached);
 
-    const [jobs, provinces, work_schedule, studies, finantial] = await Promise.all([
+    const [jobs, provinces, work_schedule, studies, finantial, programs] = await Promise.all([
       Jobs.find().lean(),           // solo campo name
       Provinces.find().lean(),
       Work_schedule.find().lean(),
       Studies.find().lean(),
       Finantial.find().lean(),
+      Program.find({active:true}, { name: 1, acronym: 1 }).lean(),
     ]);
 
     const jobsIndex = createCategoryAndSubcategoryIndex(jobs);
@@ -143,7 +144,8 @@ const getEnums = async (req, res) => {
       throw new ClientError('No se han podido cargar todos los enums', 500);
     }
 
-    const enumValues = { jobs, provinces, work_schedule, studies, finantial, jobsIndex, provincesIndex, studiesIndex };
+    const enumValues = { jobs, provinces, work_schedule, studies, finantial, programs, jobsIndex, provincesIndex, studiesIndex };
+
 
     cache.set('enums', enumValues);
     response(res, 200, enumValues);

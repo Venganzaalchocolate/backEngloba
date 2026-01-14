@@ -15,7 +15,7 @@ const cronologySchema=new Schema({
 const programSchema = new Schema({
     area:{
         type: String,
-        enum: ['igualdad', 'desarrollo comunitario', 'lgtbiq', 'infancia y juventud', 'personas con discapacidad', 'mayores', 'no identificado'],
+        enum: ['igualdad', 'desarrollo comunitario', 'lgtbiq', 'infancia y juventud', 'personas con discapacidad', 'mayores','migraciones', 'no identificado'],
         default: 'no identificado'
     },
     email:{

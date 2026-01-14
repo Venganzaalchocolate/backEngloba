@@ -19,6 +19,7 @@ const preferentsRoutes=require('./routes/preferentRoutes')
 const hiringRoutes=require('./routes/hiringRoutes')
 const leaveRoutes=require('./routes/leaveRoutes')
 const userChangeRequest=require('./routes/userChangeRoutes')
+const volunteerApplicationRoutes=require('./routes/volunteerApplicationRoutes')
 const { connectToDatabase } = require('./database/connect');
 require('./controllers/cronScheduleController');
 
@@ -70,6 +71,7 @@ app.use('/api', preferentsRoutes);
 app.use('/api', hiringRoutes);
 app.use('/api', leaveRoutes);
 app.use('/api', userChangeRequest);
+app.use('/api', volunteerApplicationRoutes);
 
  
 

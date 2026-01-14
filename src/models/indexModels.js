@@ -16,6 +16,7 @@ const Periods=require('./period')
 const Leaves=require('./leave');
 const UserChangeRequest = require('./UserChangeRequest');
 const Dispositive=require('./dispositive');
+const VolunteerApplication = require('./volunteerApplication');
 
 module.exports = {
     User,
@@ -34,5 +35,6 @@ module.exports = {
     Periods,
     Leaves,
     UserChangeRequest,
-    Dispositive
+    Dispositive,
+    VolunteerApplication
 }
