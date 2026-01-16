@@ -12,7 +12,9 @@ const {
   tokenValid,
   volunteerAddChronology,
    volunteerChronologyUpdate,
-   volunteerChronologyDelete
+   volunteerChronologyDelete,
+   setVolunteerInterview,
+   deleteInternalNote
 } = require("../controllers/indexController");
 
 /**
@@ -33,10 +35,13 @@ router.post("/volunteerdelete", tokenValid, deleteVolunteerApplication);
 router.post("/volunteerlist", tokenValid, listVolunteerApplications);
 router.post("/volunteerget", tokenValid, getVolunteerApplicationById);
 router.post("/volunteeraddnote", tokenValid, addInternalNote);
+router.post("/volunteerdeletenote", tokenValid, deleteInternalNote)
 
 router.post("/volunteeraddchronology", tokenValid, volunteerAddChronology )
 router.post("/volunteerchronologyupdate", tokenValid, volunteerChronologyUpdate);
 router.post("/volunteerchronologydelete", tokenValid, volunteerChronologyDelete);
+
+router.post('/volunteerinterview', tokenValid, setVolunteerInterview);
 
 
 module.exports = router;

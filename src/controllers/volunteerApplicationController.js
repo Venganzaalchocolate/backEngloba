@@ -15,6 +15,21 @@ const PROGRAM_AREA_ENUM = [
   "mayores",
 ];
 
+const STATE_ENUM = ["no asignado", "activo", "descartado", "pendiente"];
+const GENDER=['male', 'female', 'others', 'nonBinary']
+
+
+const sanitizeObjectIds = (arr) =>
+  (arr || [])
+    .map((x) => (typeof x === "object" && x?._id ? x._id : x))
+    .map((x) => String(x).trim())
+    .filter((x) => isValidId(x))
+    .map((x) => new mongoose.Types.ObjectId(x));
+
+const sanitizeAreas = (arr) =>
+  (arr || [])
+    .map((x) => String(x || "").trim())
+    .filter((x) => PROGRAM_AREA_ENUM.includes(x));
 
 
 const sanitizeIdsArray = (arr) =>
@@ -22,6 +37,48 @@ const sanitizeIdsArray = (arr) =>
     .map((x) => (typeof x === "object" && x?._id ? x._id : x))
     .map((x) => String(x))
     .filter((x) => isValidId(x));
+
+    // helpers/stateVolunteer.js (o dentro del controller, arriba)
+const computeVolunteerState = ({ chronology = [] }) => {
+  const hasChronology = Array.isArray(chronology) && chronology.length > 0;
+
+  const hasOpenChronology = hasChronology
+    ? chronology.some((c) => !c?.endAt) // endAt null/undefined/""
+    : false;
+
+  if (hasOpenChronology) return "activo";
+
+  if (hasChronology) {
+    // si hay cronología y no hay ninguna abierta -> todas cerradas
+    return "descartado";
+  }
+
+  return "no asignado";
+};
+
+// dentro del controller (o helper)
+const syncVolunteerState = async (id) => {
+   const doc = await VolunteerApplication.findById(id)
+    .select("state chronology interview")
+    .lean();
+  if (!doc) throw new ClientError("Solicitud no encontrada", 404);
+
+  const nextState = computeVolunteerState(doc);
+
+  if (doc.state !== nextState) {
+    await VolunteerApplication.updateOne({ _id: id }, { $set: { state: nextState } });
+  }
+
+  // ✅ doc completo para el front
+  return VolunteerApplication.findById(id)
+    .populate([
+      { path: "programInterest", select: "name acronym area active" },
+      { path: "internalNotes.userId", select: "firstName lastName email" },
+      { path: "interview.userId", select: "firstName lastName email" },
+    ])
+    .lean();
+};
+
 
 /**
  * CREATE
@@ -50,6 +107,7 @@ const createVolunteerApplication = async (req, res) => {
     referralSource,
     form,
     userNote,
+    gender
   } = req.body;
 
   if (!firstName) throw new ClientError("Falta firstName", 400);
@@ -63,6 +121,17 @@ const createVolunteerApplication = async (req, res) => {
   if (!occupation) throw new ClientError("Falta occupation", 400);
   if (!availability) throw new ClientError("Falta availability", 400);
   if (!referralSource) throw new ClientError("Falta referralSource", 400);
+ 
+
+  if (gender === undefined || gender === null || String(gender).trim() === "") {
+  throw new ClientError("Falta género", 400);
+}
+
+const g = String(gender).trim(); // si quieres case-insensitive: .toLowerCase()
+if (!GENDER.includes(g)) {
+  throw new ClientError("Género inválido", 400);
+}
+
 
   if (!isValidId(province)) throw new ClientError("province inválido", 400);
 
@@ -100,7 +169,11 @@ const createVolunteerApplication = async (req, res) => {
     referralSource,
     active: true,
     userNote: userNote || "",
+    gender: g
+
   };
+
+  
 
   // Solo setear form si viene (para no pisarlo con undefined)
   if (form) payload.form = form;
@@ -134,11 +207,12 @@ const getVolunteerApplicationById = async (req, res) => {
     .populate([
       { path: "programInterest", select: "name acronym area active" },
       { path: "internalNotes.userId", select: "firstName lastName email" },
+      { path: "interview.userId", select: "firstName lastName email" },
     ])
     .lean();
 
   if (!doc) throw new ClientError("Solicitud no encontrada", 404);
-  return response(res, 200, doc);
+  response(res, 200, doc);
 };
 
 /**
@@ -180,7 +254,7 @@ const listVolunteerApplications = async (req, res) => {
       { email: rx },
       { documentId: rx },
       { localidad: rx },
-      { phone: rx },
+      { phone: rx }, 
     ];
   }
 
@@ -194,7 +268,7 @@ const listVolunteerApplications = async (req, res) => {
       .skip(skip)
       .limit(l)
       .select(
-        "firstName lastName email phone documentId province localidad occupation studies programInterest areaInterest active disableAt userNote internalNotes disabledAt createdAt"
+        "firstName lastName province areaInterest active disableAt internalNotes disabledAt createdAt state"
       )
       .populate([
         { path: "programInterest", select: "name acronym area" },
@@ -240,7 +314,9 @@ const updateVolunteerApplication = async (req, res) => {
     disableAt,
     disabledReason,
     userNote,
-    chronologyAdd
+    chronologyAdd,
+    state,
+    gender
   } = req.body;
 
   if (!volunteerApplicationId) throw new ClientError("Falta volunteerApplicationId", 400);
@@ -260,9 +336,15 @@ const updateVolunteerApplication = async (req, res) => {
 
   if (province !== undefined) {
     if (!isValidId(province)) throw new ClientError("province inválido", 400);
-    const provExists = await Provinces.exists({ _id: province });
-    if (!provExists) throw new ClientError("province no existe", 404);
     update.province = province;
+  }
+
+    if (gender !== undefined) {
+    const g = String(gender || "").trim();
+    if (!GENDER.includes(g)) {
+      throw new ClientError("Género inválido", 400);
+    }
+    update.gender = g;
   }
   if (localidad !== undefined) update.localidad = localidad;
 
@@ -297,7 +379,14 @@ const updateVolunteerApplication = async (req, res) => {
 
   if (userNote !== undefined) update.userNote = userNote;
 
-
+  // ✅ STATE
+  if (state !== undefined) {
+    const s = String(state || "").trim();
+    if (!STATE_ENUM.includes(s)) {
+      throw new ClientError("state inválido", 400);
+    }
+    update.state = s;
+  }
   // activar/desactivar manualmente (además del cron)
   if (active !== undefined) {
     update.active = !!active;
@@ -429,14 +518,17 @@ const updated = await VolunteerApplication.findByIdAndUpdate(
   },
   { new: true }
 )
-  .populate({ path: "internalNotes.userId", select: "firstName lastName email" })
-  .select("internalNotes")
+  .populate([
+      { path: "programInterest", select: "name acronym area active" },
+      { path: "internalNotes.userId", select: "firstName lastName email" },
+      { path: "interview.userId", select: "firstName lastName email" },
+    ])
   .lean();
 
 if (!updated) throw new ClientError("Solicitud no encontrada", 404);
 
 // si quieres devolver SOLO el array:
-response(res, 200, updated.internalNotes);
+response(res, 200, updated);
 };
 
 
@@ -464,14 +556,15 @@ const volunteerAddChronology = async (req, res) => {
     volunteerApplicationId,
     startAt,
     endAt,
-    dispositive,
     hours,
     notes = "",
+    dispositives, // array opcional
+    areas,        // array
+    provinces,    // array
   } = req.body || {};
 
   if (!volunteerApplicationId) throw new ClientError("Falta volunteerApplicationId", 400);
   if (!startAt) throw new ClientError("Falta startAt", 400);
-  if (!dispositive) throw new ClientError("Falta dispositive", 400);
   if (hours === undefined || hours === null) throw new ClientError("Falta hours", 400);
 
   const id = toId(volunteerApplicationId);
@@ -482,10 +575,17 @@ const volunteerAddChronology = async (req, res) => {
   const e = parseDateOrNull(endAt);
   if (e && e < s) throw new ClientError("endAt no puede ser anterior a startAt", 400);
 
-  if (!isValidId(dispositive)) throw new ClientError("dispositive inválido", 400);
-
   const h = Number(hours);
   if (Number.isNaN(h) || h < 0) throw new ClientError("hours inválido", 400);
+
+  const dispositivesArr = sanitizeObjectIds(dispositives || []);
+  const provincesArr = sanitizeObjectIds(provinces || []);
+  const areasArr = sanitizeAreas(areas || []);
+
+  // si quieres exigir algo:
+  // if (!areasArr.length && !provincesArr.length && !dispositivesArr.length) {
+  //   throw new ClientError("Debes indicar areas y/o provinces (dispositives opcional)", 400);
+  // }
 
   const exists = await VolunteerApplication.exists({ _id: id });
   if (!exists) throw new ClientError("Solicitud no encontrada", 404);
@@ -497,7 +597,9 @@ const volunteerAddChronology = async (req, res) => {
         chronology: {
           startAt: s,
           endAt: e,
-          dispositive: new mongoose.Types.ObjectId(dispositive),
+          dispositives: dispositivesArr, // ✅ opcional
+          provinces: provincesArr,
+          areas: areasArr,
           hours: h,
           notes: String(notes || ""),
           createdAt: new Date(),
@@ -510,13 +612,13 @@ const volunteerAddChronology = async (req, res) => {
     .select("chronology")
     .lean();
 
-  return response(res, 200, updated.chronology);
+    
+  const nextState = await syncVolunteerState(id);
+
+  response(res, 200, nextState);
 };
 
-// =========================
-// CHRONOLOGY (UPDATE)
-// body: { volunteerApplicationId, chronologyId, startAt?, endAt?, dispositive?, hours?, notes? }
-// - chronologyId puede venir como chronologyItemId también
+
 // =========================
 const volunteerChronologyUpdate = async (req, res) => {
   const {
@@ -525,7 +627,9 @@ const volunteerChronologyUpdate = async (req, res) => {
     chronologyItemId,
     startAt,
     endAt,
-    dispositive,
+    dispositives, // ✅ array opcional
+    provinces,    // ✅ array
+    areas,        // ✅ array
     hours,
     notes,
   } = req.body || {};
@@ -538,7 +642,6 @@ const volunteerChronologyUpdate = async (req, res) => {
 
   const id = toId(volunteerApplicationId);
 
-  // Comprobar que existe la solicitud + la entrada
   const exists = await VolunteerApplication.exists({
     _id: id,
     "chronology._id": new mongoose.Types.ObjectId(chronoId),
@@ -554,13 +657,20 @@ const volunteerChronologyUpdate = async (req, res) => {
   }
 
   if (endAt !== undefined) {
-    const e = parseDateOrNull(endAt); // puede ser null (vacío)
+    const e = parseDateOrNull(endAt); // puede ser null
     $set["chronology.$.endAt"] = e;
   }
 
-  if (dispositive !== undefined) {
-    if (!isValidId(dispositive)) throw new ClientError("dispositive inválido", 400);
-    $set["chronology.$.dispositive"] = new mongoose.Types.ObjectId(dispositive);
+  if (dispositives !== undefined) {
+    $set["chronology.$.dispositives"] = sanitizeObjectIds(dispositives || []);
+  }
+
+  if (provinces !== undefined) {
+    $set["chronology.$.provinces"] = sanitizeObjectIds(provinces || []);
+  }
+
+  if (areas !== undefined) {
+    $set["chronology.$.areas"] = sanitizeAreas(areas || []);
   }
 
   if (hours !== undefined) {
@@ -577,8 +687,7 @@ const volunteerChronologyUpdate = async (req, res) => {
     throw new ClientError("No hay cambios que guardar", 400);
   }
 
-  // Validación extra: si cambian fechas, asegurar coherencia final startAt<=endAt
-  // (Solo si se tocaron fechas)
+  // coherencia de fechas si se tocaron
   const touchesDates = startAt !== undefined || endAt !== undefined;
   if (touchesDates) {
     const doc = await VolunteerApplication.findOne(
@@ -597,13 +706,14 @@ const volunteerChronologyUpdate = async (req, res) => {
   const updated = await VolunteerApplication.findOneAndUpdate(
     { _id: id, "chronology._id": chronoId },
     { $set },
-    { new: true }
   )
-    .select("chronology")
-    .lean();
 
-  return response(res, 200, updated.chronology);
+
+    const nextState = await syncVolunteerState(id);
+
+  response(res, 200, nextState);
 };
+
 
 // =========================
 // CHRONOLOGY (DELETE)
@@ -634,8 +744,174 @@ const volunteerChronologyDelete = async (req, res) => {
     .select("chronology")
     .lean();
 
-  return response(res, 200, updated.chronology);
+    const nextState = await syncVolunteerState(id);
+
+  response(res, 200, nextState);
 };
+
+
+
+
+
+const INTERVIEW_STATUS_ENUM = ["pendiente", "realizada", "cancelada"];
+
+const parseDateISO = (v) => {
+  if (v === null || v === "" || v === undefined) return null;
+  const d = new Date(v); // acepta ISO
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+};
+
+const setVolunteerInterview = async (req, res) => {
+  const { volunteerApplicationId, interviewId, interview, action } = req.body || {};
+
+  if (!volunteerApplicationId) throw new ClientError("Falta volunteerApplicationId", 400);
+  const id = toId(volunteerApplicationId);
+
+  // --------- CLEAR ALL ----------
+  if (action === "clear_all") {
+    const updated = await VolunteerApplication.findByIdAndUpdate(
+      id,
+      { $set: { interview: [] } },
+      { new: true }
+    )
+    
+    if (!updated) throw new ClientError("VolunteerApplication no encontrado", 404);
+    const nextState = await syncVolunteerState(id);
+    return response(res, 200, nextState);
+  }
+
+  // --------- REMOVE ONE ----------
+  if (action === "remove_one") {
+    if (!interviewId) throw new ClientError("Falta interviewId", 400);
+    if (!isValidId(interviewId)) throw new ClientError("interviewId inválido", 400);
+
+    const updated = await VolunteerApplication.findByIdAndUpdate(
+      id,
+      { $pull: { interview: { _id: new mongoose.Types.ObjectId(interviewId) } } },
+      { new: true }
+    )
+
+    if (!updated) throw new ClientError("VolunteerApplication no encontrado", 404);
+    const nextState = await syncVolunteerState(id);
+
+    response(res, 200, nextState);
+
+  }
+
+  // --------- VALIDAR interview ----------
+  if (!interview || typeof interview !== "object") {
+    throw new ClientError("Falta interview (objeto)", 400);
+  }
+
+  const { userId, date, status, notes } = interview;
+
+  // normalizaciones
+  const d = parseDateISO(date);
+  if (date !== undefined && date !== null && date !== "" && !d) {
+    throw new ClientError("interview.date inválida", 400);
+  }
+
+  if (status !== undefined && !INTERVIEW_STATUS_ENUM.includes(String(status))) {
+    throw new ClientError("interview.status inválido", 400);
+  }
+
+  const n = notes !== undefined ? String(notes || "").trim() : undefined;
+  if (n !== undefined && n.length > 2000) {
+    throw new ClientError("interview.notes demasiado largo", 400);
+  }
+
+  // userId: puede venir null para “sin asignar”
+  let userObjId = undefined;
+  if (userId !== undefined) {
+    if (userId === null || userId === "") {
+      userObjId = null;
+    } else {
+      if (!isValidId(userId)) throw new ClientError("interview.userId inválido", 400);
+      userObjId = new mongoose.Types.ObjectId(userId);
+    }
+  } else {
+    // opcional: fallback a req.user si no mandas userId
+    // if (req?.user?._id) userObjId = new mongoose.Types.ObjectId(req.user._id);
+  }
+
+  // --------- UPDATE ONE ----------
+  if (interviewId) {
+    if (!isValidId(interviewId)) throw new ClientError("interviewId inválido", 400);
+
+    const $set = {};
+    if (userObjId !== undefined) $set["interview.$.userId"] = userObjId;
+    if (date !== undefined) $set["interview.$.date"] = d; // d puede ser null
+    if (status !== undefined) $set["interview.$.status"] = String(status);
+    if (n !== undefined) $set["interview.$.notes"] = n;
+
+    if (!Object.keys($set).length) throw new ClientError("No hay cambios que guardar", 400);
+
+    const updated = await VolunteerApplication.findOneAndUpdate(
+      { _id: id, "interview._id": new mongoose.Types.ObjectId(interviewId) },
+      { $set },
+      { new: true }
+    )
+
+    if (!updated) throw new ClientError("VolunteerApplication/Entrevista no encontrada", 404);
+    const nextState = await syncVolunteerState(id);
+    response(res, 200, nextState);
+  }
+
+  // --------- ADD NEW ----------
+  const newInterview = {
+    userId: userObjId === undefined ? null : userObjId,
+    date: date === undefined ? null : d,
+    status: status === undefined ? "pendiente" : String(status),
+    notes: n === undefined ? "" : n,
+    createdAt: new Date(),
+  };
+
+  const updated = await VolunteerApplication.findByIdAndUpdate(
+    id,
+    { $push: { interview: newInterview } },
+    { new: true }
+  )
+
+  if (!updated) throw new ClientError("VolunteerApplication no encontrado", 404);
+  const nextState = await syncVolunteerState(id);
+  response(res, 200, nextState);
+};
+
+// =========================
+// INTERNAL NOTES (DELETE ONE)
+// body: { volunteerApplicationId, noteId }
+// =========================
+const deleteInternalNote = async (req, res) => {
+  const { volunteerApplicationId, noteId } = req.body || {};
+
+  if (!volunteerApplicationId) throw new ClientError("Falta volunteerApplicationId", 400);
+  if (!noteId) throw new ClientError("Falta noteId", 400);
+  if (!isValidId(noteId)) throw new ClientError("noteId inválido", 400);
+
+  const id = toId(volunteerApplicationId);
+
+  const exists = await VolunteerApplication.exists({ _id: id });
+  if (!exists) throw new ClientError("Solicitud no encontrada", 404);
+
+  // opcional: si quieres validar que la nota exista
+  const noteExists = await VolunteerApplication.exists({
+    _id: id,
+    "internalNotes._id": new mongoose.Types.ObjectId(noteId),
+  });
+  if (!noteExists) throw new ClientError("Nota interna no encontrada", 404);
+
+  await VolunteerApplication.updateOne(
+    { _id: id },
+    { $pull: { internalNotes: { _id: new mongoose.Types.ObjectId(noteId) } } })
+
+  // ✅ devolver doc completo ya populado + state sincronizado
+  const fullDoc = await syncVolunteerState(id);
+
+  response(res, 200, fullDoc);
+};
+
+
 
 
 module.exports = {
@@ -646,7 +922,9 @@ module.exports = {
   deleteVolunteerApplication: catchAsync(deleteVolunteerApplication),
   disableVolunteerApplication: catchAsync(disableVolunteerApplication),
   addInternalNote: catchAsync(addInternalNote),
+  deleteInternalNote: catchAsync(deleteInternalNote),
   volunteerAddChronology:catchAsync(volunteerAddChronology),  
   volunteerChronologyUpdate:catchAsync(volunteerChronologyUpdate), 
-  volunteerChronologyDelete:catchAsync(volunteerChronologyDelete)
+  volunteerChronologyDelete:catchAsync(volunteerChronologyDelete),
+  setVolunteerInterview: catchAsync(setVolunteerInterview),
 };
