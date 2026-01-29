@@ -2,7 +2,7 @@
 const { google }   = require('googleapis');
 const MailComposer = require('nodemailer/lib/mail-composer');
 const { User, Periods, UserChangeRequest, Dispositive , Program, UserCv } = require('../models/indexModels');
-const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail } = require('../templates/emailTemplates');
+const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail, buildEqualityLgtbiqSurveyPlainText, buildEqualityLgtbiqSurveyHtmlEmail } = require('../templates/emailTemplates');
 const { default: mongoose } = require('mongoose');
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -756,6 +756,102 @@ async function sendChristmasEmployeesEmail({
 // });
 // previewChristmasEmployeesEmail()
 
+// ──────────────────────────────────────────────────────────────
+// PLANES IGUALDAD + LGTBIQ+ · ENVÍO MASIVO PERSONALIZADO + PREVIEW
+// ──────────────────────────────────────────────────────────────
+async function sendEqualityLgtbiqSurveyEmail({
+  previewOnly = true,
+  previewToList = ['comunicacion@engloba.org.es'], // 👈 PRUEBA SOLO AQUÍ
+  query = {},                                      // 👈 en real: filtra empleados (ej: { employmentStatus: "activo" })
+  delayMs = 250,
+  logger = console.log,
+  errorLogger = console.error,
+
+  // Config contenido
+  subject = 'Planes de Igualdad y LGTBIQ+ · Tu opinión cuenta (2 min)',
+  logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
+  supportEmail = 'web@engloba.org.es',
+  planIgualdadUrl = 'https://forms.gle/tGVQgcFgbURv1HLq5',
+  planLgtbiqUrl = 'https://forms.gle/YcSN4Hkt8PGMiNQk7',
+} = {}) {
+  const ts = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+  // 1) Buscar usuarios objetivo
+  // Preview: buscamos SOLO esos correos para sacar nombre/apellidos si existe
+  // Real: usamos query genérica
+  const findQuery = previewOnly
+    ? { email: { $in: previewToList.map(e => String(e).trim().toLowerCase()) } }
+    : query;
+
+  const users = await User.find(findQuery, { email: 1, firstName: 1, lastName: 1 }).lean();
+
+  // 2) Lista de correos
+  const recipients = previewOnly
+    ? previewToList.map(e => String(e).trim().toLowerCase())
+    : Array.from(new Set(
+        users
+          .map(u => (u?.email || '').trim().toLowerCase())
+          .filter(e => e && e.includes('@'))
+      ));
+
+  if (!recipients.length) {
+    logger(`[${ts()}] Planes: No hay destinatarios para el envío.`);
+    return { ok: false, total: 0, sent: 0, skipped: 0, recipients: [] };
+  }
+
+  logger(`[${ts()}] Planes: usuarios encontrados: ${users.length}`);
+  logger(`[${ts()}] Planes: correos destinatarios: ${recipients.length}`);
+  logger(`[${ts()}] Modo: ${previewOnly ? `PREVIEW (${previewToList.join(', ')})` : 'REAL (envío masivo)'}`);
+
+  const results = { ok: true, total: recipients.length, sent: 0, skipped: 0, errors: [], recipients };
+
+  // 3) Envío 1 a 1 (personalizado)
+  for (let i = 0; i < recipients.length; i++) {
+    const to = recipients[i];
+    const idx = `${i + 1}/${recipients.length}`;
+
+    // buscar el user para personalizar nombre
+    const u = users.find(x => (x?.email || '').trim().toLowerCase() === to);
+    const fullName = u ? `${u.firstName || ''} ${u.lastName || ''}`.trim() : '';
+    const displayName = fullName || (previewOnly ? 'equipo' : 'equipo');
+
+    const text = buildEqualityLgtbiqSurveyPlainText(displayName, {
+      planIgualdadUrl,
+      planLgtbiqUrl,
+      supportEmail,
+    });
+
+    const html = buildEqualityLgtbiqSurveyHtmlEmail(displayName, {
+      logoUrl,
+      planIgualdadUrl,
+      planLgtbiqUrl,
+      supportEmail,
+    });
+
+    try {
+      await sendEmail([to], subject, text, html);
+      results.sent += 1;
+      logger(`✅ [${ts()}] [${idx}] Enviado → ${to} (${displayName})`);
+    } catch (err) {
+      results.skipped += 1;
+      const msg = err?.message || String(err);
+      results.errors.push({ to, error: msg });
+      errorLogger(`❌ [${ts()}] [${idx}] Error → ${to}: ${msg}`);
+    }
+
+    if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+  }
+
+  logger(`— Resumen Planes: total ${results.total} | OK ${results.sent} | Errores ${results.skipped}`);
+  return results;
+}
+
+// // PRUEBA (solo comunicacion)
+// sendEqualityLgtbiqSurveyEmail({
+//   previewOnly: false,
+//   query: { employmentStatus: 'activo' },
+//   delayMs: 250,
+// });
 
 module.exports = {
   sendEmail,          // firma idéntica a tu antiguo SMTP

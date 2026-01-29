@@ -1,6 +1,6 @@
 const fs = require('fs');
 const { google } = require('googleapis');
-const { User, Program, Filedrive} = require('../models/indexModels');
+const { User, Program, Filedrive, Dispositive} = require('../models/indexModels');
 const mongoose = require('mongoose');
 const { PassThrough } = require('stream');
 const { sendEmail } = require('./emailControllerGoogle');
@@ -1160,6 +1160,7 @@ async function sendPayrollWithAttachmentEmail(user, { month, year, idFile }) {
 
   await sendEmail(to, subject, text, html, attachments);
 }
+
 
 
 

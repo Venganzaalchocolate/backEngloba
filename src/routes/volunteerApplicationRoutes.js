@@ -14,7 +14,8 @@ const {
    volunteerChronologyUpdate,
    volunteerChronologyDelete,
    setVolunteerInterview,
-   deleteInternalNote
+   deleteInternalNote,
+   enableVolunteerApplication
 } = require("../controllers/indexController");
 
 /**
@@ -31,6 +32,7 @@ const {
 router.post("/volunteercreate", createVolunteerApplication);
 router.post("/volunteerupdate", tokenValid, updateVolunteerApplication);
 router.post("/volunteerdisable", tokenValid, disableVolunteerApplication);
+router.post("/volunteerenable", tokenValid, enableVolunteerApplication);
 router.post("/volunteerdelete", tokenValid, deleteVolunteerApplication);
 router.post("/volunteerlist", tokenValid, listVolunteerApplications);
 router.post("/volunteerget", tokenValid, getVolunteerApplicationById);

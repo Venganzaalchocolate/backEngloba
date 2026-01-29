@@ -1692,3 +1692,165 @@ export function buildChristmasEmployeesHtmlEmail(
 </body>
 </html>`;
 }
+
+// ===============================
+// PLAN DE IGUALDAD + PLAN LGTBIQ+
+// ===============================
+
+export function buildEqualityLgtbiqSurveyPlainText(
+  name = '',
+  {
+    planIgualdadUrl = 'https://forms.gle/tGVQgcFgbURv1HLq5',
+    planLgtbiqUrl = 'https://forms.gle/YcSN4Hkt8PGMiNQk7',
+    supportEmail = 'comunicacion@engloba.org.es',
+  } = {}
+) {
+  const who = name?.trim() ? name.trim() : 'equipo';
+
+  return (
+`Hola ${who},
+
+Buenos días.
+
+Como parte de nuestros procesos de mejora, estamos trabajando en la elaboración y actualización del Plan de Igualdad y del Plan LGTBIQ+ de Asociación Engloba.
+
+Queremos contar con tu participación: tu experiencia y tu mirada nos ayudan a detectar necesidades reales, priorizar medidas y seguir construyendo un entorno de trabajo seguro, respetuoso e inclusivo.
+
+Te pedimos que completes estos dos formularios (aprox. 2 minutos cada uno):
+
+• Plan de Igualdad:
+  ${planIgualdadUrl}
+
+• Plan LGTBIQ+:
+  ${planLgtbiqUrl}
+
+Gracias por tu colaboración.
+
+Un saludo,
+Asociación Engloba
+
+Contacto: ${supportEmail}`
+  );
+}
+
+export function buildEqualityLgtbiqSurveyHtmlEmail(
+  name = '',
+  {
+    logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
+    planIgualdadUrl = 'https://forms.gle/tGVQgcFgbURv1HLq5',
+    planLgtbiqUrl = 'https://forms.gle/YcSN4Hkt8PGMiNQk7',
+    supportEmail = 'comunicacion@engloba.org.es',
+  } = {}
+) {
+  const who = name?.trim() ? name.trim() : 'equipo';
+
+  return `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="x-apple-disable-message-reformatting" />
+<title>Planes de Igualdad y LGTBIQ+ · Tu opinión cuenta</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#f3f4f8;font-family:'Roboto',Arial,sans-serif;color:#111827;line-height:1.6;-webkit-text-size-adjust:100%}
+  .card{max-width:680px;margin:36px auto;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 14px 38px rgba(0,0,0,.12)}
+  .header{background:linear-gradient(90deg,#4f529f 0%,#bec3f4 100%);padding:22px 20px;text-align:center;color:#fff}
+  .logo{max-width:170px;height:auto;margin:0 auto 6px;display:block}
+  .title{font-size:20px;line-height:1.25;font-weight:800;margin-top:4px}
+  .subtitle{font-size:13.5px;opacity:.92;margin-top:6px}
+  .content{padding:26px 28px 10px 28px;font-size:16px}
+  .content p{margin:0 0 14px 0}
+  .highlight{
+    background:#eef0ff;border:1px solid rgba(79,82,159,.18);
+    border-radius:14px;padding:14px 14px;margin:16px 0 18px 0;color:#241a35
+  }
+  .meta{font-size:14px;color:#4b5563;margin-top:8px}
+  .btn-td{border-radius:40px;background:#4f529f}
+  .btn-a{
+    display:inline-block;padding:12px 22px;border-radius:40px;font-weight:800;
+    color:#ffffff !important;text-decoration:none !important;
+    background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);
+  }
+  .btns-row{margin:14px 0 6px;text-align:center}
+  a.link{color:#4f529f;font-weight:800;text-decoration:none}
+  .footer{
+    padding:14px 18px;background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);
+    color:#fff;text-align:center;font-size:12.5px
+  }
+</style>
+</head>
+<body>
+  <!-- Preheader -->
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+    Participa en la elaboración y mejora de los Planes de Igualdad y LGTBIQ+ (2 min).
+  </div>
+
+  <div class="card">
+    <div class="header">
+      ${logoUrl ? `<img src="${logoUrl}" alt="Asociación Engloba" class="logo" />` : ''}
+      <div class="title">Planes de Igualdad y LGTBIQ+ · Tu opinión cuenta</div>
+      <div class="subtitle">Mejora interna · Participación del equipo</div>
+    </div>
+
+    <div class="content">
+      <p>Hola ${who},</p>
+
+      <p>
+        Como parte de nuestros procesos de mejora, estamos trabajando en la <strong>elaboración y actualización</strong>
+        del <strong>Plan de Igualdad</strong> y del <strong>Plan LGTBIQ+</strong> de <strong>Asociación Engloba</strong>.
+      </p>
+
+      <div class="highlight">
+        Tu participación es importante: tu experiencia y tu mirada nos ayudan a <strong>detectar necesidades reales</strong>,
+        <strong>priorizar medidas</strong> y seguir construyendo un entorno de trabajo <strong>seguro, respetuoso e inclusivo</strong>.
+        <div class="meta">⏱️ Tiempo estimado: ~2 minutos por formulario.</div>
+      </div>
+
+      <p>Por favor, completa los formularios desde estos botones:</p>
+
+      <div class="btns-row">
+        <table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:10px auto 6px;">
+          <tr><td class="btn-td">
+            <a class="btn-a" href="${planIgualdadUrl}" target="_blank" rel="noopener">Plan de Igualdad ▸</a>
+          </td></tr>
+        </table>
+
+        <table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:6px auto 2px;">
+          <tr><td class="btn-td">
+            <a class="btn-a" href="${planLgtbiqUrl}" target="_blank" rel="noopener">Plan LGTBIQ+ ▸</a>
+          </td></tr>
+        </table>
+
+        <div class="meta" style="margin-top:10px;">
+          Si algún botón no se abre, copia y pega los enlaces:
+          <br/>
+          <a class="link" href="${planIgualdadUrl}" target="_blank" rel="noopener">${planIgualdadUrl}</a>
+          <br/>
+          <a class="link" href="${planLgtbiqUrl}" target="_blank" rel="noopener">${planLgtbiqUrl}</a>
+        </div>
+      </div>
+
+      <p style="margin-top:16px;">
+        Gracias por tu colaboración.
+      </p>
+
+      <p style="margin-top:10px;">
+        Un saludo,<br/>
+        <strong>Asociación Engloba</strong>
+      </p>
+
+      <p class="meta">
+        Contacto: <a class="link" href="mailto:${supportEmail}">${supportEmail}</a>
+      </p>
+    </div>
+
+    <div class="footer">
+      Este mensaje está dirigido al equipo interno de Asociación Engloba.
+    </div>
+  </div>
+</body>
+</html>`;
+}
+

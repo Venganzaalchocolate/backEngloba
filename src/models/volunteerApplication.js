@@ -24,6 +24,17 @@ const PROGRAM_AREA_ENUM = [
   "no identificado",
 ];
 
+const StatusEventSchema = new Schema(
+  {
+    type: { type: String, enum: ["disable", "enable"], required: true },
+    at: { type: Date, required: true },
+    reason: { type: String, trim: true, maxlength: 200, default: "" },
+    userId: { type: Schema.Types.ObjectId, ref: "User", default: null },
+  },
+  { _id: true }
+);
+
+
 const internalNoteSchema = new Schema(
   {
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
@@ -111,6 +122,7 @@ const VolunteerApplicationSchema = new Schema(
     disabledAt: { type: Date, default: null },
     disabledReason: { type: String, trim: true, maxlength: 200, default: "" },
     state: { type: String, enum: STATE_ENUM, default: "no asignado" },
+    statusEvents: { type: [StatusEventSchema], default: [] },
   },
   { timestamps: true }
 );

@@ -1,8 +1,7 @@
 // controllers/volunteerApplicationController.js
 const mongoose = require("mongoose");
 const { catchAsync, response, ClientError, toId } = require("../utils/indexUtils");
-const { Provinces, Studies, Program, VolunteerApplication, Dispositive } = require("../models/indexModels");
-const provinces = require("../models/provinces");
+const { VolunteerApplication } = require("../models/indexModels");
 
 const isValidId = (v) => mongoose.Types.ObjectId.isValid(v);
 
@@ -16,9 +15,47 @@ const PROGRAM_AREA_ENUM = [
 ];
 
 const STATE_ENUM = ["no asignado", "activo", "descartado", "pendiente"];
-const GENDER=['male', 'female', 'others', 'nonBinary']
+const GENDER = ["male", "female", "others", "nonBinary"];
+
+const INTERVIEW_STATUS_ENUM = ["pendiente", "realizada", "cancelada"];
+
+// =====================================================
+// POPULATE (reutilizable) + 1 query siempre
+// =====================================================
+const VOLUNTEER_POPULATE = [
+  { path: "programInterest", select: "name acronym area active" },
+  { path: "internalNotes.userId", select: "firstName lastName email" },
+  { path: "interview.userId", select: "firstName lastName email" },
+  // Si en statusEvents guardas userId y quieres verlo poblado:
+  // { path: "statusEvents.userId", select: "firstName lastName email" },
+];
+
+const withComputedStatus = (doc) => {
+  if (!doc) return doc;
+
+  const evs = Array.isArray(doc.statusEvents) ? doc.statusEvents : [];
+  const last = evs.length ? evs[evs.length - 1] : null;
+
+  const active = last?.type === "disable" ? false : true; // enable/none => true
+
+  return {
+    ...doc,
+    active,
+    lastStatus: last
+      ? { type: last.type, at: last.at, reason: last.reason, userId: last.userId }
+      : null,
+  };
+};
+
+const populateVolunteer = async (query) => {
+  const doc = await query.populate(VOLUNTEER_POPULATE).lean();
+  return withComputedStatus(doc);
+};
 
 
+// =====================================================
+// Helpers: sanitizers, fechas, author
+// =====================================================
 const sanitizeObjectIds = (arr) =>
   (arr || [])
     .map((x) => (typeof x === "object" && x?._id ? x._id : x))
@@ -31,62 +68,41 @@ const sanitizeAreas = (arr) =>
     .map((x) => String(x || "").trim())
     .filter((x) => PROGRAM_AREA_ENUM.includes(x));
 
-
 const sanitizeIdsArray = (arr) =>
   (arr || [])
     .map((x) => (typeof x === "object" && x?._id ? x._id : x))
     .map((x) => String(x))
     .filter((x) => isValidId(x));
 
-    // helpers/stateVolunteer.js (o dentro del controller, arriba)
-const computeVolunteerState = ({ chronology = [] }) => {
-  const hasChronology = Array.isArray(chronology) && chronology.length > 0;
-
-  const hasOpenChronology = hasChronology
-    ? chronology.some((c) => !c?.endAt) // endAt null/undefined/""
-    : false;
-
-  if (hasOpenChronology) return "activo";
-
-  if (hasChronology) {
-    // si hay cronología y no hay ninguna abierta -> todas cerradas
-    return "descartado";
-  }
-
-  return "no asignado";
+const parseDateOrNull = (v) => {
+  if (v === undefined || v === null || v === "") return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
 };
 
-// dentro del controller (o helper)
-const syncVolunteerState = async (id) => {
-   const doc = await VolunteerApplication.findById(id)
-    .select("state chronology interview")
-    .lean();
-  if (!doc) throw new ClientError("Solicitud no encontrada", 404);
+const parseDateOrNow = (v) => parseDateOrNull(v) || new Date();
 
-  const nextState = computeVolunteerState(doc);
-
-  if (doc.state !== nextState) {
-    await VolunteerApplication.updateOne({ _id: id }, { $set: { state: nextState } });
-  }
-
-  // ✅ doc completo para el front
-  return VolunteerApplication.findById(id)
-    .populate([
-      { path: "programInterest", select: "name acronym area active" },
-      { path: "internalNotes.userId", select: "firstName lastName email" },
-      { path: "interview.userId", select: "firstName lastName email" },
-    ])
-    .lean();
+const resolveAuthorId = (req) => {
+  const id = req.user?._id || null;
+  return id && isValidId(id) ? new mongoose.Types.ObjectId(id) : null;
 };
 
+// =====================================================
+// statusEvents => active (computed) + lastStatus (computed)
+// - NO existe campo "active" en el modelo.
+// - devolvemos "active" calculado para que el front migre sin dolor.
+// =====================================================
+const getLastStatusEvent = (doc) => {
+  const evs = Array.isArray(doc?.statusEvents) ? doc.statusEvents : [];
+  return evs.length ? evs[evs.length - 1] : null;
+};
 
-/**
- * CREATE
- * - programInterest puede venir vacío
- * - areaInterest puede venir vacío
- * - province/studies/programs se validan si vienen
- * - disableAt se calcula en el schema (pre-validate) si no viene
- */
+// =====================================================
+// CREATE (upsert por documentId)
+// - En insert: crea statusEvents inicial (enable)
+// - En update: NO toca statusEvents (no pisa histórico)
+// =====================================================
 const createVolunteerApplication = async (req, res) => {
   const {
     firstName,
@@ -107,7 +123,7 @@ const createVolunteerApplication = async (req, res) => {
     referralSource,
     form,
     userNote,
-    gender
+    gender,
   } = req.body;
 
   if (!firstName) throw new ClientError("Falta firstName", 400);
@@ -121,35 +137,28 @@ const createVolunteerApplication = async (req, res) => {
   if (!occupation) throw new ClientError("Falta occupation", 400);
   if (!availability) throw new ClientError("Falta availability", 400);
   if (!referralSource) throw new ClientError("Falta referralSource", 400);
- 
-
-  if (gender === undefined || gender === null || String(gender).trim() === "") {
-  throw new ClientError("Falta género", 400);
-}
-
-const g = String(gender).trim(); // si quieres case-insensitive: .toLowerCase()
-if (!GENDER.includes(g)) {
-  throw new ClientError("Género inválido", 400);
-}
-
 
   if (!isValidId(province)) throw new ClientError("province inválido", 400);
 
+  if (gender === undefined || gender === null || String(gender).trim() === "") {
+    throw new ClientError("Falta género", 400);
+  }
+  const g = String(gender).trim();
+  if (!GENDER.includes(g)) throw new ClientError("Género inválido", 400);
+
   const occArr = occupation || [];
-  if (!occArr.length) throw new ClientError("occupation debe tener al menos una opción", 400);
+  if (!Array.isArray(occArr) || !occArr.length) {
+    throw new ClientError("occupation debe tener al menos una opción", 400);
+  }
 
   const studiesArr = sanitizeIdsArray(studies || []);
   const programsArr = sanitizeIdsArray(programInterest || []);
-
-  const areasArr = (areaInterest || [])
-    .map((x) => String(x))
-    .filter((x) => PROGRAM_AREA_ENUM.includes(x));
+  const areasArr = (areaInterest || []).map(String).filter((x) => PROGRAM_AREA_ENUM.includes(x));
 
   if (!programsArr.length && !areasArr.length) {
     throw new ClientError("Debes indicar programInterest o areaInterest", 400);
   }
 
-  // Construimos el payload base
   const payload = {
     firstName,
     lastName,
@@ -157,7 +166,7 @@ if (!GENDER.includes(g)) {
     documentId,
     phone,
     email,
-    province,
+    province: new mongoose.Types.ObjectId(province),
     localidad,
     occupation: occArr,
     occupationOtherText: occupationOtherText || "",
@@ -167,94 +176,80 @@ if (!GENDER.includes(g)) {
     programInterest: programsArr,
     areaInterest: areasArr,
     referralSource,
-    active: true,
     userNote: userNote || "",
-    gender: g
-
+    gender: g,
   };
 
-  
-
-  // Solo setear form si viene (para no pisarlo con undefined)
   if (form) payload.form = form;
 
-  // UPDATE si existe documentId, CREATE si no existe (upsert)
-  const doc = await VolunteerApplication.findOneAndUpdate(
-    { documentId },
-    { $set: payload },
-    {
-      new: true,               // devuelve el doc ya actualizado/creado
-      upsert: true,            // si no existe, lo crea
-      runValidators: true,     // valida en update también
-      setDefaultsOnInsert: true,
-    }
+  const authorId = resolveAuthorId(req);
+  const now = new Date();
+
+  const doc = await populateVolunteer(
+    VolunteerApplication.findOneAndUpdate(
+      { documentId },
+      {
+        $set: payload,
+        $setOnInsert: {
+          statusEvents: [{ type: "enable", at: now, reason: "initial_enable", userId: authorId }],
+        },
+      },
+      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
+    )
   );
 
-  response(res, 200, doc);
+  return response(res, 200, doc);
 };
 
-/**
- * READ (by id)
- * - populate province, studies, programs
- */
+// =====================================================
+// READ (by id)
+// =====================================================
 const getVolunteerApplicationById = async (req, res) => {
   const { volunteerApplicationId } = req.body;
   if (!volunteerApplicationId) throw new ClientError("Falta volunteerApplicationId", 400);
 
   const id = toId(volunteerApplicationId);
 
-  const doc = await VolunteerApplication.findById(id)
-    .populate([
-      { path: "programInterest", select: "name acronym area active" },
-      { path: "internalNotes.userId", select: "firstName lastName email" },
-      { path: "interview.userId", select: "firstName lastName email" },
-    ])
-    .lean();
-
+  const doc = await populateVolunteer(VolunteerApplication.findById(id));
   if (!doc) throw new ClientError("Solicitud no encontrada", 404);
-  response(res, 200, doc);
+
+  return response(res, 200, doc);
 };
 
-/**
- * LIST (filtros básicos)
- * body: { active, province, programId, area, q, page, limit }
- */
+// =====================================================
+// LIST (aggregate)
+// body: { active, province, programId, area, q, page, limit }
+// - active: filtra por computed active (último statusEvents)
+// - no populate aquí (tu tabla no lo necesita)
+// =====================================================
 const listVolunteerApplications = async (req, res) => {
-  const {
-    active,
-    province,
-    programId,
-    area,
-    q,
-    page = 1,
-    limit = 25,
-  } = req.body || {};
+  const { active, province, programId, area, q, page = 1, limit = 25 } = req.body || {};
 
-  const query = {};
+  const baseMatch = {};
 
-  if (active !== undefined) query.active = !!active;
   if (province !== undefined) {
     if (province && !isValidId(province)) throw new ClientError("province inválido", 400);
-    if (province) query.province = province;
+    if (province) baseMatch.province = new mongoose.Types.ObjectId(province);
   }
+
   if (programId !== undefined) {
     if (programId && !isValidId(programId)) throw new ClientError("programId inválido", 400);
-    if (programId) query.programInterest = new mongoose.Types.ObjectId(programId);
+    if (programId) baseMatch.programInterest = new mongoose.Types.ObjectId(programId);
   }
   if (area !== undefined) {
     if (area && !PROGRAM_AREA_ENUM.includes(area)) throw new ClientError("area inválida", 400);
-    if (area) query.areaInterest = area;
+    if (area) baseMatch.areaInterest = area;
   }
 
   if (q) {
     const rx = new RegExp(String(q).trim(), "i");
-    query.$or = [
+    baseMatch.$or = [
       { firstName: rx },
       { lastName: rx },
       { email: rx },
       { documentId: rx },
       { localidad: rx },
-      { phone: rx }, 
+      { phone: rx },
     ];
   }
 
@@ -262,23 +257,60 @@ const listVolunteerApplications = async (req, res) => {
   const l = Math.min(100, Math.max(1, Number(limit) || 25));
   const skip = (p - 1) * l;
 
-  const [items, total] = await Promise.all([
-    VolunteerApplication.find(query)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(l)
-      .select(
-        "firstName lastName province areaInterest active disableAt internalNotes disabledAt createdAt state"
-      )
-      .populate([
-        { path: "programInterest", select: "name acronym area" },
-      ])
-      .lean(),
-    VolunteerApplication.countDocuments(query),
-  ]);
+  const pipeline = [
+    { $match: baseMatch },
+    { $addFields: { _lastStatusEvent: { $arrayElemAt: ["$statusEvents", -1] } } },
+    {
+      $addFields: {
+        active: { $cond: [{ $eq: ["$_lastStatusEvent.type", "disable"] }, false, true] },
+        lastStatus: {
+          $cond: [
+            { $gt: [{ $size: { $ifNull: ["$statusEvents", []] } }, 0] },
+            {
+              type: "$_lastStatusEvent.type",
+              at: "$_lastStatusEvent.at",
+              reason: "$_lastStatusEvent.reason",
+              userId: "$_lastStatusEvent.userId",
+            },
+            null,
+          ],
+        },
+      },
+    },
+    ...(active === undefined ? [] : [{ $match: { active: !!active } },
+    ]),
+    {
+      $facet: {
+        items: [
+          { $sort: { createdAt: -1 } },
+          { $skip: skip },
+          { $limit: l },
+          {
+            $project: {
+              firstName: 1,
+              lastName: 1,
+              province: 1,
+              areaInterest: 1,
+              createdAt: 1,
+              state: 1,
+              active: 1,
+              lastStatus: 1,
+            },
+          },
+        ],
+        totalCount: [{ $count: "count" }],
+      },
+    },
+    { $addFields: { total: { $ifNull: [{ $arrayElemAt: ["$totalCount.count", 0] }, 0] } } },
+    { $project: { items: 1, total: 1 } },
+  ];
+
+  const agg = await VolunteerApplication.aggregate(pipeline);
+  const out = agg?.[0] || { items: [], total: 0 };
+  const total = out.total || 0;
 
   response(res, 200, {
-    items,
+    items: out.items || [],
     page: p,
     limit: l,
     total,
@@ -286,11 +318,9 @@ const listVolunteerApplications = async (req, res) => {
   });
 };
 
-/**
- * UPDATE
- * - update campos básicos
- * - programInterest (array) puede quedar vacío, pero si queda vacío debe haber areaInterest
- */
+// =====================================================
+// UPDATE (NO enable/disable aquí)
+// =====================================================
 const updateVolunteerApplication = async (req, res) => {
   const {
     volunteerApplicationId,
@@ -310,19 +340,20 @@ const updateVolunteerApplication = async (req, res) => {
     programInterest,
     areaInterest,
     referralSource,
-    active,
-    disableAt,
-    disabledReason,
     userNote,
-    chronologyAdd,
     state,
-    gender
+    gender,
+    active, // bloqueado
   } = req.body;
 
   if (!volunteerApplicationId) throw new ClientError("Falta volunteerApplicationId", 400);
+  if (active !== undefined) {
+    throw new ClientError("Para activar/desactivar usa volunteerenable / volunteerdisable", 400);
+  }
 
   const id = toId(volunteerApplicationId);
-  const current = await VolunteerApplication.findById(id);
+
+  const current = await VolunteerApplication.findById(id).select("programInterest areaInterest").lean();
   if (!current) throw new ClientError("Solicitud no encontrada", 404);
 
   const update = {};
@@ -336,16 +367,15 @@ const updateVolunteerApplication = async (req, res) => {
 
   if (province !== undefined) {
     if (!isValidId(province)) throw new ClientError("province inválido", 400);
-    update.province = province;
+    update.province = new mongoose.Types.ObjectId(province);
   }
 
-    if (gender !== undefined) {
+  if (gender !== undefined) {
     const g = String(gender || "").trim();
-    if (!GENDER.includes(g)) {
-      throw new ClientError("Género inválido", 400);
-    }
+    if (!GENDER.includes(g)) throw new ClientError("Género inválido", 400);
     update.gender = g;
   }
+
   if (localidad !== undefined) update.localidad = localidad;
 
   if (occupation !== undefined) {
@@ -355,48 +385,28 @@ const updateVolunteerApplication = async (req, res) => {
   }
   if (occupationOtherText !== undefined) update.occupationOtherText = occupationOtherText;
 
-  if (studies !== undefined) {
-    const studiesArr = sanitizeIdsArray(studies || []);
-    update.studies = studiesArr;
-  }
+  if (studies !== undefined) update.studies = sanitizeIdsArray(studies || []);
   if (studiesOtherText !== undefined) update.studiesOtherText = studiesOtherText;
 
   if (availability !== undefined) update.availability = availability;
 
-  if (programInterest !== undefined) {
-    const programsArr = sanitizeIdsArray(programInterest || []);
-    update.programInterest = programsArr;
-  }
+  if (programInterest !== undefined) update.programInterest = sanitizeIdsArray(programInterest || []);
 
   if (areaInterest !== undefined) {
-    const areasArr = (areaInterest || [])
+    update.areaInterest = (areaInterest || [])
       .map((x) => String(x))
       .filter((x) => PROGRAM_AREA_ENUM.includes(x));
-    update.areaInterest = areasArr;
   }
 
   if (referralSource !== undefined) update.referralSource = referralSource;
-
   if (userNote !== undefined) update.userNote = userNote;
 
-  // ✅ STATE
   if (state !== undefined) {
     const s = String(state || "").trim();
-    if (!STATE_ENUM.includes(s)) {
-      throw new ClientError("state inválido", 400);
-    }
+    if (!STATE_ENUM.includes(s)) throw new ClientError("state inválido", 400);
     update.state = s;
   }
-  // activar/desactivar manualmente (además del cron)
-  if (active !== undefined) {
-    update.active = !!active;
-    if (!update.active) update.disabledAt = new Date();
-  }
 
-  if (disableAt !== undefined) update.disableAt = disableAt;
-  if (disabledReason !== undefined) update.disabledReason = disabledReason;
-
-  // Regla de negocio: después del update, debe haber programas o áreas
   const nextPrograms =
     update.programInterest !== undefined ? update.programInterest : current.programInterest || [];
   const nextAreas =
@@ -405,62 +415,17 @@ const updateVolunteerApplication = async (req, res) => {
   if ((!nextPrograms || !nextPrograms.length) && (!nextAreas || !nextAreas.length)) {
     throw new ClientError("Debes indicar programInterest o areaInterest", 400);
   }
-  // =========================
-  // CHRONOLOGY (append)
-  // =========================
-  const push = {};
-  
-  if (chronologyAdd !== undefined && chronologyAdd !== null) {
-    const { startAt, endAt, dispositive, hours, notes } = chronologyAdd;
 
-    if (!startAt) throw new ClientError("Falta chronologyAdd.startAt", 400);
-    if (!dispositive) throw new ClientError("Falta chronologyAdd.dispositive", 400);
-    if (hours === undefined || hours === null) throw new ClientError("Falta chronologyAdd.hours", 400);
-
-    const startDate = new Date(startAt);
-    if (Number.isNaN(startDate.getTime())) throw new ClientError("chronologyAdd.startAt inválido", 400);
-
-    let endDate = null;
-    if (endAt) {
-      endDate = new Date(endAt);
-      if (Number.isNaN(endDate.getTime())) throw new ClientError("chronologyAdd.endAt inválido", 400);
-      if (endDate < startDate) throw new ClientError("chronologyAdd.endAt no puede ser anterior a startAt", 400);
-    }
-
-    if (!isValidId(dispositive)) throw new ClientError("chronologyAdd.dispositive inválido", 400);
-    const dispExists = await Dispositive.exists({ _id: dispositive });
-    if (!dispExists) throw new ClientError("chronologyAdd.dispositive no existe", 404);
-
-    const h = Number(hours);
-    if (Number.isNaN(h) || h < 0) throw new ClientError("chronologyAdd.hours inválido", 400);
-
-    push.chronology = {
-      startAt: startDate,
-      endAt: endDate,
-      dispositive: new mongoose.Types.ObjectId(dispositive),
-      hours: h,
-      notes: notes ? String(notes) : "",
-      createdAt: new Date(),
-      createdBy: req.user?._id ? new mongoose.Types.ObjectId(req.user._id) : null,
-    };
-  }
-
-  const updateOps = { $set: update };
-  if (Object.keys(push).length) updateOps.$push = push;
-
-  const updated = await VolunteerApplication.findByIdAndUpdate(
-    id,
-    updateOps,
-    { new: true }
+  const updated = await populateVolunteer(
+    VolunteerApplication.findByIdAndUpdate(id, { $set: update }, { new: true })
   );
 
-  return response(res, 200, updated);
+  response(res, 200, updated);
 };
 
-/**
- * DELETE (hard delete)
- * Si prefieres NO borrar nunca, cambia esto por soft-delete (active:false).
- */
+// =====================================================
+// DELETE (hard)
+// =====================================================
 const deleteVolunteerApplication = async (req, res) => {
   const { volunteerApplicationId } = req.body;
   if (!volunteerApplicationId) throw new ClientError("Falta volunteerApplicationId", 400);
@@ -471,86 +436,135 @@ const deleteVolunteerApplication = async (req, res) => {
   if (!exists) throw new ClientError("Solicitud no encontrada", 404);
 
   await VolunteerApplication.deleteOne({ _id: id });
-  return response(res, 200, { ok: true, volunteerApplicationId: String(id) });
+  response(res, 200, { ok: true, volunteerApplicationId: String(id) });
 };
 
-/**
- * SOFT DELETE / DISABLE (recomendado)
- */
-const disableVolunteerApplication = async (req, res) => {
-  const { volunteerApplicationId, disabledReason = "manual_disable" } = req.body;
-  if (!volunteerApplicationId) throw new ClientError("Falta volunteerApplicationId", 400);
-
-  const id = toId(volunteerApplicationId);
-
-  const updated = await VolunteerApplication.findByIdAndUpdate(
-    id,
-    { $set: { active: false, disabledAt: new Date(), disabledReason } },
-    { new: true }
-  );
-
-  if (!updated) throw new ClientError("Solicitud no encontrada", 404);
-  return response(res, 200, updated);
-};
-
+// =====================================================
+// INTERNAL NOTES (ADD)
+// =====================================================
 const addInternalNote = async (req, res) => {
-  const { volunteerApplicationId, note, userId } = req.body; 
-  // userId: si ya tienes auth en req.user._id, usa ese y no lo pases por body.
+  const { volunteerApplicationId, note, userId } = req.body;
 
   if (!volunteerApplicationId) throw new ClientError("Falta volunteerApplicationId", 400);
   if (!note) throw new ClientError("Falta note", 400);
 
   const id = toId(volunteerApplicationId);
-  const authorId = userId || req.user?._id; // ajusta a tu auth real
+  const authorId = userId || req.user?._id;
+
   if (!authorId) throw new ClientError("Falta userId (autor de la nota)", 400);
   if (!isValidId(authorId)) throw new ClientError("userId inválido", 400);
 
-const updated = await VolunteerApplication.findByIdAndUpdate(
-  id,
-  {
-    $push: {
-      internalNotes: {
-        userId: new mongoose.Types.ObjectId(authorId),
-        note,
-        createdAt: new Date(),
+  const updated = await populateVolunteer(
+    VolunteerApplication.findByIdAndUpdate(
+      id,
+      {
+        $push: {
+          internalNotes: {
+            userId: new mongoose.Types.ObjectId(authorId),
+            note,
+            createdAt: new Date(),
+          },
+        },
       },
-    },
-  },
-  { new: true }
-)
-  .populate([
-      { path: "programInterest", select: "name acronym area active" },
-      { path: "internalNotes.userId", select: "firstName lastName email" },
-      { path: "interview.userId", select: "firstName lastName email" },
-    ])
-  .lean();
+      { new: true }
+    )
+  );
 
-if (!updated) throw new ClientError("Solicitud no encontrada", 404);
+  if (!updated) throw new ClientError("Solicitud no encontrada", 404);
 
-// si quieres devolver SOLO el array:
-response(res, 200, updated);
+  response(res, 200, updated);
 };
 
+// =====================================================
+// INTERNAL NOTES (DELETE ONE)
+// =====================================================
+const deleteInternalNote = async (req, res) => {
+  const { volunteerApplicationId, noteId } = req.body || {};
 
-// =========================
-// CHRONOLOGY helpers
-// =========================
-const parseDateOrNull = (v) => {
-  if (v === undefined || v === null || v === "") return null;
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
+  if (!volunteerApplicationId) throw new ClientError("Falta volunteerApplicationId", 400);
+  if (!noteId) throw new ClientError("Falta noteId", 400);
+  if (!isValidId(noteId)) throw new ClientError("noteId inválido", 400);
+
+  const id = toId(volunteerApplicationId);
+
+  const updated = await populateVolunteer(
+    VolunteerApplication.findByIdAndUpdate(
+      id,
+      { $pull: { internalNotes: { _id: new mongoose.Types.ObjectId(noteId) } } },
+      { new: true }
+    )
+  );
+
+  if (!updated) throw new ClientError("Solicitud no encontrada", 404);
+
+  return response(res, 200, updated);
 };
 
-const resolveAuthorId = (req) => {
-  const id = req.user?._id || null;
-  return id && isValidId(id) ? new mongoose.Types.ObjectId(id) : null;
+// =====================================================
+// ENABLE / DISABLE (solo statusEvents)
+// - dateDisable/dateEnable se admiten; si inválida => now
+// =====================================================
+const disableVolunteerApplication = async (req, res) => {
+  const { volunteerApplicationId, disabledReason = "manual_disable", dateDisable } = req.body;
+  if (!volunteerApplicationId) throw new ClientError("Falta volunteerApplicationId", 400);
+
+  const id = toId(volunteerApplicationId);
+  const at = parseDateOrNow(dateDisable);
+  const authorId = resolveAuthorId(req);
+
+  const updated = await populateVolunteer(
+    VolunteerApplication.findByIdAndUpdate(
+      id,
+      {
+        $push: {
+          statusEvents: {
+            type: "disable",
+            at,
+            reason: String(disabledReason || ""),
+            userId: authorId,
+          },
+        },
+      },
+      { new: true }
+    )
+  );
+
+  if (!updated) throw new ClientError("Solicitud no encontrada", 404);
+  response(res, 200, updated);
 };
 
-// =========================
-// CHRONOLOGY (ADD)
-// body: { volunteerApplicationId, startAt, endAt?, dispositive, hours, notes? }
-// =========================
+const enableVolunteerApplication = async (req, res) => {
+  const { volunteerApplicationId, enabledReason = "manual_enable", dateEnable } = req.body;
+  if (!volunteerApplicationId) throw new ClientError("Falta volunteerApplicationId", 400);
+
+  const id = toId(volunteerApplicationId);
+  const at = parseDateOrNow(dateEnable);
+  const authorId = resolveAuthorId(req);
+
+  const updated = await populateVolunteer(
+    VolunteerApplication.findByIdAndUpdate(
+      id,
+      {
+        $push: {
+          statusEvents: {
+            type: "enable",
+            at,
+            reason: String(enabledReason || ""),
+            userId: authorId,
+          },
+        },
+      },
+      { new: true }
+    )
+  );
+
+  if (!updated) throw new ClientError("Solicitud no encontrada", 404);
+  response(res, 200, updated);
+};
+
+// =====================================================
+// CHRONOLOGY (ADD/UPDATE/DELETE) - NO toca state automático
+// =====================================================
 const volunteerAddChronology = async (req, res) => {
   const {
     volunteerApplicationId,
@@ -558,9 +572,9 @@ const volunteerAddChronology = async (req, res) => {
     endAt,
     hours,
     notes = "",
-    dispositives, // array opcional
-    areas,        // array
-    provinces,    // array
+    dispositives,
+    areas,
+    provinces,
   } = req.body || {};
 
   if (!volunteerApplicationId) throw new ClientError("Falta volunteerApplicationId", 400);
@@ -582,44 +596,32 @@ const volunteerAddChronology = async (req, res) => {
   const provincesArr = sanitizeObjectIds(provinces || []);
   const areasArr = sanitizeAreas(areas || []);
 
-  // si quieres exigir algo:
-  // if (!areasArr.length && !provincesArr.length && !dispositivesArr.length) {
-  //   throw new ClientError("Debes indicar areas y/o provinces (dispositives opcional)", 400);
-  // }
-
-  const exists = await VolunteerApplication.exists({ _id: id });
-  if (!exists) throw new ClientError("Solicitud no encontrada", 404);
-
-  const updated = await VolunteerApplication.findByIdAndUpdate(
-    id,
-    {
-      $push: {
-        chronology: {
-          startAt: s,
-          endAt: e,
-          dispositives: dispositivesArr, // ✅ opcional
-          provinces: provincesArr,
-          areas: areasArr,
-          hours: h,
-          notes: String(notes || ""),
-          createdAt: new Date(),
-          createdBy: resolveAuthorId(req),
+  const updated = await populateVolunteer(
+    VolunteerApplication.findByIdAndUpdate(
+      id,
+      {
+        $push: {
+          chronology: {
+            startAt: s,
+            endAt: e,
+            dispositives: dispositivesArr,
+            provinces: provincesArr,
+            areas: areasArr,
+            hours: h,
+            notes: String(notes || ""),
+            createdAt: new Date(),
+            createdBy: resolveAuthorId(req),
+          },
         },
       },
-    },
-    { new: true }
-  )
-    .select("chronology")
-    .lean();
+      { new: true }
+    )
+  );
 
-    
-  const nextState = await syncVolunteerState(id);
-
-  response(res, 200, nextState);
+  if (!updated) throw new ClientError("Solicitud no encontrada", 404);
+  response(res, 200, updated);
 };
 
-
-// =========================
 const volunteerChronologyUpdate = async (req, res) => {
   const {
     volunteerApplicationId,
@@ -627,9 +629,9 @@ const volunteerChronologyUpdate = async (req, res) => {
     chronologyItemId,
     startAt,
     endAt,
-    dispositives, // ✅ array opcional
-    provinces,    // ✅ array
-    areas,        // ✅ array
+    dispositives,
+    provinces,
+    areas,
     hours,
     notes,
   } = req.body || {};
@@ -642,12 +644,6 @@ const volunteerChronologyUpdate = async (req, res) => {
 
   const id = toId(volunteerApplicationId);
 
-  const exists = await VolunteerApplication.exists({
-    _id: id,
-    "chronology._id": new mongoose.Types.ObjectId(chronoId),
-  });
-  if (!exists) throw new ClientError("Entrada de cronología no encontrada", 404);
-
   const $set = {};
 
   if (startAt !== undefined) {
@@ -657,7 +653,10 @@ const volunteerChronologyUpdate = async (req, res) => {
   }
 
   if (endAt !== undefined) {
-    const e = parseDateOrNull(endAt); // puede ser null
+    const e = parseDateOrNull(endAt); // null permitido
+    if (endAt !== null && endAt !== "" && endAt !== undefined && !e) {
+      throw new ClientError("endAt inválido", 400);
+    }
     $set["chronology.$.endAt"] = e;
   }
 
@@ -683,19 +682,19 @@ const volunteerChronologyUpdate = async (req, res) => {
     $set["chronology.$.notes"] = String(notes || "");
   }
 
-  if (!Object.keys($set).length) {
-    throw new ClientError("No hay cambios que guardar", 400);
-  }
+  if (!Object.keys($set).length) throw new ClientError("No hay cambios que guardar", 400);
 
-  // coherencia de fechas si se tocaron
+  // coherencia fechas si se tocaron (1 lectura pequeña adicional SOLO para validar)
   const touchesDates = startAt !== undefined || endAt !== undefined;
   if (touchesDates) {
     const doc = await VolunteerApplication.findOne(
-      { _id: id, "chronology._id": chronoId },
+      { _id: id, "chronology._id": new mongoose.Types.ObjectId(chronoId) },
       { "chronology.$": 1 }
     ).lean();
 
     const current = doc?.chronology?.[0];
+    if (!current) throw new ClientError("Entrada de cronología no encontrada", 404);
+
     const s = startAt !== undefined ? parseDateOrNull(startAt) : current?.startAt;
     const e = endAt !== undefined ? parseDateOrNull(endAt) : current?.endAt;
 
@@ -703,22 +702,18 @@ const volunteerChronologyUpdate = async (req, res) => {
     if (e && e < s) throw new ClientError("endAt no puede ser anterior a startAt", 400);
   }
 
-  const updated = await VolunteerApplication.findOneAndUpdate(
-    { _id: id, "chronology._id": chronoId },
-    { $set },
-  )
+  const updated = await populateVolunteer(
+    VolunteerApplication.findOneAndUpdate(
+      { _id: id, "chronology._id": new mongoose.Types.ObjectId(chronoId) },
+      { $set },
+      { new: true }
+    )
+  );
 
-
-    const nextState = await syncVolunteerState(id);
-
-  response(res, 200, nextState);
+  if (!updated) throw new ClientError("Solicitud/cronología no encontrada", 404);
+  response(res, 200, updated);
 };
 
-
-// =========================
-// CHRONOLOGY (DELETE)
-// body: { volunteerApplicationId, chronologyId } (o chronologyItemId)
-// =========================
 const volunteerChronologyDelete = async (req, res) => {
   const { volunteerApplicationId, chronologyId, chronologyItemId } = req.body || {};
 
@@ -730,34 +725,24 @@ const volunteerChronologyDelete = async (req, res) => {
 
   const id = toId(volunteerApplicationId);
 
-  const exists = await VolunteerApplication.exists({
-    _id: id,
-    "chronology._id": new mongoose.Types.ObjectId(chronoId),
-  });
-  if (!exists) throw new ClientError("Entrada de cronología no encontrada", 404);
+  const updated = await populateVolunteer(
+    VolunteerApplication.findByIdAndUpdate(
+      id,
+      { $pull: { chronology: { _id: new mongoose.Types.ObjectId(chronoId) } } },
+      { new: true }
+    )
+  );
 
-  const updated = await VolunteerApplication.findByIdAndUpdate(
-    id,
-    { $pull: { chronology: { _id: new mongoose.Types.ObjectId(chronoId) } } },
-    { new: true }
-  )
-    .select("chronology")
-    .lean();
-
-    const nextState = await syncVolunteerState(id);
-
-  response(res, 200, nextState);
+  if (!updated) throw new ClientError("Solicitud no encontrada", 404);
+  response(res, 200, updated);
 };
 
-
-
-
-
-const INTERVIEW_STATUS_ENUM = ["pendiente", "realizada", "cancelada"];
-
+// =====================================================
+// INTERVIEW (SET/ADD/REMOVE/CLEAR) - NO toca state automático
+// =====================================================
 const parseDateISO = (v) => {
   if (v === null || v === "" || v === undefined) return null;
-  const d = new Date(v); // acepta ISO
+  const d = new Date(v);
   if (Number.isNaN(d.getTime())) return null;
   return d;
 };
@@ -768,45 +753,33 @@ const setVolunteerInterview = async (req, res) => {
   if (!volunteerApplicationId) throw new ClientError("Falta volunteerApplicationId", 400);
   const id = toId(volunteerApplicationId);
 
-  // --------- CLEAR ALL ----------
   if (action === "clear_all") {
-    const updated = await VolunteerApplication.findByIdAndUpdate(
-      id,
-      { $set: { interview: [] } },
-      { new: true }
-    )
-    
+    const updated = await populateVolunteer(
+      VolunteerApplication.findByIdAndUpdate(id, { $set: { interview: [] } }, { new: true })
+    );
     if (!updated) throw new ClientError("VolunteerApplication no encontrado", 404);
-    const nextState = await syncVolunteerState(id);
-    return response(res, 200, nextState);
+    response(res, 200, updated);
   }
 
-  // --------- REMOVE ONE ----------
   if (action === "remove_one") {
     if (!interviewId) throw new ClientError("Falta interviewId", 400);
     if (!isValidId(interviewId)) throw new ClientError("interviewId inválido", 400);
 
-    const updated = await VolunteerApplication.findByIdAndUpdate(
-      id,
-      { $pull: { interview: { _id: new mongoose.Types.ObjectId(interviewId) } } },
-      { new: true }
-    )
-
+    const updated = await populateVolunteer(
+      VolunteerApplication.findByIdAndUpdate(
+        id,
+        { $pull: { interview: { _id: new mongoose.Types.ObjectId(interviewId) } } },
+        { new: true }
+      )
+    );
     if (!updated) throw new ClientError("VolunteerApplication no encontrado", 404);
-    const nextState = await syncVolunteerState(id);
-
-    response(res, 200, nextState);
-
+    response(res, 200, updated);
   }
 
-  // --------- VALIDAR interview ----------
-  if (!interview || typeof interview !== "object") {
-    throw new ClientError("Falta interview (objeto)", 400);
-  }
+  if (!interview || typeof interview !== "object") throw new ClientError("Falta interview (objeto)", 400);
 
   const { userId, date, status, notes } = interview;
 
-  // normalizaciones
   const d = parseDateISO(date);
   if (date !== undefined && date !== null && date !== "" && !d) {
     throw new ClientError("interview.date inválida", 400);
@@ -817,48 +790,42 @@ const setVolunteerInterview = async (req, res) => {
   }
 
   const n = notes !== undefined ? String(notes || "").trim() : undefined;
-  if (n !== undefined && n.length > 2000) {
-    throw new ClientError("interview.notes demasiado largo", 400);
-  }
+  if (n !== undefined && n.length > 2000) throw new ClientError("interview.notes demasiado largo", 400);
 
-  // userId: puede venir null para “sin asignar”
   let userObjId = undefined;
   if (userId !== undefined) {
-    if (userId === null || userId === "") {
-      userObjId = null;
-    } else {
+    if (userId === null || userId === "") userObjId = null;
+    else {
       if (!isValidId(userId)) throw new ClientError("interview.userId inválido", 400);
       userObjId = new mongoose.Types.ObjectId(userId);
     }
-  } else {
-    // opcional: fallback a req.user si no mandas userId
-    // if (req?.user?._id) userObjId = new mongoose.Types.ObjectId(req.user._id);
   }
 
-  // --------- UPDATE ONE ----------
+  // UPDATE ONE
   if (interviewId) {
     if (!isValidId(interviewId)) throw new ClientError("interviewId inválido", 400);
 
     const $set = {};
     if (userObjId !== undefined) $set["interview.$.userId"] = userObjId;
-    if (date !== undefined) $set["interview.$.date"] = d; // d puede ser null
+    if (date !== undefined) $set["interview.$.date"] = d;
     if (status !== undefined) $set["interview.$.status"] = String(status);
     if (n !== undefined) $set["interview.$.notes"] = n;
 
     if (!Object.keys($set).length) throw new ClientError("No hay cambios que guardar", 400);
 
-    const updated = await VolunteerApplication.findOneAndUpdate(
-      { _id: id, "interview._id": new mongoose.Types.ObjectId(interviewId) },
-      { $set },
-      { new: true }
-    )
+    const updated = await populateVolunteer(
+      VolunteerApplication.findOneAndUpdate(
+        { _id: id, "interview._id": new mongoose.Types.ObjectId(interviewId) },
+        { $set },
+        { new: true }
+      )
+    );
 
     if (!updated) throw new ClientError("VolunteerApplication/Entrevista no encontrada", 404);
-    const nextState = await syncVolunteerState(id);
-    response(res, 200, nextState);
+    response(res, 200, updated);
   }
 
-  // --------- ADD NEW ----------
+  // ADD NEW
   const newInterview = {
     userId: userObjId === undefined ? null : userObjId,
     date: date === undefined ? null : d,
@@ -867,64 +834,35 @@ const setVolunteerInterview = async (req, res) => {
     createdAt: new Date(),
   };
 
-  const updated = await VolunteerApplication.findByIdAndUpdate(
-    id,
-    { $push: { interview: newInterview } },
-    { new: true }
-  )
+  const updated = await populateVolunteer(
+    VolunteerApplication.findByIdAndUpdate(id, { $push: { interview: newInterview } }, { new: true })
+  );
 
   if (!updated) throw new ClientError("VolunteerApplication no encontrado", 404);
-  const nextState = await syncVolunteerState(id);
-  response(res, 200, nextState);
-};
-
-// =========================
-// INTERNAL NOTES (DELETE ONE)
-// body: { volunteerApplicationId, noteId }
-// =========================
-const deleteInternalNote = async (req, res) => {
-  const { volunteerApplicationId, noteId } = req.body || {};
-
-  if (!volunteerApplicationId) throw new ClientError("Falta volunteerApplicationId", 400);
-  if (!noteId) throw new ClientError("Falta noteId", 400);
-  if (!isValidId(noteId)) throw new ClientError("noteId inválido", 400);
-
-  const id = toId(volunteerApplicationId);
-
-  const exists = await VolunteerApplication.exists({ _id: id });
-  if (!exists) throw new ClientError("Solicitud no encontrada", 404);
-
-  // opcional: si quieres validar que la nota exista
-  const noteExists = await VolunteerApplication.exists({
-    _id: id,
-    "internalNotes._id": new mongoose.Types.ObjectId(noteId),
-  });
-  if (!noteExists) throw new ClientError("Nota interna no encontrada", 404);
-
-  await VolunteerApplication.updateOne(
-    { _id: id },
-    { $pull: { internalNotes: { _id: new mongoose.Types.ObjectId(noteId) } } })
-
-  // ✅ devolver doc completo ya populado + state sincronizado
-  const fullDoc = await syncVolunteerState(id);
-
-  response(res, 200, fullDoc);
+  response(res, 200,updated);
 };
 
 
 
 
+// =====================================================
 module.exports = {
   createVolunteerApplication: catchAsync(createVolunteerApplication),
   getVolunteerApplicationById: catchAsync(getVolunteerApplicationById),
   listVolunteerApplications: catchAsync(listVolunteerApplications),
   updateVolunteerApplication: catchAsync(updateVolunteerApplication),
   deleteVolunteerApplication: catchAsync(deleteVolunteerApplication),
+
   disableVolunteerApplication: catchAsync(disableVolunteerApplication),
+  enableVolunteerApplication: catchAsync(enableVolunteerApplication),
+
   addInternalNote: catchAsync(addInternalNote),
   deleteInternalNote: catchAsync(deleteInternalNote),
-  volunteerAddChronology:catchAsync(volunteerAddChronology),  
-  volunteerChronologyUpdate:catchAsync(volunteerChronologyUpdate), 
-  volunteerChronologyDelete:catchAsync(volunteerChronologyDelete),
+
+  volunteerAddChronology: catchAsync(volunteerAddChronology),
+  volunteerChronologyUpdate: catchAsync(volunteerChronologyUpdate),
+  volunteerChronologyDelete: catchAsync(volunteerChronologyDelete),
+
   setVolunteerInterview: catchAsync(setVolunteerInterview),
+
 };
