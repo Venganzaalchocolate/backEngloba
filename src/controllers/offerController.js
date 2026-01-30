@@ -172,9 +172,10 @@ async function offerCreate(req, res) {
     datecreate: b.datecreate ? new Date(b.datecreate) : new Date(),
     studiesId: Array.isArray(b.studiesId) ? b.studiesId.map((s)=>toId(s)) : undefined,
     jobId: toId(b.jobId),
+    disability:b.disability===true?true:false
   };
 
-  const created = await Offer.create(payload).catch((x)=>console.log(x));
+  const created = await Offer.create(payload)
   const doc = await Offer.findById(created._id);
   response(res, 201, doc);
 }
@@ -220,7 +221,8 @@ async function offerUpdate(req, res) {
   // ------- IDs directos (opcionales en UPDATE)
   if (b.jobId !== undefined)      patch.jobId      = b.jobId ? toId(b.jobId) : undefined;
   if (b.provinceId !== undefined) patch.provinceId = b.provinceId ? toId(b.provinceId) : undefined;
-
+  if (b.disability!==undefined) patch.disability= b.disability===true?true:false
+ 
   // ------- dispositive (acepta varias formas de enviar)
   const hasDispositiveObj = b.newDispositiveId !== undefined;
   const hasDispositiveLoose = b.programId !== undefined || b.newDispositiveId !== undefined;

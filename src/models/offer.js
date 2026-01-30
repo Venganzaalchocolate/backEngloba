@@ -122,6 +122,10 @@ const offer= mongoose.Schema({
         type: [Schema.Types.ObjectId],
         ref: 'UserCv',
         default: []
+    },
+    disability:{
+        type:Boolean,
+        default:false
     }
 }, { timestamps: true })
 
