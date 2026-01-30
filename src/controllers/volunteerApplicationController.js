@@ -843,6 +843,132 @@ const setVolunteerInterview = async (req, res) => {
 };
 
 
+// controllers/volunteerApplicationController.js
+
+const volunteerGetNotLimit = async (req, res) => {
+  const { province, programId, area, q, active } = req.body || {};
+
+  const baseMatch = {};
+
+  if (province !== undefined) {
+    if (province && !isValidId(province)) throw new ClientError("province inválido", 400);
+    if (province) baseMatch.province = new mongoose.Types.ObjectId(province);
+  }
+
+  if (programId !== undefined) {
+    if (programId && !isValidId(programId)) throw new ClientError("programId inválido", 400);
+    if (programId) baseMatch.programInterest = new mongoose.Types.ObjectId(programId);
+  }
+
+  if (area !== undefined) {
+    if (area && !PROGRAM_AREA_ENUM.includes(area)) throw new ClientError("area inválida", 400);
+    if (area) baseMatch.areaInterest = area;
+  }
+
+  if (q) {
+    const rx = new RegExp(String(q).trim(), "i");
+    baseMatch.$or = [
+      { firstName: rx },
+      { lastName: rx },
+      { email: rx },
+      { documentId: rx },
+      { localidad: rx },
+      { phone: rx },
+    ];
+  }
+
+  const pipeline = [
+    { $match: baseMatch },
+    { $addFields: { _lastStatusEvent: { $arrayElemAt: ["$statusEvents", -1] } } },
+    {
+      $addFields: {
+        active: { $cond: [{ $eq: ["$_lastStatusEvent.type", "disable"] }, false, true] },
+        lastStatus: {
+          $cond: [
+            { $gt: [{ $size: { $ifNull: ["$statusEvents", []] } }, 0] },
+            {
+              type: "$_lastStatusEvent.type",
+              at: "$_lastStatusEvent.at",
+              reason: "$_lastStatusEvent.reason",
+              userId: "$_lastStatusEvent.userId",
+            },
+            null,
+          ],
+        },
+      },
+    },
+    ...(active === undefined
+      ? []
+      : [{ $match: { active: !!active } }]),
+    {
+      // ✅ proyecta TODO lo que necesita el XLS (y algo más por si acaso)
+      $project: {
+        firstName: 1,
+        lastName: 1,
+        birthDate: 1,
+        documentId: 1,
+        phone: 1,
+        email: 1,
+        gender: 1,
+
+        province: 1,
+        localidad: 1,
+
+        occupation: 1,
+        occupationOtherText: 1,
+
+        studies: 1,
+        studiesOtherText: 1,
+
+        availability: 1,
+
+        programInterest: 1,
+        areaInterest: 1,
+
+        referralSource: 1,
+        userNote: 1,
+
+        chronology: 1,
+
+        state: 1,
+        statusEvents: 1,
+
+        createdAt: 1,
+        updatedAt: 1,
+
+        // computed
+        active: 1,
+        lastStatus: 1,
+      },
+    },
+    { $sort: { createdAt: -1 } },
+  ];
+
+  const rows = await VolunteerApplication.aggregate(pipeline);
+
+  // ✅ populate opcional (si quieres nombres en frontend sin usar enumsIndex)
+  // - Si ya resuelves nombres con enumsData en el front, puedes eliminar este bloque.
+  const ids = rows.map((x) => x._id);
+  const populated = await VolunteerApplication.find({ _id: { $in: ids } })
+    .select("_id province programInterest") // solo lo necesario
+    .populate([{ path: "province", select: "name" }, { path: "programInterest", select: "name acronym area active" }])
+    .lean();
+
+  const byId = new Map(populated.map((x) => [String(x._id), x]));
+  const out = rows.map((r) => {
+    const p = byId.get(String(r._id));
+    return {
+      ...r,
+      province: p?.province || r.province,
+      programInterest: p?.programInterest || r.programInterest,
+    };
+  });
+
+  return response(res, 200, { items: out, total: out.length });
+};
+
+
+
 
 
 // =====================================================
@@ -864,5 +990,7 @@ module.exports = {
   volunteerChronologyDelete: catchAsync(volunteerChronologyDelete),
 
   setVolunteerInterview: catchAsync(setVolunteerInterview),
+  volunteerGetNotLimit:catchAsync(volunteerGetNotLimit)
+
 
 };

@@ -15,7 +15,8 @@ const {
    volunteerChronologyDelete,
    setVolunteerInterview,
    deleteInternalNote,
-   enableVolunteerApplication
+   enableVolunteerApplication,
+   volunteerGetNotLimit
 } = require("../controllers/indexController");
 
 /**
@@ -44,6 +45,8 @@ router.post("/volunteerchronologyupdate", tokenValid, volunteerChronologyUpdate)
 router.post("/volunteerchronologydelete", tokenValid, volunteerChronologyDelete);
 
 router.post('/volunteerinterview', tokenValid, setVolunteerInterview);
+
+router.post('/volunteergetnotlimit', tokenValid, volunteerGetNotLimit)
 
 
 module.exports = router;
