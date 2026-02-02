@@ -1613,17 +1613,21 @@ const getUserListDays = async (req, res) => {
   });
 };
 
-// Rehacer correo corporativo por DNI, eliminando primero el usuario WS existente
-async function recreateCorporateEmailByDni(dniRaw = '', {
+// Rehacer correo corporativo por ID de usuario, eliminando primero el usuario WS existente
+async function recreateCorporateEmailByUserId(userIdRaw, {
   deleteFirst = true,
   delayAfterDeleteMs = 0,
-  sendWelcome = false,          // normalmente false
+  sendWelcome = false,   // normalmente false
   logger = console,
 } = {}) {
-  const dni = String(dniRaw).replace(/\s+/g, '').trim().toUpperCase();
+  const userId = String(userIdRaw || '').trim();
 
-  const user = await User.findOne({ dni: { $regex: `^${dni}$`, $options: 'i' } });
-  if (!user) return { ok: false, reason: 'USER_NOT_FOUND', dni };
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return { ok: false, reason: 'INVALID_USER_ID', userId };
+  }
+
+  const user = await User.findById(userId);
+  if (!user) return { ok: false, reason: 'USER_NOT_FOUND', userId };
 
   const oldEmail = (user.email || '').trim().toLowerCase();
 
@@ -1631,10 +1635,10 @@ async function recreateCorporateEmailByDni(dniRaw = '', {
     // 1) eliminar el usuario WS del correo corporativo actual (si existe)
     if (deleteFirst && oldEmail) {
       const del = await deleteUserByEmailWS(oldEmail);
-      logger.log(`[recreateCorporateEmailByDni] deleteUserByEmailWS:`, del);
+      logger.log(`[recreateCorporateEmailByUserId] deleteUserByEmailWS:`, del);
     }
 
-    // 2) limpiar email en Mongo
+    // 2) limpiar email en Mongo para evitar inconsistencias
     user.email = '';
     await user.save();
 
@@ -1642,29 +1646,65 @@ async function recreateCorporateEmailByDni(dniRaw = '', {
       await new Promise(r => setTimeout(r, delayAfterDeleteMs));
     }
 
-    // 3) crear de nuevo en WS (con fallback contador si hay duplicados)
+    // 3) crear de nuevo en WS (createUserWS debe encargarse del fallback por duplicados)
     const ws = await createUserWS(user._id);
 
-    if (!ws?.email) return { ok: false, reason: 'NO_EMAIL_RETURNED', dni, userId: String(user._id) };
+    if (!ws?.email) {
+      return { ok: false, reason: 'NO_EMAIL_RETURNED', userId: String(user._id) };
+    }
 
     // 4) guardar y (opcional) welcome
     const email_cor = String(ws.email).toLowerCase().trim();
     user.email = email_cor;
+
+    // opcional: si estabas marcando estados al crear correo
+    if (user.employmentStatus === 'ya no trabaja con nosotros') {
+      user.employmentStatus = 'en proceso de contratación';
+    }
+
     await user.save();
 
-    if (sendWelcome) await sendWelcomeEmail(user, email_cor);
+    if (sendWelcome) {
+      await sendWelcomeEmail(user, email_cor);
+    }
 
-    return { ok: true, dni, userId: String(user._id), oldEmail: oldEmail || null, email: email_cor };
+    return {
+      ok: true,
+      userId: String(user._id),
+      oldEmail: oldEmail || null,
+      email: email_cor,
+    };
   } catch (e) {
-    const { code, reason, message } = parseGoogleError(e);
-    logger.error(`[recreateCorporateEmailByDni] ERROR ${dni}:`, { code, reason, message });
-    return { ok: false, dni, userId: String(user._id), error: message, code, reason };
+    logger.error(`[recreateCorporateEmailByUserId] ERROR ${userId}:`, e?.message || e);
+    return { ok: false, reason: 'ERROR', userId, error: e?.message || String(e) };
   }
 }
 
 
+const recreateCorporateEmail = async (req, res) => {
+  const { userId} = req.body || {};
 
-// recreateCorporateEmailByDni('4890989802G');
+  if (!userId) throw new ClientError('El campo userId es requerido', 400);
+
+  const result = await recreateCorporateEmailByUserId(userId, {
+    deleteFirst: true,
+    delayAfterDeleteMs: 0,
+    sendWelcome: true,
+  });
+
+  if (!result.ok) {
+    // mapeo de errores a HTTP
+    if (result.reason === 'INVALID_USER_ID') throw new ClientError('userId no válido', 400);
+    if (result.reason === 'USER_NOT_FOUND') throw new ClientError('Usuario no encontrado', 404);
+    if (result.reason === 'NO_EMAIL_RETURNED') throw new ClientError('No se pudo generar un email corporativo', 400);
+    throw new ClientError('No se pudo recrear el email corporativo', 400);
+  }
+
+  // devolvemos usuario actualizado (o sólo el email si prefieres)
+  const updatedUser = await User.findById(result.userId).lean();
+  response(res, 200, updatedUser);
+};
+
 
 module.exports = {
   postCreateUser: catchAsync(postCreateUser),
@@ -1680,5 +1720,6 @@ module.exports = {
   getAllUsersWithOpenPeriods: catchAsync(getAllUsersWithOpenPeriods),
   getUsersCurrentStatus: catchAsync(getUsersCurrentStatus),
   getBasicUserSearch:catchAsync(getBasicUserSearch),
-  getUserListDays:catchAsync(getUserListDays)
+  getUserListDays:catchAsync(getUserListDays),
+  recreateCorporateEmail:catchAsync(recreateCorporateEmail)
 };

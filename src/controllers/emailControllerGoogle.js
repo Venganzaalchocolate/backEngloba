@@ -846,12 +846,6 @@ async function sendEqualityLgtbiqSurveyEmail({
   return results;
 }
 
-// // PRUEBA (solo comunicacion)
-// sendEqualityLgtbiqSurveyEmail({
-//   previewOnly: false,
-//   query: { employmentStatus: 'activo' },
-//   delayMs: 250,
-// });
 
 module.exports = {
   sendEmail,          // firma idéntica a tu antiguo SMTP

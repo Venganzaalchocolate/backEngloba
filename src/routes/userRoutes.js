@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router()
-const { rehireUser, postCreateUser,getUsersCvsIDs, getUserID, getUsers, UserDeleteId, userPut, tokenValid, getUsersFilter, payroll, getFileUser, getUserName, getAllUsersWithOpenPeriods, getUsersCurrentStatus, getBasicUserSearch, getUserListDays} = require('../controllers/indexController')
+const { rehireUser, postCreateUser,getUsersCvsIDs, getUserID, getUsers, UserDeleteId, userPut, tokenValid, getUsersFilter, payroll, getFileUser, getUserName, getAllUsersWithOpenPeriods, getUsersCurrentStatus, getBasicUserSearch, getUserListDays, recreateCorporateEmail} = require('../controllers/indexController')
 // Configura `multer` para almacenamiento en memoria
 const multer = require('multer');
 
@@ -34,5 +34,7 @@ router.post('/fileuser', tokenValid, getFileUser)
 router.post('/usersfilternotlimit', tokenValid, getAllUsersWithOpenPeriods)
 
 router.post('/userscurrentstatus', tokenValid, getUsersCurrentStatus)
+
+router.post('/recreatecorporateemail', tokenValid, recreateCorporateEmail)
 
 module.exports = router;
