@@ -198,6 +198,7 @@ const createFileDrive = async (req, res, next) => {
   } = req.body;
   const file = req.file;
 
+
   if (!file) throw new ClientError('No se recibió ningún archivo a subir', 400);
   if (!originModel) throw new ClientError('Falta originModel', 400);
   if (!idModel) throw new ClientError('Falta idModel', 400);
@@ -268,6 +269,7 @@ const createFileDrive = async (req, res, next) => {
       }
     });
   } catch (err) {
+    console.log(err)
     if (uploadResult?.id) await deleteFileById(uploadResult.id);
     throw err;
   } finally {

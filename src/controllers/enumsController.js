@@ -186,7 +186,7 @@ const getEnumEmployers = async (req, res) => {
     Documentation.find({}).lean(),
     Dispositive.find({},{ name: 1, program: 1, province: 1, active:1 }).lean(),
     // categorías posibles para categoryFiles (desde Documentation)
-    Documentation.distinct('category').catch(() => []),
+    Documentation.distinct('categoryFiles').catch(() => []),
     // ...y también desde FileDrive si existe ese campo
     Filedrive.distinct('category').catch(() => []),
   ]);
@@ -458,7 +458,6 @@ const deleteEnums = async (req, res) => {
 };
 
 const deleteFileEnums=async (req, res) =>{
-  console.log(req.body)
   if (!req.body.modeloPDF || !req.body.id) {
     throw new ClientError("Faltan datos", 400);
   }

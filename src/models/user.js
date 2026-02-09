@@ -181,7 +181,11 @@ const UserSchema = new Schema({
     tracking:{
         type:Boolean,
         default:false
+    },
+    photoProfile:{
+        type: String
     }
+
 }, { timestamps: true });
 
 

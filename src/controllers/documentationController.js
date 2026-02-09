@@ -260,35 +260,7 @@ const syncProgramDocsToDevices = async (req, res) => {
   });
 };
 
-// const fs = require("fs");
-// const path = require("path");
 
-
-// async function listarDocumentacionJSON() {
-//   try {
-//     const docs = await Documentation.find().lean();
-
-//     const rows = docs.map(d => ({
-//       _id: d._id.toString(),
-//       name: d.name,
-//       model: d.model,
-//       date: d.date,
-//       visible: d.visible,
-//       duration: d.duration ?? '',
-//       categoryFiles: d.categoryFiles || '',
-//       requiresSignature: d.requiresSignature,
-//       createdAt: d.createdAt?.toISOString().slice(0, 10),
-//       updatedAt: d.updatedAt?.toISOString().slice(0, 10),
-//     }));
-
-//     
-
-//   } catch (error) {
-//     console.error("❌ Error exportando documentación:", error);
-//   }
-// }
-
-// listarDocumentacionJSON();
 
 module.exports = {
     getDocumentation: catchAsync(getDocumentation),

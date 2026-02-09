@@ -23,6 +23,7 @@ const { moveDriveFile, adoptDriveFileIntoFiledrive } = require("./googleControll
 const { getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, getProgramId} = require("./programController");
 const { getDispositiveId, createDispositive, updateDispositive, deleteDispositive, handleCoordinators, handleResponsibles, listsResponsiblesAndCoordinators, getDispositiveResponsable } = require("./dispositiveController");
 const { volunteerGetNotLimit,enableVolunteerApplication,disableVolunteerApplication, deleteVolunteerApplication, updateVolunteerApplication, listVolunteerApplications, getVolunteerApplicationById, createVolunteerApplication, addInternalNote, volunteerAddChronology,  volunteerChronologyUpdate, volunteerChronologyDelete, setVolunteerInterview, deleteInternalNote  } = require("./volunteerApplicationController");
+const { removeBgProfile512FromBuffer } = require("./toolsServiceController");
 
 
 
@@ -54,6 +55,6 @@ module.exports = {
 
     volunteerGetNotLimit,enableVolunteerApplication,deleteInternalNote,setVolunteerInterview,createVolunteerApplication,getVolunteerApplicationById,listVolunteerApplications, updateVolunteerApplication, deleteVolunteerApplication, disableVolunteerApplication, addInternalNote,volunteerAddChronology,  volunteerChronologyUpdate, volunteerChronologyDelete 
 
-
+    ,removeBgProfile512FromBuffer
     
 }

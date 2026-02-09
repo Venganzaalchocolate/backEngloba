@@ -1,4 +1,17 @@
 {
+  "name": "backengloba",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon --trace-warnings src/index.js --env-file=.env",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "overrides": {
+    "minio": {
+      "fast-xml-parser": "^5.3.4"
+    }
+  },
   "dependencies": {
     "@aws-sdk/s3-request-presigner": "^3.812.0",
     "archiver": "^7.0.1",
@@ -9,6 +22,7 @@
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "express-rate-limit": "^8.0.1",
+    "form-data": "^4.0.5",
     "fs": "^0.0.1-security",
     "gauge": "^5.0.2",
     "googleapis": "^154.0.0",
@@ -30,14 +44,6 @@
     "rimraf": "^6.0.1",
     "tr46": "^5.1.1",
     "whatwg-url": "^14.2.0"
-  },
-  "name": "backengloba",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "start": "node src/index.js",
-    "dev": "nodemon --trace-warnings src/index.js --env-file=.env",
-    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",

@@ -50,7 +50,7 @@ const fileSchema = new Schema({
     },
     category:{
         type:String,
-        enum:['Varios', 'Seguros', 'PRL', 'Funcionamiento', 'Registros', 'Sanidad'],
+        enum:['Varios', 'Seguros', 'PRL', 'Funcionamiento', 'Registros', 'Sanidad', 'Laboral', 'Personal', 'Mantenimiento'],
         default:'Varios'
     },
     
