@@ -223,7 +223,7 @@ const getVolunteerApplicationById = async (req, res) => {
 // - no populate aquí (tu tabla no lo necesita)
 // =====================================================
 const listVolunteerApplications = async (req, res) => {
-  const { active, province, programId, area, q, page = 1, limit = 25 } = req.body || {};
+  const { active, province, programId, area, q, page = 1, limit = 25, state } = req.body || {};
 
   const baseMatch = {};
 
@@ -234,24 +234,96 @@ const listVolunteerApplications = async (req, res) => {
 
   if (programId !== undefined) {
     if (programId && !isValidId(programId)) throw new ClientError("programId inválido", 400);
-    if (programId) baseMatch.programInterest = new mongoose.Types.ObjectId(programId);
+    if (programId) {
+      const pid = new mongoose.Types.ObjectId(programId);
+      // programInterest es array -> buscamos que contenga ese id
+      baseMatch.programInterest = { $in: [pid] };
+    }
   }
+
   if (area !== undefined) {
     if (area && !PROGRAM_AREA_ENUM.includes(area)) throw new ClientError("area inválida", 400);
-    if (area) baseMatch.areaInterest = area;
+    if (area) {
+      // areaInterest es array -> buscamos que contenga ese string
+      baseMatch.areaInterest = { $in: [area] };
+    }
+  }
+
+  // ✅ state filter (con "todos" = sin filtro)
+  if (state !== undefined) {
+    const s = String(state || "").trim().toLowerCase();
+
+    if (s && s !== "todos") {
+      // OJO: tus estados tienen espacios y minúsculas, así que comparamos con el original
+      // Para no liarla, validamos contra STATE_ENUM tal cual.
+      const isValidState = STATE_ENUM.includes(String(state).trim());
+      if (!isValidState) throw new ClientError("state inválido", 400);
+
+      baseMatch.state = String(state).trim();
+    }
+    // si es "" / null / "todos" -> no añadimos filtro
   }
 
   if (q) {
-    const rx = new RegExp(String(q).trim(), "i");
+  const raw = String(q).trim();
+  const tokens = raw.split(/\s+/).filter(Boolean);
+
+  const rxFull = new RegExp(raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+
+  // Helper: regex por token escapado
+  const tokenRx = (t) => new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+
+  // Caso: parece email
+  const looksLikeEmail = raw.includes("@");
+
+  if (looksLikeEmail) {
     baseMatch.$or = [
-      { firstName: rx },
-      { lastName: rx },
-      { email: rx },
-      { documentId: rx },
-      { localidad: rx },
-      { phone: rx },
+      { email: rxFull },
+      { firstName: rxFull },
+      { lastName: rxFull },
+      { documentId: rxFull },
+      { phone: rxFull },
+    ];
+  } else if (tokens.length >= 2) {
+    const rxs = tokens.map(tokenRx);
+
+    // AND de todos los tokens en un mismo campo
+    const andFirst = { $and: rxs.map((rx) => ({ firstName: rx })) };
+    const andLast = { $and: rxs.map((rx) => ({ lastName: rx })) };
+
+    // Nombre/Apellido en cualquier orden usando dos primeros tokens
+    const a = rxs[0];
+    const b = rxs[1];
+    const nameSurnameAnyOrder = {
+      $or: [
+        { $and: [{ firstName: a }, { lastName: b }] },
+        { $and: [{ firstName: b }, { lastName: a }] },
+      ],
+    };
+
+    baseMatch.$or = [
+      nameSurnameAnyOrder,
+      andFirst,
+      andLast,
+
+      // fallback: campos “mono”
+      { email: rxFull },
+      { documentId: rxFull },
+      { localidad: rxFull },
+      { phone: rxFull },
+    ];
+  } else {
+    // 1 token
+    baseMatch.$or = [
+      { firstName: rxFull },
+      { lastName: rxFull },
+      { email: rxFull },
+      { documentId: rxFull },
+      { localidad: rxFull },
+      { phone: rxFull },
     ];
   }
+}
 
   const p = Math.max(1, Number(page) || 1);
   const l = Math.min(100, Math.max(1, Number(limit) || 25));
@@ -277,8 +349,7 @@ const listVolunteerApplications = async (req, res) => {
         },
       },
     },
-    ...(active === undefined ? [] : [{ $match: { active: !!active } },
-    ]),
+    ...(active === undefined ? [] : [{ $match: { active: !!active } }]),
     {
       $facet: {
         items: [
@@ -317,6 +388,7 @@ const listVolunteerApplications = async (req, res) => {
     pages: Math.ceil(total / l),
   });
 };
+
 
 // =====================================================
 // UPDATE (NO enable/disable aquí)
@@ -844,128 +916,195 @@ const setVolunteerInterview = async (req, res) => {
 
 
 // controllers/volunteerApplicationController.js
-
 const volunteerGetNotLimit = async (req, res) => {
-  const { province, programId, area, q, active } = req.body || {};
+  const { programId, active, year } = req.body || {};
 
   const baseMatch = {};
 
-  if (province !== undefined) {
-    if (province && !isValidId(province)) throw new ClientError("province inválido", 400);
-    if (province) baseMatch.province = new mongoose.Types.ObjectId(province);
+  const isAll = (v) => {
+    if (v === undefined) return false;
+    if (v === null) return true;
+    const s = String(v).trim().toLowerCase();
+    return s === "" || s === "todos" || s === "__all__" || s === "all";
+  };
+
+  // ✅ year: si no viene o viene "todos"/"" => sin filtro
+  if (year !== undefined && !isAll(year)) {
+    const y = Number(year);
+    const currentYear = new Date().getFullYear();
+
+    if (!Number.isInteger(y) || y < 2024 || y > currentYear) {
+      throw new ClientError("year inválido", 400);
+    }
+
+    const start = new Date(Date.UTC(y, 0, 1, 0, 0, 0, 0));
+    const end = new Date(Date.UTC(y + 1, 0, 1, 0, 0, 0, 0));
+
+    baseMatch.createdAt = { $gte: start, $lt: end };
   }
 
-  if (programId !== undefined) {
+  // ✅ programId: si no viene o viene "todos"/"" => sin filtro
+  if (programId !== undefined && !isAll(programId)) {
     if (programId && !isValidId(programId)) throw new ClientError("programId inválido", 400);
-    if (programId) baseMatch.programInterest = new mongoose.Types.ObjectId(programId);
+    if (programId) {
+      const pid = new mongoose.Types.ObjectId(programId);
+      baseMatch.programInterest = { $in: [pid] };
+    }
   }
 
-  if (area !== undefined) {
-    if (area && !PROGRAM_AREA_ENUM.includes(area)) throw new ClientError("area inválida", 400);
-    if (area) baseMatch.areaInterest = area;
-  }
-
-  if (q) {
-    const rx = new RegExp(String(q).trim(), "i");
-    baseMatch.$or = [
-      { firstName: rx },
-      { lastName: rx },
-      { email: rx },
-      { documentId: rx },
-      { localidad: rx },
-      { phone: rx },
-    ];
-  }
+  const docDelitosId = new mongoose.Types.ObjectId("69674ce0ff183fd90b1f1874");
 
   const pipeline = [
     { $match: baseMatch },
-    { $addFields: { _lastStatusEvent: { $arrayElemAt: ["$statusEvents", -1] } } },
+
+    // 1) stateEnable/stateDisable desde statusEvents
     {
       $addFields: {
-        active: { $cond: [{ $eq: ["$_lastStatusEvent.type", "disable"] }, false, true] },
-        lastStatus: {
-          $cond: [
-            { $gt: [{ $size: { $ifNull: ["$statusEvents", []] } }, 0] },
-            {
-              type: "$_lastStatusEvent.type",
-              at: "$_lastStatusEvent.at",
-              reason: "$_lastStatusEvent.reason",
-              userId: "$_lastStatusEvent.userId",
+        _enableDates: {
+          $map: {
+            input: {
+              $filter: {
+                input: { $ifNull: ["$statusEvents", []] },
+                as: "e",
+                cond: { $eq: ["$$e.type", "enable"] },
+              },
             },
-            null,
+            as: "e",
+            in: "$$e.at",
+          },
+        },
+        _disableDates: {
+          $map: {
+            input: {
+              $filter: {
+                input: { $ifNull: ["$statusEvents", []] },
+                as: "e",
+                cond: { $eq: ["$$e.type", "disable"] },
+              },
+            },
+            as: "e",
+            in: "$$e.at",
+          },
+        },
+      },
+    },
+    {
+      $addFields: {
+        stateEnable: { $max: { $ifNull: ["$_enableDates", []] } },
+        _lastDisable: { $max: { $ifNull: ["$_disableDates", []] } },
+      },
+    },
+    {
+      $addFields: {
+        // si baja <= alta => null (está activo en un nuevo periodo)
+        // si no hay alta => devolvemos baja si existe
+        stateDisable: {
+          $cond: [
+            { $and: [{ $ne: ["$stateEnable", null] }, { $ne: ["$_lastDisable", null] }] },
+            { $cond: [{ $gt: ["$_lastDisable", "$stateEnable"] }, "$_lastDisable", null] },
+            "$_lastDisable",
           ],
         },
       },
     },
-    ...(active === undefined
-      ? []
-      : [{ $match: { active: !!active } }]),
+
+    // 2) active computado desde último statusEvent
+    { $addFields: { _lastStatusEvent: { $arrayElemAt: ["$statusEvents", -1] } } },
     {
-      // ✅ proyecta TODO lo que necesita el XLS (y algo más por si acaso)
-      $project: {
-        firstName: 1,
-        lastName: 1,
-        birthDate: 1,
-        documentId: 1,
-        phone: 1,
-        email: 1,
-        gender: 1,
-
-        province: 1,
-        localidad: 1,
-
-        occupation: 1,
-        occupationOtherText: 1,
-
-        studies: 1,
-        studiesOtherText: 1,
-
-        availability: 1,
-
-        programInterest: 1,
-        areaInterest: 1,
-
-        referralSource: 1,
-        userNote: 1,
-
-        chronology: 1,
-
-        state: 1,
-        statusEvents: 1,
-
-        createdAt: 1,
-        updatedAt: 1,
-
-        // computed
-        active: 1,
-        lastStatus: 1,
+      $addFields: {
+        active: { $cond: [{ $eq: ["$_lastStatusEvent.type", "disable"] }, false, true] },
       },
     },
+
+    ...(active === undefined ? [] : [{ $match: { active: !!active } }]),
+
+    // 3) fecha última de Delitos sexuales desde Filedrive.originDocumentation
+    {
+      $lookup: {
+        from: "filedrives",
+        let: { fileIds: { $ifNull: ["$files", []] } },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $in: ["$_id", "$$fileIds"] },
+                  { $eq: ["$originDocumentation", docDelitosId] },
+                ],
+              },
+            },
+          },
+          { $project: { date: 1, createdAt: 1 } },
+        ],
+        as: "_delitosFiles",
+      },
+    },
+    {
+      $addFields: {
+        delitosSexualesDate: {
+          $max: {
+            $map: {
+              input: { $ifNull: ["$_delitosFiles", []] },
+              as: "f",
+              in: { $ifNull: ["$$f.date", "$$f.createdAt"] },
+            },
+          },
+        },
+      },
+    },
+
+    // 4) project final
+    {
+  $project: {
+    // (opcional) _id: 1,
+
+    firstName: 1,
+    lastName: 1,
+    birthDate: 1,
+    documentId: 1,
+    phone: 1,
+    email: 1,
+    gender: 1,
+
+    province: 1,
+    localidad: 1,
+
+    occupation: 1,
+    occupationOtherText: 1,
+
+    studies: 1,
+    studiesOtherText: 1,
+
+    availability: 1,
+
+    programInterest: 1,
+    areaInterest: 1,
+
+    referralSource: 1,
+    userNote: 1,
+
+    chronology: 1,
+
+    state: 1,
+
+    createdAt: 1,
+    updatedAt: 1,
+
+    active: 1,
+    stateEnable: 1,
+    stateDisable: 1,
+    delitosSexualesDate: 1,
+  },
+},
+
+
     { $sort: { createdAt: -1 } },
   ];
 
-  const rows = await VolunteerApplication.aggregate(pipeline);
-
-  // ✅ populate opcional (si quieres nombres en frontend sin usar enumsIndex)
-  // - Si ya resuelves nombres con enumsData en el front, puedes eliminar este bloque.
-  const ids = rows.map((x) => x._id);
-  const populated = await VolunteerApplication.find({ _id: { $in: ids } })
-    .select("_id province programInterest") // solo lo necesario
-    .populate([{ path: "province", select: "name" }, { path: "programInterest", select: "name acronym area active" }])
-    .lean();
-
-  const byId = new Map(populated.map((x) => [String(x._id), x]));
-  const out = rows.map((r) => {
-    const p = byId.get(String(r._id));
-    return {
-      ...r,
-      province: p?.province || r.province,
-      programInterest: p?.programInterest || r.programInterest,
-    };
-  });
-
-  return response(res, 200, { items: out, total: out.length });
+  const items = await VolunteerApplication.aggregate(pipeline);
+  return response(res, 200, { items, total: items.length });
 };
+
 
 
 

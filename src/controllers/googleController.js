@@ -319,6 +319,7 @@ const uploadFileToDrive = async (file, folderId, driveName, resumable = false) =
   } else {
     throw new Error("No se encontró buffer ni path en el archivo.");
   }
+  
   // Llama a la API de Google Drive para subir el archivo
   const response = await drive.files.create({
     requestBody: {

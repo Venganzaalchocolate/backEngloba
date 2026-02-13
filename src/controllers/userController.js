@@ -7,6 +7,8 @@ const { uploadFileToDrive, getFileById, deleteFileById, gestionAutomaticaNominas
 const { createUserWS, deleteUserByEmailWS, addUserToGroup, deleteMemeberAllGroups } = require('./workspaceController');
 const { actualizacionHiringyLeave } = require('./periodoTransicionController');
 const { sendWelcomeEmail } = require('./emailControllerGoogle');
+const { removeBgProfile512FromBuffer } = require('./toolsServiceController');
+const { default: pLimit } = require('p-limit');
 
 const WEEKLY_HOURS = 38.5;
 // Día equivalente “redondeado”
@@ -17,6 +19,7 @@ const ANNUAL_PERSONAL_DAYS = 2;
 
 const ANNUAL_VACATION_HOURS = ANNUAL_VACATION_DAYS * DAILY_EQUIV_HOURS; // 172.5
 const ANNUAL_PERSONAL_HOURS = ANNUAL_PERSONAL_DAYS * DAILY_EQUIV_HOURS; // 22.5
+const PHOTOUSER_FOLDER = process.env.GOOGLE_DRIVE_PHOTOUSER;
 
 
 
@@ -1532,7 +1535,8 @@ const getUsers = async (req, res) => {
     studies:1,
     _id: 1,
     socialSecurityNumber:1,
-    phoneJob:1
+    phoneJob:1,
+    photoProfile:1
   };
 
   // ---------------- Paginación sobre Users ya filtrados ----------------
@@ -1705,6 +1709,143 @@ const recreateCorporateEmail = async (req, res) => {
   response(res, 200, updatedUser);
 };
 
+const getPhotoProfile = async (req, res) => {
+  const idUser = req.body?.idUser;
+  const size = req.body?.size || "thumb"; // "thumb" | "normal"
+  if (!idUser) throw new ClientError("Falta idUser", 400);
+
+  const user = await User.findById(toId(idUser)).select("photoProfile");
+  if (!user) throw new ClientError("Usuario no encontrado", 404);
+
+  const fileId =
+    size === "normal" ? user.photoProfile?.normal : user.photoProfile?.thumb;
+
+  if (!fileId) throw new ClientError("Usuario sin foto de perfil", 404);
+
+  const result = await getFileById(fileId);
+  if (!result?.stream || !result?.file) throw new ClientError("No se pudo obtener la foto", 502);
+
+  res.setHeader("Content-Type", result.file.mimeType || "image/png");
+  res.setHeader("Cache-Control", "no-store");
+  return result.stream.pipe(res);
+};
+
+
+
+
+// controllers/users.js (o donde tengas profilePhotoSet)
+const profilePhotoSet = async (req, res) => {
+  if (!PHOTOUSER_FOLDER) throw new Error("Falta PHOTOUSER_FOLDER en .env");
+
+  const idUser = req.body?.idUser;
+  if (!idUser) throw new ClientError("Falta idUser", 400);
+
+  const file = req.file;
+  if (!file) throw new ClientError('Falta archivo (field "file")', 400);
+
+  // 1) usuario existe + obtenemos photoProfile previo (para borrar después)
+  const current = await User.findById(toId(idUser)).select("photoProfile");
+  if (!current) throw new ClientError("Usuario no encontrado", 404);
+
+  const prev512 = current.photoProfile?.normal || "";
+  const prevThumb = current.photoProfile?.thumb || "";
+
+  // 2) procesar con tools-service => devuelve { normal, thumb }
+
+  const out = await removeBgProfile512FromBuffer({
+    buffer: file.buffer,
+    mimetype: file.mimetype,
+    filename: file.originalname || "profile",
+  });
+
+  // 3) subir a Drive (2 archivos: 512 y 96)
+  const driveName512 = `${idUser}_photoProfile_512.png`;
+  const driveName96 = `${idUser}_photoProfile_96.png`;
+
+  const drive512 = await uploadFileToDrive(
+    { buffer: out.normal.buffer, mimetype: out.normal.mimetype },
+    PHOTOUSER_FOLDER,
+    driveName512
+  );
+
+
+
+  const driveThumb = await uploadFileToDrive(
+    { buffer: out.thumb.buffer, mimetype: out.thumb.mimetype },
+    PHOTOUSER_FOLDER,
+    driveName96
+  );
+
+  if (!drive512?.id || !driveThumb?.id) {
+    throw new ClientError("No se pudo subir la foto a Drive", 502);
+  }
+
+  // 4) borrar anteriores (best-effort)
+  if (prev512 && prev512 !== drive512.id) await deleteFileById(prev512).catch(() => {});
+  if (prevThumb && prevThumb !== driveThumb.id) await deleteFileById(prevThumb).catch(() => {});
+
+  // 5) guardar en user + devolver user actualizado
+  const updated = await User.findByIdAndUpdate(
+    toId(idUser),
+    {
+      $set: {
+        "photoProfile.normal": drive512.id,
+        "photoProfile.thumb": driveThumb.id,
+      },
+    },
+    { new: true, runValidators: true }
+  );
+
+  response(res, 200, updated);
+};
+
+
+
+function streamToBuffer(stream) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on("data", (c) => chunks.push(c));
+    stream.on("end", () => resolve(Buffer.concat(chunks)));
+    stream.on("error", reject);
+  });
+}
+
+const profilePhotoGetBatch = async (req, res) => {
+  const ids = req.body?.userIds;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw new ClientError("Falta ids (array)", 400);
+  }
+
+  // limitamos tamaño por seguridad
+  const uniqueIds = [...new Set(ids.map(String))].slice(0, 80);
+
+  // trae solo lo necesario
+  const users = await User.find({ _id: { $in: uniqueIds.map(toId) } })
+  .select("_id photoProfile");
+
+  const byId = new Map(users.map(u => [String(u._id), u.photoProfile?.thumb || ""]));
+
+  const limit = pLimit(6); // para no saturar Drive
+  const photos = {};
+
+  await Promise.all(
+    uniqueIds.map((userId) =>
+      limit(async () => {
+        const fileId = byId.get(String(userId));
+        if (!fileId) return;
+
+        const result = await getFileById(fileId);
+        if (!result?.stream) return;
+
+        const buf = await streamToBuffer(result.stream);
+        const b64 = buf.toString("base64");
+        photos[String(userId)] = `data:image/png;base64,${b64}`;
+      })
+    )
+  );
+
+  response(res, 200, { photos });
+};
 
 module.exports = {
   postCreateUser: catchAsync(postCreateUser),
@@ -1721,5 +1862,8 @@ module.exports = {
   getUsersCurrentStatus: catchAsync(getUsersCurrentStatus),
   getBasicUserSearch:catchAsync(getBasicUserSearch),
   getUserListDays:catchAsync(getUserListDays),
-  recreateCorporateEmail:catchAsync(recreateCorporateEmail)
+  recreateCorporateEmail:catchAsync(recreateCorporateEmail),
+  getPhotoProfile: catchAsync(getPhotoProfile),
+  profilePhotoSet:catchAsync(profilePhotoSet),
+  profilePhotoGetBatch:catchAsync(profilePhotoGetBatch)
 };

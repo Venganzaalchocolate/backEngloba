@@ -1,79 +1,69 @@
 // controllers/toolsServiceController.js
-const { User } = require('../models/indexModels');
-const { response, ClientError, catchAsync } = require('../utils/indexUtils');
-const { uploadFileToDrive } = require('./googleController');
+const { ClientError } = require('../utils/indexUtils');
+const JSZip = require("jszip");
 
 const TOOLS_BASE_URL = process.env.TOOLS_BASE_URL;
 const API_KEY_BACK = process.env.API_KEY_BACK;
-const PHOTOUSER_FOLDER= process.env.GOOGLE_DRIVE_PHOTOUSER;
 
 const assertConfig = () => {
   if (!TOOLS_BASE_URL) throw new ClientError('Falta TOOLS_BASE_URL en .env', 500);
   if (!API_KEY_BACK) throw new ClientError('Falta API_KEY_BACK en .env', 500);
 };
 
-// === [TOOLS_PROFILE_512_CONTROLLER] START ===
-// Ruta: POST /api/tools/profile
-// Multer memoryStorage => req.file.buffer
-const removeBgProfile512FromBuffer = async (req, res) => {
+/**
+ * @param {Object} params
+ * @param {Buffer} params.buffer
+ * @param {string} [params.mimetype]
+ * @param {string} [params.filename]
+ * @returns {Promise<Buffer>} PNG con alpha (512)
+ */
+
+async function toolsProfileBundle({ buffer, mimetype, filename }) {
   assertConfig();
 
-  const file = req.file;
-  const idUser=req.body.idUser
-  if (!file) throw new ClientError('Falta archivo (field "file")', 400);
+  // 1) FormData nativo (undici) => usar Blob
+  const blob = new Blob([buffer], { type: mimetype || "application/octet-stream" });
 
-  // (opcional) valida mimetype
-  const allowed = new Set(['image/jpeg', 'image/png', 'image/webp']);
-  if (file.mimetype && !allowed.has(file.mimetype)) {
-    throw new ClientError('Formato no permitido. Usa JPG, PNG o WEBP', 400);
-  }
-
-
-
-  const url = `${TOOLS_BASE_URL.replace(/\/$/, '')}/image/profile-512`;
-
-  // Node 20: FormData/Blob global
   const fd = new FormData();
-  fd.append(
-    'image_file',
-    new Blob([file.buffer], { type: file.mimetype || 'image/jpeg' }),
-    file.originalname || 'profile'
-  );
+  // OJO: el nombre del campo DEBE coincidir con FastAPI: image_file
+  fd.append("file", blob, filename || "profile");
 
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'X-Api-Key': API_KEY_BACK,
-      // NO pongas Content-Type, fetch lo pone con boundary
-      Accept: 'image/png',
-    },
+  const res = await fetch(`${TOOLS_BASE_URL}/image/profile-bundle`, {
+    method: "POST",
+    headers: { "X-Api-Key": API_KEY_BACK },
     body: fd,
   });
 
-
-  if(!r.ok){
-    const t = await r.text().catch(() => '');
-    const message='La redimensión falló' ;
-    throw new Error(message)
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    // Log útil para ver el error real
+    console.error("[toolsProfileBundle] status:", res.status, "body:", text);
+    throw new ClientError(text || `tools-service error ${res.status}`, 502);
   }
 
-  const driveName=`${idUser}_photoProfile`
+  const arr = await res.arrayBuffer();
+  return Buffer.from(arr);
+}
 
-  const fileDriveAux=uploadFileToDrive(r, PHOTOUSER_FOLDER, driveName)
-  //subir aarchivo a google, 
-  const idDrive=fileDriveAux.id
+async function removeBgProfile512FromBuffer({ buffer, mimetype, filename }) {
+  console.log('dentro')
+  const zipBuffer = await toolsProfileBundle({ buffer, mimetype, filename });
+console.log('dentro2')
+  const zip = await JSZip.loadAsync(zipBuffer);
+  const f512 = zip.file("profile_512.png");
+  const f96  = zip.file("profile_96.png");
 
-  const userAux=User.findByIdAndUpdate(
-    idUser,
-    { $set: { photoProfile: idDrive } },
-    { new: true, runValidators: true }
-);
-  
-  //devolver al usuario actualizado
-    response(res, 200, userAux)  
-};
-// === [TOOLS_PROFILE_512_CONTROLLER] END ===
+  if (!f512 || !f96) {
+    throw new ClientError("ZIP inválido desde tools-service", 502);
+  }
 
-module.exports = {
-  removeBgProfile512FromBuffer: catchAsync(removeBgProfile512FromBuffer),
-};
+  const png512 = await f512.async("nodebuffer");
+  const png96  = await f96.async("nodebuffer");
+
+  return {
+    normal: { buffer: png512, mimetype: "image/png" },
+    thumb:  { buffer: png96,  mimetype: "image/png" },
+  };
+}
+
+module.exports = { removeBgProfile512FromBuffer };

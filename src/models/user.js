@@ -183,7 +183,13 @@ const UserSchema = new Schema({
         default:false
     },
     photoProfile:{
-        type: String
+        normal:{
+            type:String
+        },
+        thumb:{
+            type: String
+        }
+        
     }
 
 }, { timestamps: true });

@@ -1,4 +1,4 @@
-const {recreateCorporateEmail, postCreateUser, getUserID, getUsers, UserDeleteId, userPut, getUsersFilter, payroll, getFileUser, getUserName, getAllUsersWithOpenPeriods, rehireUser, getUsersCurrentStatus, getBasicUserSearch, getUserListDays}=require("./userController");
+const {recreateCorporateEmail, postCreateUser, getUserID, getUsers, UserDeleteId, userPut, getUsersFilter, payroll, getFileUser, getUserName, getAllUsersWithOpenPeriods, rehireUser, getUsersCurrentStatus, getBasicUserSearch, getUserListDays, getPhotoProfile, profilePhotoSet, profilePhotoGetBatch}=require("./userController");
 const { login, validToken, verifyCode } = require("./loginController");
 const {tokenValid, tokenValidAdmin} = require("./authController");
 const { getUserCvsFilter, postCreateUserCv, getUsersCvsIDs, getUserCvs, UserCvDeleteId, UserCvPut, getUserCvID } = require("./userCvController");
@@ -30,7 +30,7 @@ const { removeBgProfile512FromBuffer } = require("./toolsServiceController");
 
 
 module.exports = {
-    recreateCorporateEmail,getAllUsersWithOpenPeriods, postCreateUser, getUserID, getUsers, UserDeleteId, userPut,getUsersFilter,rehireUser,getUsersCurrentStatus,getUserListDays,
+    profilePhotoGetBatch, profilePhotoSet, getPhotoProfile, recreateCorporateEmail,getAllUsersWithOpenPeriods, postCreateUser, getUserID, getUsers, UserDeleteId, userPut,getUsersFilter,rehireUser,getUsersCurrentStatus,getUserListDays,
     login, validToken,verifyCode,
     tokenValid, tokenValidAdmin,
     getUserCvsFilter, postCreateUserCv, getUsersCvsIDs, getUserCvs, UserCvDeleteId, UserCvPut, payroll, getFileUser,getUserCvID, getUserName,getBasicUserSearch,
