@@ -100,10 +100,12 @@ const UserSchema = new Schema({
     },
     // DNI del empleado
     dni: {
-        type: String,
-        index: true, // ← esto creará un índice en MongoDB
-        unique: true, // recomendado si es único
-        required: true, // recomendado si siempre estará presente
+    type: String,
+    required: true,
+    unique: true,
+    index: true,
+    trim: true,
+    uppercase: true,
     },
     // Nombre del empleado
     firstName: {
@@ -183,16 +185,13 @@ const UserSchema = new Schema({
         default:false
     },
     photoProfile:{
-        normal:{
-            type:String
-        },
-        thumb:{
-            type: String
-        }
-        
+        normal: { type: String, default: "" },
+        thumb:  { type: String, default: "" },
+        v:      { type: Number, default: 0 },
     }
 
 }, { timestamps: true });
+//
 
 
 

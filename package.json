@@ -43,6 +43,7 @@
     "punycode": "^2.3.1",
     "rimraf": "^6.0.1",
     "tr46": "^5.1.1",
+    "unzipper": "^0.12.3",
     "whatwg-url": "^14.2.0"
   },
   "repository": {

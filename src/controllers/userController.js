@@ -1709,31 +1709,11 @@ const recreateCorporateEmail = async (req, res) => {
   response(res, 200, updatedUser);
 };
 
-const getPhotoProfile = async (req, res) => {
-  const idUser = req.body?.idUser;
-  const size = req.body?.size || "thumb"; // "thumb" | "normal"
-  if (!idUser) throw new ClientError("Falta idUser", 400);
-
-  const user = await User.findById(toId(idUser)).select("photoProfile");
-  if (!user) throw new ClientError("Usuario no encontrado", 404);
-
-  const fileId =
-    size === "normal" ? user.photoProfile?.normal : user.photoProfile?.thumb;
-
-  if (!fileId) throw new ClientError("Usuario sin foto de perfil", 404);
-
-  const result = await getFileById(fileId);
-  if (!result?.stream || !result?.file) throw new ClientError("No se pudo obtener la foto", 502);
-
-  res.setHeader("Content-Type", result.file.mimeType || "image/png");
-  res.setHeader("Cache-Control", "no-store");
-  return result.stream.pipe(res);
-};
 
 
-
-
-// controllers/users.js (o donde tengas profilePhotoSet)
+// =====================================================
+// SET: sube, procesa, guarda ids + v y borra anteriores
+// =====================================================
 const profilePhotoSet = async (req, res) => {
   if (!PHOTOUSER_FOLDER) throw new Error("Falta PHOTOUSER_FOLDER en .env");
 
@@ -1743,38 +1723,36 @@ const profilePhotoSet = async (req, res) => {
   const file = req.file;
   if (!file) throw new ClientError('Falta archivo (field "file")', 400);
 
-  // 1) usuario existe + obtenemos photoProfile previo (para borrar después)
-  const current = await User.findById(toId(idUser)).select("photoProfile");
+  // 1) usuario existe + photoProfile previo
+  const current = await User.findById(toId(idUser)).select("_id photoProfile");
   if (!current) throw new ClientError("Usuario no encontrado", 404);
 
   const prev512 = current.photoProfile?.normal || "";
   const prevThumb = current.photoProfile?.thumb || "";
 
-  // 2) procesar con tools-service => devuelve { normal, thumb }
-
+  // 2) tools-service => { normal, thumb }
   const out = await removeBgProfile512FromBuffer({
     buffer: file.buffer,
     mimetype: file.mimetype,
     filename: file.originalname || "profile",
   });
 
-  // 3) subir a Drive (2 archivos: 512 y 96)
+  // 3) subir a Drive
   const driveName512 = `${idUser}_photoProfile_512.png`;
   const driveName96 = `${idUser}_photoProfile_96.png`;
 
-  const drive512 = await uploadFileToDrive(
-    { buffer: out.normal.buffer, mimetype: out.normal.mimetype },
-    PHOTOUSER_FOLDER,
-    driveName512
-  );
-
-
-
-  const driveThumb = await uploadFileToDrive(
-    { buffer: out.thumb.buffer, mimetype: out.thumb.mimetype },
-    PHOTOUSER_FOLDER,
-    driveName96
-  );
+  const [drive512, driveThumb] = await Promise.all([
+    uploadFileToDrive(
+      { buffer: out.normal.buffer, mimetype: out.normal.mimetype },
+      PHOTOUSER_FOLDER,
+      driveName512
+    ),
+    uploadFileToDrive(
+      { buffer: out.thumb.buffer, mimetype: out.thumb.mimetype },
+      PHOTOUSER_FOLDER,
+      driveName96
+    ),
+  ]);
 
   if (!drive512?.id || !driveThumb?.id) {
     throw new ClientError("No se pudo subir la foto a Drive", 502);
@@ -1784,68 +1762,115 @@ const profilePhotoSet = async (req, res) => {
   if (prev512 && prev512 !== drive512.id) await deleteFileById(prev512).catch(() => {});
   if (prevThumb && prevThumb !== driveThumb.id) await deleteFileById(prevThumb).catch(() => {});
 
-  // 5) guardar en user + devolver user actualizado
+  // 5) guardar en user + "v" para cache-busting
+  // Usa timestamp (o increment). Timestamp es perfecto.
+  const v = Date.now();
+
   const updated = await User.findByIdAndUpdate(
     toId(idUser),
     {
       $set: {
         "photoProfile.normal": drive512.id,
         "photoProfile.thumb": driveThumb.id,
+        "photoProfile.v": v,
       },
     },
     { new: true, runValidators: true }
   );
 
-  response(res, 200, updated);
+  // IMPORTANTE: si no quieres devolver todo el user, haz select aquí:
+  // const updated = await User.findById(toId(idUser)).select("_id photoProfile firstName lastName ...")
+
+  return response(res, 200, updated);
 };
 
+// ====================================
+// GET (stream) con cache fuerte + 304
+// ====================================
+const getPhotoProfile = async (req, res) => {
+  const { idUser, size = "thumb" } = req.body || {}; // 👈 todo por body
 
+  if (!idUser) throw new ClientError("Falta idUser", 400);
+  if (!["thumb", "normal"].includes(size)) throw new ClientError("size inválido", 400);
 
-function streamToBuffer(stream) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    stream.on("data", (c) => chunks.push(c));
-    stream.on("end", () => resolve(Buffer.concat(chunks)));
-    stream.on("error", reject);
-  });
-}
+  const user = await User.findById(toId(idUser)).select("_id photoProfile").lean();
+  if (!user) throw new ClientError("Usuario no encontrado", 404);
 
+  const fileId = size === "normal"
+    ? user.photoProfile?.normal
+    : user.photoProfile?.thumb;
+
+  if (!fileId) throw new ClientError("Usuario sin foto de perfil", 404);
+
+  const { file, stream } = await getFileById(fileId);
+  if (!stream) throw new ClientError("No se pudo obtener la foto", 502);
+
+  res.setHeader("Content-Type", file?.mimeType || "image/png");
+  // (Opcional) Cache en POST no es tan útil como en GET, pero no molesta:
+  res.setHeader("Cache-Control", "no-store");
+
+  return stream.pipe(res);
+};
+
+// =========================================// BATCH: devuelve dataURL (base64) + v
 const profilePhotoGetBatch = async (req, res) => {
   const ids = req.body?.userIds;
+  const size = req.body?.size || "thumb"; // "thumb" | "normal" (por si algún día lo quieres)
   if (!Array.isArray(ids) || ids.length === 0) {
-    throw new ClientError("Falta ids (array)", 400);
+    throw new ClientError("Falta userIds (array)", 400);
+  }
+  if (!["thumb", "normal"].includes(size)) {
+    throw new ClientError("size inválido", 400);
   }
 
-  // limitamos tamaño por seguridad
-  const uniqueIds = [...new Set(ids.map(String))].slice(0, 80);
+  const uniqueIds = [...new Set(ids.map(String))].slice(0, 200);
 
-  // trae solo lo necesario
   const users = await User.find({ _id: { $in: uniqueIds.map(toId) } })
-  .select("_id photoProfile");
+    .select("_id photoProfile")
+    .lean();
 
-  const byId = new Map(users.map(u => [String(u._id), u.photoProfile?.thumb || ""]));
-
-  const limit = pLimit(6); // para no saturar Drive
-  const photos = {};
-
-  await Promise.all(
-    uniqueIds.map((userId) =>
-      limit(async () => {
-        const fileId = byId.get(String(userId));
-        if (!fileId) return;
-
-        const result = await getFileById(fileId);
-        if (!result?.stream) return;
-
-        const buf = await streamToBuffer(result.stream);
-        const b64 = buf.toString("base64");
-        photos[String(userId)] = `data:image/png;base64,${b64}`;
-      })
-    )
+  const byId = new Map(
+    users.map(u => [
+      String(u._id),
+      {
+        fileId: size === "normal" ? (u.photoProfile?.normal || "") : (u.photoProfile?.thumb || ""),
+        v: u.photoProfile?.v || 0
+      }
+    ])
   );
 
-  response(res, 200, { photos });
+  // limita concurrencia para Drive
+  const limit = pLimit(6);
+
+  const photos = {};
+  await Promise.all(uniqueIds.map(userId => limit(async () => {
+    const meta = byId.get(String(userId));
+    if (!meta?.fileId) return;
+
+    const { file, stream } = await getFileById(meta.fileId);
+    if (!stream || !file) return;
+
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      stream.on("data", c => chunks.push(c));
+      stream.on("end", resolve);
+      stream.on("error", reject);
+    });
+
+    const buffer = Buffer.concat(chunks);
+    const mime = file.mimeType || "image/png";
+    const b64 = buffer.toString("base64");
+
+    photos[String(userId)] = {
+      v: meta.v,
+      mime,
+      dataUrl: `data:${mime};base64,${b64}`,
+    };
+  })));
+
+  return response(res, 200, { photos });
 };
+
 
 module.exports = {
   postCreateUser: catchAsync(postCreateUser),
@@ -1865,5 +1890,5 @@ module.exports = {
   recreateCorporateEmail:catchAsync(recreateCorporateEmail),
   getPhotoProfile: catchAsync(getPhotoProfile),
   profilePhotoSet:catchAsync(profilePhotoSet),
-  profilePhotoGetBatch:catchAsync(profilePhotoGetBatch)
+  profilePhotoGetBatch:catchAsync(profilePhotoGetBatch),
 };

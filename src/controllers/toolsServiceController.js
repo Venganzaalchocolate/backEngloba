@@ -1,6 +1,6 @@
 // controllers/toolsServiceController.js
 const { ClientError } = require('../utils/indexUtils');
-const JSZip = require("jszip");
+const unzipper = require("unzipper");
 
 const TOOLS_BASE_URL = process.env.TOOLS_BASE_URL;
 const API_KEY_BACK = process.env.API_KEY_BACK;
@@ -21,49 +21,55 @@ const assertConfig = () => {
 async function toolsProfileBundle({ buffer, mimetype, filename }) {
   assertConfig();
 
-  // 1) FormData nativo (undici) => usar Blob
   const blob = new Blob([buffer], { type: mimetype || "application/octet-stream" });
-
   const fd = new FormData();
-  // OJO: el nombre del campo DEBE coincidir con FastAPI: image_file
   fd.append("file", blob, filename || "profile");
 
-  const res = await fetch(`${TOOLS_BASE_URL}/image/profile-bundle`, {
-    method: "POST",
-    headers: { "X-Api-Key": API_KEY_BACK },
-    body: fd,
-  });
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 45_000); // 45s por ejemplo
+
+  let res;
+  try {
+    res = await fetch(`${TOOLS_BASE_URL}/image/profile-bundle`, {
+      method: "POST",
+      headers: { "X-Api-Key": API_KEY_BACK },
+      body: fd,
+      signal: ac.signal,
+    });
+  } catch (e) {
+    throw new ClientError("tools-service timeout o conexión fallida", 502);
+  } finally {
+    clearTimeout(t);
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    // Log útil para ver el error real
     console.error("[toolsProfileBundle] status:", res.status, "body:", text);
     throw new ClientError(text || `tools-service error ${res.status}`, 502);
   }
 
-  const arr = await res.arrayBuffer();
-  return Buffer.from(arr);
+  return Buffer.from(await res.arrayBuffer());
 }
 
+
+
 async function removeBgProfile512FromBuffer({ buffer, mimetype, filename }) {
-  console.log('dentro')
   const zipBuffer = await toolsProfileBundle({ buffer, mimetype, filename });
-console.log('dentro2')
-  const zip = await JSZip.loadAsync(zipBuffer);
-  const f512 = zip.file("profile_512.png");
-  const f96  = zip.file("profile_96.png");
 
-  if (!f512 || !f96) {
-    throw new ClientError("ZIP inválido desde tools-service", 502);
-  }
+  const dir = await unzipper.Open.buffer(zipBuffer);
 
-  const png512 = await f512.async("nodebuffer");
-  const png96  = await f96.async("nodebuffer");
+  const f512 = dir.files.find(f => f.path === "profile_512.png");
+  const f96  = dir.files.find(f => f.path === "profile_96.png");
+  if (!f512 || !f96) throw new ClientError("ZIP inválido desde tools-service", 502);
+
+  const png512 = await f512.buffer();
+  const png96  = await f96.buffer();
 
   return {
     normal: { buffer: png512, mimetype: "image/png" },
     thumb:  { buffer: png96,  mimetype: "image/png" },
   };
 }
+
 
 module.exports = { removeBgProfile512FromBuffer };
