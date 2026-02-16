@@ -1,7 +1,7 @@
 // controllers/toolsServiceController.js
 const { ClientError } = require('../utils/indexUtils');
 const unzipper = require("unzipper");
-
+const sharp = require("sharp");
 const TOOLS_BASE_URL = process.env.TOOLS_BASE_URL;
 const API_KEY_BACK = process.env.API_KEY_BACK;
 
@@ -17,6 +17,17 @@ const assertConfig = () => {
  * @param {string} [params.filename]
  * @returns {Promise<Buffer>} PNG con alpha (512)
  */
+
+
+async function downscaleForRembg(buffer) {
+  // 1024px lado mayor es suficiente para avatar
+  return sharp(buffer)
+    .rotate() // respeta EXIF del móvil
+    .resize({ width: 1024, height: 1024, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 85 }) // o .png() si prefieres
+    .toBuffer();
+}
+
 
 async function toolsProfileBundle({ buffer, mimetype, filename }) {
   assertConfig();
@@ -54,22 +65,29 @@ async function toolsProfileBundle({ buffer, mimetype, filename }) {
 
 
 async function removeBgProfile512FromBuffer({ buffer, mimetype, filename }) {
-  const zipBuffer = await toolsProfileBundle({ buffer, mimetype, filename });
+  const reduced = await downscaleForRembg(buffer);
+
+  const zipBuffer = await toolsProfileBundle({
+    buffer: reduced,
+    mimetype: "image/jpeg",
+    filename: filename || "profile.jpg",
+  });
 
   const dir = await unzipper.Open.buffer(zipBuffer);
 
   const f512 = dir.files.find(f => f.path === "profile_512.png");
-  const f96  = dir.files.find(f => f.path === "profile_96.png");
-  if (!f512 || !f96) throw new ClientError("ZIP inválido desde tools-service", 502);
+  const f92  = dir.files.find(f => f.path === "profile_92.png");
+  if (!f512 || !f92) throw new ClientError("ZIP inválido desde tools-service", 502);
 
   const png512 = await f512.buffer();
-  const png96  = await f96.buffer();
+  const png92  = await f92.buffer();
 
   return {
     normal: { buffer: png512, mimetype: "image/png" },
-    thumb:  { buffer: png96,  mimetype: "image/png" },
+    thumb:  { buffer: png92,  mimetype: "image/png" },
   };
 }
+
 
 
 module.exports = { removeBgProfile512FromBuffer };
