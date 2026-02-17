@@ -1,60 +1,524 @@
-const {recreateCorporateEmail, postCreateUser, getUserID, getUsers, UserDeleteId, userPut, getUsersFilter, payroll, getFileUser, getUserName, getAllUsersWithOpenPeriods, rehireUser, getUsersCurrentStatus, getBasicUserSearch, getUserListDays, getPhotoProfile, profilePhotoSet, profilePhotoGetBatch}=require("./userController");
-const { login, validToken, verifyCode } = require("./loginController");
-const {tokenValid, tokenValidAdmin} = require("./authController");
-const { getUserCvsFilter, postCreateUserCv, getUsersCvsIDs, getUserCvs, UserCvDeleteId, UserCvPut, getUserCvID } = require("./userCvController");
-const { uploadFile, listBucketContents, getFileCv, deleteFile, getPresignedPut, getPresignedGet } = require("./ovhController");
-const { postUploadFile, getFile, deleteIdFile, createFileDrive, updateFileDrive, deleteFileDrive, getFileDrive, getCvPresignPut,getCvPresignGet, zipMultipleFiles, zipPayrolls, listFile} = require("./fileController");
-const { postCreateBag, getBags, getBagID, bagDeactivateId, BagPut, getBagsFilter, BagPutDeleteUser } = require("./bagController");
+// controllers/indexController.js
+// ============================================================================
+// Export centralizado de controladores (tu estilo: routes importan desde index)
+// ============================================================================
 
-const { offerList,offerCreate,offerUpdate,offerHardDelete,offerId } = require("./offerController");
-const { getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers, deleteFileEnums, postSubcategory } = require("./enumsController");
-const {sendEmail, generateEmailHTML, sendWelcomeEmail}=require("./emailControllerGoogle");
-const { getDocumentation,getDocumentationUnified, getDocumentationProgramDispositive, addProgramOrDispositiveToDocumentation, syncProgramDocsToDevices } = require("./documentationController");
+// ----------------------------- USERS / EMPLOYEES ----------------------------
+const {
+  recreateCorporateEmail,
+  postCreateUser,
+  getUserID,
+  getUsers,
+  UserDeleteId,
+  userPut,
+  getUsersFilter,
+  payroll,
+  getFileUser,
+  getUserName,
+  getAllUsersWithOpenPeriods,
+  rehireUser,
+  getUsersCurrentStatus,
+  getBasicUserSearch,
+  getUserListDays,
+  getPhotoProfile,
+  profilePhotoSet,
+  profilePhotoGetBatch,
+} = require("./userController");
+
+// ----------------------------- LOGIN ----------------------------------------
+const { login, validToken, verifyCode } = require("./loginController");
+
+// ----------------------------- AUTH (MIDDLEWARES) ---------------------------
+const { tokenValid, tokenValidAdmin } = require("./authController");
+
+// ----------------------------- USER CVS -------------------------------------
+const {
+  getUserCvsFilter,
+  postCreateUserCv,
+  getUsersCvsIDs,
+  getUserCvs,
+  UserCvDeleteId,
+  UserCvPut,
+  getUserCvID,
+} = require("./userCvController");
+
+// ----------------------------- OVH ------------------------------------------
+const {
+  uploadFile,
+  listBucketContents,
+  getFileCv,
+  deleteFile,
+  getPresignedPut,
+  getPresignedGet,
+} = require("./ovhController");
+
+// ----------------------------- FILEDRIVE / FILES ----------------------------
+const {
+  postUploadFile,
+  getFile,
+  deleteIdFile,
+  createFileDrive,
+  updateFileDrive,
+  deleteFileDrive,
+  getFileDrive,
+  getCvPresignPut,
+  getCvPresignGet,
+  zipMultipleFiles,
+  zipPayrolls,
+  listFile,
+} = require("./fileController");
+
+// ----------------------------- BAGS -----------------------------------------
+const {
+  postCreateBag,
+  getBags,
+  getBagID,
+  bagDeactivateId,
+  BagPut,
+  getBagsFilter,
+  BagPutDeleteUser,
+} = require("./bagController");
+
+// ----------------------------- OFFERS ---------------------------------------
+const {
+  offerList,
+  offerCreate,
+  offerUpdate,
+  offerHardDelete,
+  offerId,
+} = require("./offerController");
+
+// ----------------------------- ENUMS ----------------------------------------
+const {
+  getEnums,
+  putEnums,
+  postEnums,
+  deleteEnums,
+  deleteSubcategory,
+  getEnumEmployers,
+  deleteFileEnums,
+  postSubcategory,
+} = require("./enumsController");
+
+// ----------------------------- EMAIL ----------------------------------------
+const { sendEmail, generateEmailHTML, sendWelcomeEmail } = require("./emailControllerGoogle");
+
+// ----------------------------- DOCUMENTATION --------------------------------
+const {
+  getDocumentation,
+  getDocumentationUnified,
+  getDocumentationProgramDispositive,
+  addProgramOrDispositiveToDocumentation,
+  syncProgramDocsToDevices,
+} = require("./documentationController");
+
+// ----------------------------- PDF SIGN -------------------------------------
 const { confirmSignature, requestSignature } = require("./pdfSignController");
-const {auditInfoDevices, auditInfoPrograms, auditInfoUsers, auditActiveLeaves, auditDocsProgram, auditDocsDispo, auditPayrolls, auditDocsUser} = require("./auditorController");
-const { getCurrentHeadcountStats, getUserCvStats} = require("./statisticsController");
-const {addGroupAliasWS,  deleteGroupAliasWS,deleteGroupWS, deleteMemberGroupWS,addGroupWS, createGroupWS, infoGroupWS,addUserToGroup, createUserWS, deleteUserByEmailWS, deleteMemeberAllGroups,deleteDeviceGroupsWS, getModelWorkspaceGroups, moveUserBetweenDevicesWS } = require("./workspaceController");
-const { getPreferents, getPreferentById, createPreferent, updatePreferent, deletePreferent, filterPreferents } = require("./preferentsController");
-const {createLeave,updateLeave,closeLeave, softDeleteLeave, hardDeleteLeave, listLeaves, getLeaveById}= require("./leaveController");
-const {createHiring,updateHiring,closeHiring,softDeleteHiring,hardDeleteHiring,listHirings,getHiringById, getLastHiringForUser, relocateHirings}= require("./hiringController");
-const { postCancelChangeRequest, postRejectChangeRequest, postApproveChangeRequest, getPendingChangeRequests, getMyChangeRequests, postCreateChangeRequest, postCreateTimeOffChangeRequest } = require("./userChangeRequestController");
+
+// ----------------------------- AUDITS ---------------------------------------
+const {
+  auditInfoDevices,
+  auditInfoPrograms,
+  auditInfoUsers,
+  auditActiveLeaves,
+  auditDocsProgram,
+  auditDocsDispo,
+  auditPayrolls,
+  auditDocsUser,
+} = require("./auditorController");
+
+// ----------------------------- STATS ----------------------------------------
+const { getCurrentHeadcountStats, getUserCvStats } = require("./statisticsController");
+
+// ----------------------------- WORKSPACE ------------------------------------
+const {
+  addGroupAliasWS,
+  deleteGroupAliasWS,
+  deleteGroupWS,
+  deleteMemberGroupWS,
+  addGroupWS,
+  createGroupWS,
+  infoGroupWS,
+  addUserToGroup,
+  createUserWS,
+  deleteUserByEmailWS,
+  deleteMemeberAllGroups,
+  deleteDeviceGroupsWS,
+  getModelWorkspaceGroups,
+  moveUserBetweenDevicesWS,
+} = require("./workspaceController");
+
+// ----------------------------- PREFERENTS -----------------------------------
+const {
+  getPreferents,
+  getPreferentById,
+  createPreferent,
+  updatePreferent,
+  deletePreferent,
+  filterPreferents,
+} = require("./preferentsController");
+
+// ----------------------------- LEAVES ---------------------------------------
+const {
+  createLeave,
+  updateLeave,
+  closeLeave,
+  softDeleteLeave,
+  hardDeleteLeave,
+  listLeaves,
+  getLeaveById,
+} = require("./leaveController");
+
+// ----------------------------- HIRINGS --------------------------------------
+const {
+  createHiring,
+  updateHiring,
+  closeHiring,
+  softDeleteHiring,
+  hardDeleteHiring,
+  listHirings,
+  getHiringById,
+  getLastHiringForUser,
+  relocateHirings,
+} = require("./hiringController");
+
+// ----------------------------- CHANGE REQUESTS ------------------------------
+const {
+  postCancelChangeRequest,
+  postRejectChangeRequest,
+  postApproveChangeRequest,
+  getPendingChangeRequests,
+  getMyChangeRequests,
+  postCreateChangeRequest,
+  postCreateTimeOffChangeRequest,
+} = require("./userChangeRequestController");
+
+// ----------------------------- GOOGLE DRIVE ---------------------------------
 const { moveDriveFile, adoptDriveFileIntoFiledrive } = require("./googleController");
 
-const { getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId, getProgramId} = require("./programController");
-const { getDispositiveId, createDispositive, updateDispositive, deleteDispositive, handleCoordinators, handleResponsibles, listsResponsiblesAndCoordinators, getDispositiveResponsable } = require("./dispositiveController");
-const { volunteerGetNotLimit,enableVolunteerApplication,disableVolunteerApplication, deleteVolunteerApplication, updateVolunteerApplication, listVolunteerApplications, getVolunteerApplicationById, createVolunteerApplication, addInternalNote, volunteerAddChronology,  volunteerChronologyUpdate, volunteerChronologyDelete, setVolunteerInterview, deleteInternalNote  } = require("./volunteerApplicationController");
+// ----------------------------- PROGRAMS -------------------------------------
+const {
+  getPrograms,
+  postCreateProgram,
+  getProgramID,
+  ProgramPut,
+  ProgramDeleteId,
+  getProgramId,
+} = require("./programController");
+
+// ----------------------------- DISPOSITIVES ---------------------------------
+const {
+  getDispositiveId,
+  createDispositive,
+  updateDispositive,
+  deleteDispositive,
+  handleCoordinators,
+  handleResponsibles,
+  listsResponsiblesAndCoordinators,
+  getDispositiveResponsable,
+} = require("./dispositiveController");
+
+// ----------------------------- VOLUNTEER APPLICATIONS -----------------------
+const {
+  volunteerGetNotLimit,
+  enableVolunteerApplication,
+  disableVolunteerApplication,
+  deleteVolunteerApplication,
+  updateVolunteerApplication,
+  listVolunteerApplications,
+  getVolunteerApplicationById,
+  createVolunteerApplication,
+  addInternalNote,
+  volunteerAddChronology,
+  volunteerChronologyUpdate,
+  volunteerChronologyDelete,
+  setVolunteerInterview,
+  deleteInternalNote,
+} = require("./volunteerApplicationController");
+
+// ----------------------------- TOOLS SERVICE --------------------------------
 const { removeBgProfile512FromBuffer } = require("./toolsServiceController");
 
+// ----------------------------- PERMISSIONS (ADMIN + PROFILES) ---------------
+const {
+  // ModuleGrant
+  listModuleGrants,
+  getModuleGrantById,
+  upsertModuleGrant,
+  updateModuleGrant,
+  toggleModuleGrant,
+  deleteModuleGrant,
 
+  // ResourceMembership
+  listResourceMemberships,
+  getResourceMembershipById,
+  upsertResourceMembership,
+  updateResourceMembership,
+  toggleResourceMembership,
+  deleteResourceMembership,
 
+  // UX
+  getUserPermissions,
+  setUserPermissions,
+  applyPermissionsPreset,
 
+  // Profiles
+  listPermissionProfiles,
+  getPermissionProfileById,
+  createPermissionProfile,
+  updatePermissionProfile,
+  togglePermissionProfile,
+  deletePermissionProfile,
 
+  // Assignments
+  listUserProfileAssignments,
+  upsertUserProfileAssignment,
+  updateUserProfileAssignment,
+  deleteUserProfileAssignment,
+
+  // Sync / Bulk
+  syncUserProfiles,
+  applyProfileToResourceMembers,
+} = require("./permissionsAdminController");
+
+// ============================================================================
+// EXPORTS (sin duplicados, sin comas raras)
+// ============================================================================
 module.exports = {
-    profilePhotoGetBatch, profilePhotoSet, getPhotoProfile, recreateCorporateEmail,getAllUsersWithOpenPeriods, postCreateUser, getUserID, getUsers, UserDeleteId, userPut,getUsersFilter,rehireUser,getUsersCurrentStatus,getUserListDays,
-    login, validToken,verifyCode,
-    tokenValid, tokenValidAdmin,
-    getUserCvsFilter, postCreateUserCv, getUsersCvsIDs, getUserCvs, UserCvDeleteId, UserCvPut, payroll, getFileUser,getUserCvID, getUserName,getBasicUserSearch,
-    listFile,createFileDrive,updateFileDrive, deleteFileDrive,uploadFile, listBucketContents, getFile, deleteFile, getFileDrive, getPresignedPut, getPresignedGet, moveDriveFile, adoptDriveFileIntoFiledrive,
-    zipPayrolls, zipMultipleFiles, postUploadFile, deleteIdFile, getCvPresignPut,getCvPresignGet,
-    postCreateBag, getBags, getBagID,bagDeactivateId, BagPut,getBagsFilter, BagPutDeleteUser,
-    getPrograms, postCreateProgram, getProgramID, ProgramPut, ProgramDeleteId,getProgramId,
-    offerList,offerCreate,offerUpdate,offerHardDelete,offerId,
-    getEnums, putEnums, postEnums, deleteEnums, deleteSubcategory, getEnumEmployers,deleteFileEnums,postSubcategory,
-    sendEmail, generateEmailHTML, sendWelcomeEmail,
-    getDocumentation, getDocumentationUnified,getDocumentationProgramDispositive,addProgramOrDispositiveToDocumentation,syncProgramDocsToDevices,
-    requestSignature,confirmSignature,
-    auditDocsUser,auditInfoUsers,auditInfoPrograms, auditInfoDevices,auditActiveLeaves, auditDocsProgram, auditDocsDispo,auditPayrolls,
+  // Users
+  profilePhotoGetBatch,
+  profilePhotoSet,
+  getPhotoProfile,
+  recreateCorporateEmail,
+  getAllUsersWithOpenPeriods,
+  postCreateUser,
+  getUserID,
+  getUsers,
+  UserDeleteId,
+  userPut,
+  getUsersFilter,
+  rehireUser,
+  getUsersCurrentStatus,
+  getUserListDays,
+  payroll,
+  getFileUser,
+  getUserName,
+  getBasicUserSearch,
 
-    getCurrentHeadcountStats, getUserCvStats,
-    addGroupAliasWS,  deleteGroupAliasWS,moveUserBetweenDevicesWS,deleteGroupWS, deleteMemberGroupWS,addGroupWS, createGroupWS, infoGroupWS, addUserToGroup,createUserWS, deleteUserByEmailWS,deleteMemeberAllGroups,deleteDeviceGroupsWS,getModelWorkspaceGroups,
-    getPreferents,getPreferentById,createPreferent,updatePreferent,deletePreferent,filterPreferents,
-    createLeave,updateLeave,closeLeave, softDeleteLeave, hardDeleteLeave, listLeaves, getLeaveById,
-    createHiring,updateHiring,closeHiring,softDeleteHiring,hardDeleteHiring,listHirings,getHiringById,getLastHiringForUser,relocateHirings,
-    postCreateTimeOffChangeRequest, postCreateChangeRequest,getMyChangeRequests,getPendingChangeRequests,postApproveChangeRequest,postRejectChangeRequest,postCancelChangeRequest,
-    createDispositive,updateDispositive,deleteDispositive,handleCoordinators,handleResponsibles,listsResponsiblesAndCoordinators, getDispositiveResponsable,getDispositiveId,
+  // Login/Auth
+  login,
+  validToken,
+  verifyCode,
+  tokenValid,
+  tokenValidAdmin,
 
-    volunteerGetNotLimit,enableVolunteerApplication,deleteInternalNote,setVolunteerInterview,createVolunteerApplication,getVolunteerApplicationById,listVolunteerApplications, updateVolunteerApplication, deleteVolunteerApplication, disableVolunteerApplication, addInternalNote,volunteerAddChronology,  volunteerChronologyUpdate, volunteerChronologyDelete 
+  // UserCV
+  getUserCvsFilter,
+  postCreateUserCv,
+  getUsersCvsIDs,
+  getUserCvs,
+  UserCvDeleteId,
+  UserCvPut,
+  getUserCvID,
 
-    ,removeBgProfile512FromBuffer
-    
-}
+  // Files / OVH
+  listFile,
+  createFileDrive,
+  updateFileDrive,
+  deleteFileDrive,
+  postUploadFile,
+  getFileDrive,
+  getFile,
+  deleteIdFile,
+  uploadFile,
+  listBucketContents,
+  getFileCv,
+  deleteFile,
+  getPresignedPut,
+  getPresignedGet,
+  getCvPresignPut,
+  getCvPresignGet,
+  zipPayrolls,
+  zipMultipleFiles,
+  moveDriveFile,
+  adoptDriveFileIntoFiledrive,
+
+  // Bags
+  postCreateBag,
+  getBags,
+  getBagID,
+  bagDeactivateId,
+  BagPut,
+  getBagsFilter,
+  BagPutDeleteUser,
+
+  // Programs / Devices
+  getPrograms,
+  postCreateProgram,
+  getProgramID,
+  ProgramPut,
+  ProgramDeleteId,
+  getProgramId,
+
+  getDispositiveId,
+  createDispositive,
+  updateDispositive,
+  deleteDispositive,
+  handleCoordinators,
+  handleResponsibles,
+  listsResponsiblesAndCoordinators,
+  getDispositiveResponsable,
+
+  // Offers
+  offerList,
+  offerCreate,
+  offerUpdate,
+  offerHardDelete,
+  offerId,
+
+  // Enums
+  getEnums,
+  putEnums,
+  postEnums,
+  deleteEnums,
+  deleteSubcategory,
+  getEnumEmployers,
+  deleteFileEnums,
+  postSubcategory,
+
+  // Email
+  sendEmail,
+  generateEmailHTML,
+  sendWelcomeEmail,
+
+  // Docs
+  getDocumentation,
+  getDocumentationUnified,
+  getDocumentationProgramDispositive,
+  addProgramOrDispositiveToDocumentation,
+  syncProgramDocsToDevices,
+
+  // PDF Sign
+  requestSignature,
+  confirmSignature,
+
+  // Audits
+  auditDocsUser,
+  auditInfoUsers,
+  auditInfoPrograms,
+  auditInfoDevices,
+  auditActiveLeaves,
+  auditDocsProgram,
+  auditDocsDispo,
+  auditPayrolls,
+
+  // Stats
+  getCurrentHeadcountStats,
+  getUserCvStats,
+
+  // Workspace
+  addGroupAliasWS,
+  deleteGroupAliasWS,
+  moveUserBetweenDevicesWS,
+  deleteGroupWS,
+  deleteMemberGroupWS,
+  addGroupWS,
+  createGroupWS,
+  infoGroupWS,
+  addUserToGroup,
+  createUserWS,
+  deleteUserByEmailWS,
+  deleteMemeberAllGroups,
+  deleteDeviceGroupsWS,
+  getModelWorkspaceGroups,
+
+  // Preferents
+  getPreferents,
+  getPreferentById,
+  createPreferent,
+  updatePreferent,
+  deletePreferent,
+  filterPreferents,
+
+  // Leaves
+  createLeave,
+  updateLeave,
+  closeLeave,
+  softDeleteLeave,
+  hardDeleteLeave,
+  listLeaves,
+  getLeaveById,
+
+  // Hirings
+  createHiring,
+  updateHiring,
+  closeHiring,
+  softDeleteHiring,
+  hardDeleteHiring,
+  listHirings,
+  getHiringById,
+  getLastHiringForUser,
+  relocateHirings,
+
+  // Change Requests
+  postCreateTimeOffChangeRequest,
+  postCreateChangeRequest,
+  getMyChangeRequests,
+  getPendingChangeRequests,
+  postApproveChangeRequest,
+  postRejectChangeRequest,
+  postCancelChangeRequest,
+
+  // Volunteer Applications
+  volunteerGetNotLimit,
+  enableVolunteerApplication,
+  disableVolunteerApplication,
+  deleteInternalNote,
+  setVolunteerInterview,
+  createVolunteerApplication,
+  getVolunteerApplicationById,
+  listVolunteerApplications,
+  updateVolunteerApplication,
+  deleteVolunteerApplication,
+  addInternalNote,
+  volunteerAddChronology,
+  volunteerChronologyUpdate,
+  volunteerChronologyDelete,
+
+  // Tools
+  removeBgProfile512FromBuffer,
+
+  // Permissions
+  listModuleGrants,
+  getModuleGrantById,
+  upsertModuleGrant,
+  updateModuleGrant,
+  toggleModuleGrant,
+  deleteModuleGrant,
+
+  listResourceMemberships,
+  getResourceMembershipById,
+  upsertResourceMembership,
+  updateResourceMembership,
+  toggleResourceMembership,
+  deleteResourceMembership,
+
+  getUserPermissions,
+  setUserPermissions,
+  applyPermissionsPreset,
+
+  listPermissionProfiles,
+  getPermissionProfileById,
+  createPermissionProfile,
+  updatePermissionProfile,
+  togglePermissionProfile,
+  deletePermissionProfile,
+
+  listUserProfileAssignments,
+  upsertUserProfileAssignment,
+  updateUserProfileAssignment,
+  deleteUserProfileAssignment,
+
+  syncUserProfiles,
+  applyProfileToResourceMembers,
+};
