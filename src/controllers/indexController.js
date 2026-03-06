@@ -23,6 +23,9 @@ const {
   getPhotoProfile,
   profilePhotoSet,
   profilePhotoGetBatch,
+  userSignatureGet,
+  userSignatureUpsert,
+  userSignatureDelete,
 } = require("./userController");
 
 // ----------------------------- LOGIN ----------------------------------------
@@ -239,47 +242,44 @@ const {
 // ----------------------------- TOOLS SERVICE --------------------------------
 const { removeBgProfile512FromBuffer } = require("./toolsServiceController");
 
-// ----------------------------- PERMISSIONS (ADMIN + PROFILES) ---------------
+// ----------------------------- PERMISSIONS (profiles-first) -----------------
+// ----------------------------- PERMISSIONS (admin | unified) -----------------
 const {
-  // ModuleGrant
-  listModuleGrants,
-  getModuleGrantById,
-  upsertModuleGrant,
-  updateModuleGrant,
-  toggleModuleGrant,
-  deleteModuleGrant,
+  // PROFILES
+  listProfiles,
+  getProfileById,
+  createProfile,
+  updateProfile,
+  toggleProfile,
+  deleteProfileHard,
 
-  // ResourceMembership
-  listResourceMemberships,
-  getResourceMembershipById,
-  upsertResourceMembership,
-  updateResourceMembership,
-  toggleResourceMembership,
-  deleteResourceMembership,
+  // ASSIGNMENTS
+  listAssignments,
+  upsertAssignment,
+  updateAssignment,
+  deleteAssignmentHard,
 
-  // UX
-  getUserPermissions,
-  setUserPermissions,
-  applyPermissionsPreset,
+  // USER SCOPES
+  listUserScopes,
+  upsertUserScope,
+  updateUserScope,
+  deleteUserScopeHard,
 
-  // Profiles
-  listPermissionProfiles,
-  getPermissionProfileById,
-  createPermissionProfile,
-  updatePermissionProfile,
-  togglePermissionProfile,
-  deletePermissionProfile,
+  // LINKS (scope -> profile)
+  listScopeProfileLinks,
+  upsertScopeProfileLink,
+  updateScopeProfileLink,
+  deleteScopeProfileLinkHard,
 
-  // Assignments
-  listUserProfileAssignments,
-  upsertUserProfileAssignment,
-  updateUserProfileAssignment,
-  deleteUserProfileAssignment,
+  // SYNC
+  syncUserNow,
+} = require("./permissionsUnifiedController");
 
-  // Sync / Bulk
-  syncUserProfiles,
-  applyProfileToResourceMembers,
-} = require("./permissionsAdminController");
+// Pendiente de migrar (lo mantenemos aquí de momento para no romper):
+// - ResourceMembership CRUD
+// - list/get de ModuleGrants (read-only)
+// - applyProfileToResourceMembers (bulk)
+
 
 // ============================================================================
 // EXPORTS (sin duplicados, sin comas raras)
@@ -304,6 +304,9 @@ module.exports = {
   getFileUser,
   getUserName,
   getBasicUserSearch,
+  userSignatureGet,
+  userSignatureUpsert,
+  userSignatureDelete,
 
   // Login/Auth
   login,
@@ -488,37 +491,34 @@ module.exports = {
   // Tools
   removeBgProfile512FromBuffer,
 
-  // Permissions
-  listModuleGrants,
-  getModuleGrantById,
-  upsertModuleGrant,
-  updateModuleGrant,
-  toggleModuleGrant,
-  deleteModuleGrant,
+  // PROFILES
+  listProfiles,
+  getProfileById,
+  createProfile,
+  updateProfile,
+  toggleProfile,
+  deleteProfileHard,
 
-  listResourceMemberships,
-  getResourceMembershipById,
-  upsertResourceMembership,
-  updateResourceMembership,
-  toggleResourceMembership,
-  deleteResourceMembership,
+  // ASSIGNMENTS
+  listAssignments,
+  upsertAssignment,
+  updateAssignment,
+  deleteAssignmentHard,
 
-  getUserPermissions,
-  setUserPermissions,
-  applyPermissionsPreset,
+  // USER SCOPES
+  listUserScopes,
+  upsertUserScope,
+  updateUserScope,
+  deleteUserScopeHard,
 
-  listPermissionProfiles,
-  getPermissionProfileById,
-  createPermissionProfile,
-  updatePermissionProfile,
-  togglePermissionProfile,
-  deletePermissionProfile,
+  // LINKS (scope -> profile)
+  listScopeProfileLinks,
+  upsertScopeProfileLink,
+  updateScopeProfileLink,
+  deleteScopeProfileLinkHard,
 
-  listUserProfileAssignments,
-  upsertUserProfileAssignment,
-  updateUserProfileAssignment,
-  deleteUserProfileAssignment,
+  // SYNC
+  syncUserNow,
 
-  syncUserProfiles,
-  applyProfileToResourceMembers,
 };
+

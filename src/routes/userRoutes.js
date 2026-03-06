@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router()
-const {profilePhotoGetBatch, getPhotoProfile,rehireUser, postCreateUser,getUsersCvsIDs, getUserID, getUsers, UserDeleteId, userPut, tokenValid, getUsersFilter, payroll, getFileUser, getUserName, getAllUsersWithOpenPeriods, getUsersCurrentStatus, getBasicUserSearch, getUserListDays, recreateCorporateEmail, profilePhotoSet} = require('../controllers/indexController')
+const {profilePhotoGetBatch, getPhotoProfile,rehireUser, postCreateUser,getUsersCvsIDs, getUserID, getUsers, UserDeleteId, userPut, tokenValid, getUsersFilter, payroll, getFileUser, getUserName, getAllUsersWithOpenPeriods, getUsersCurrentStatus, getBasicUserSearch, getUserListDays, recreateCorporateEmail, profilePhotoSet, userSignatureGet, userSignatureUpsert, userSignatureDelete} = require('../controllers/indexController')
 // Configura `multer` para almacenamiento en memoria
 const multer = require('multer');
 
@@ -40,5 +40,10 @@ router.post('/getphotoprofile', tokenValid, getPhotoProfile);
 router.post('/profilephotoset',tokenValid, upload.single('file'), profilePhotoSet);
 router.post('/profilephotogetbatch', tokenValid, profilePhotoGetBatch)
 
-
+// =========================
+// USER SIGNATURE (strokes)
+// =========================
+router.post("/user/signature/get", tokenValid, userSignatureGet);
+router.post("/user/signature/upsert", tokenValid, userSignatureUpsert);
+router.post("/user/signature/delete", tokenValid, userSignatureDelete);
 module.exports = router;

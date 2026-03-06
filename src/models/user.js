@@ -188,7 +188,13 @@ const UserSchema = new Schema({
         normal: { type: String, default: "" },
         thumb:  { type: String, default: "" },
         v:      { type: Number, default: 0 },
-    }
+    },
+    signature: {
+  format: { type: String, default: "signature_pad_v1" },
+  strokes: { type: [mongoose.Schema.Types.Mixed], default: undefined }, // toData()
+  computedHash: { type: String, default: null },
+  updatedAt: { type: Date, default: null },
+}
 
 }, { timestamps: true });
 //

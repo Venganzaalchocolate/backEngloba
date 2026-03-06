@@ -1,115 +1,86 @@
 // routes/permissionsRoutes.js
 // ============================================================================
-// RUTAS ADMIN para gestión de permisos
-// ----------------------------------------------------------------------------
-// Incluye:
-// 1) ModuleGrant (permisos por módulo)
-// 2) ResourceMembership (scoping por recurso)
-// 3) UX: get/set permisos usuario + presets
-// 4) Perfiles:
-//    - PermissionProfile (plantillas de módulos/acciones)
-//    - UserProfileAssignment (asignación de perfiles a usuarios)
-//    - Sync perfiles -> ModuleGrant
-//    - Bulk: aplicar perfil a miembros de un recurso
+// RUTAS ADMIN permisos (UNIFIED)
+// - Profiles (PermissionProfile)
+// - Assignments (UserProfileAssignment)
+// - UserScopes (UserScope)
+// - ScopeProfileLinks (ScopeProfileLink)
+// - Sync manual
 // ============================================================================
 
 const express = require("express");
 const router = express.Router();
 
-// Middleware auth (valida token y mete req.user)
-const { tokenValid } = require("../controllers/indexController");
-
-// Todo lo demás lo sacamos del index (para que routes nunca “salte” de un sitio a otro)
 const {
-  // ModuleGrant
-  listModuleGrants,
-  getModuleGrantById,
-  upsertModuleGrant,
-  updateModuleGrant,
-  toggleModuleGrant,
-  deleteModuleGrant,
+  tokenValid,
 
-  // ResourceMembership
-  listResourceMemberships,
-  getResourceMembershipById,
-  upsertResourceMembership,
-  updateResourceMembership,
-  toggleResourceMembership,
-  deleteResourceMembership,
+  // PROFILES
+  listProfiles,
+  getProfileById,
+  createProfile,
+  updateProfile,
+  toggleProfile,
+  deleteProfileHard,
 
-  // UX usuario
-  getUserPermissions,
-  setUserPermissions,
-  applyPermissionsPreset,
+  // ASSIGNMENTS
+  listAssignments,
+  upsertAssignment,
+  updateAssignment,
+  deleteAssignmentHard,
 
-  // Profiles
-  listPermissionProfiles,
-  getPermissionProfileById,
-  createPermissionProfile,
-  updatePermissionProfile,
-  togglePermissionProfile,
-  deletePermissionProfile,
+  // USER SCOPES
+  listUserScopes,
+  upsertUserScope,
+  updateUserScope,
+  deleteUserScopeHard,
 
-  // Assignments
-  listUserProfileAssignments,
-  upsertUserProfileAssignment,
-  updateUserProfileAssignment,
-  deleteUserProfileAssignment,
+  // LINKS (scope -> profile)
+  listScopeProfileLinks,
+  upsertScopeProfileLink,
+  updateScopeProfileLink,
+  deleteScopeProfileLinkHard,
 
-  // Sync / Bulk
-  syncUserProfiles,
-  applyProfileToResourceMembers,
+  // SYNC
+  syncUserNow,
 } = require("../controllers/indexController");
 
-// ============================================================================
-// MODULE GRANT
-// ============================================================================
-router.post("/modulegrant/list", tokenValid, listModuleGrants);
-router.post("/modulegrant/get", tokenValid, getModuleGrantById);
-router.post("/modulegrant/upsert", tokenValid, upsertModuleGrant);
-router.post("/modulegrant/update", tokenValid, updateModuleGrant);
-router.post("/modulegrant/toggle", tokenValid, toggleModuleGrant);
-router.post("/modulegrant/delete", tokenValid, deleteModuleGrant);
+// --------------------------------------------------------------------------
+// PROFILES
+// --------------------------------------------------------------------------
+router.post("/profile/list", tokenValid, listProfiles);
+router.post("/profile/get", tokenValid, getProfileById);
+router.post("/profile/create", tokenValid, createProfile);
+router.post("/profile/update", tokenValid, updateProfile);
+router.post("/profile/toggle", tokenValid, toggleProfile);
+router.post("/profile/delete", tokenValid, deleteProfileHard);
 
-// ============================================================================
-// RESOURCE MEMBERSHIP
-// ============================================================================
-router.post("/resourcemembership/list", tokenValid, listResourceMemberships);
-router.post("/resourcemembership/get", tokenValid, getResourceMembershipById);
-router.post("/resourcemembership/upsert", tokenValid, upsertResourceMembership);
-router.post("/resourcemembership/update", tokenValid, updateResourceMembership);
-router.post("/resourcemembership/toggle", tokenValid, toggleResourceMembership);
-router.post("/resourcemembership/delete", tokenValid, deleteResourceMembership);
+// --------------------------------------------------------------------------
+// ASSIGNMENTS (user <-> profile)
+// --------------------------------------------------------------------------
+router.post("/assignment/list", tokenValid, listAssignments);
+router.post("/assignment/upsert", tokenValid, upsertAssignment);
+router.post("/assignment/update", tokenValid, updateAssignment);
+router.post("/assignment/delete", tokenValid, deleteAssignmentHard);
 
-// ============================================================================
-// UX USUARIO (en bloque)
-// ============================================================================
-router.post("/user/getpermissions", tokenValid, getUserPermissions);
-router.post("/user/setpermissions", tokenValid, setUserPermissions);
-router.post("/user/applypreset", tokenValid, applyPermissionsPreset);
+// --------------------------------------------------------------------------
+// USER SCOPES (user scopes)
+// --------------------------------------------------------------------------
+router.post("/scope/list", tokenValid, listUserScopes);
+router.post("/scope/upsert", tokenValid, upsertUserScope);
+router.post("/scope/update", tokenValid, updateUserScope);
+router.post("/scope/delete", tokenValid, deleteUserScopeHard);
 
-// ============================================================================
-// PERFILES (PermissionProfile)
-// ============================================================================
-router.post("/profile/list", tokenValid, listPermissionProfiles);
-router.post("/profile/get", tokenValid, getPermissionProfileById);
-router.post("/profile/create", tokenValid, createPermissionProfile);
-router.post("/profile/update", tokenValid, updatePermissionProfile);
-router.post("/profile/toggle", tokenValid, togglePermissionProfile);
-router.post("/profile/delete", tokenValid, deletePermissionProfile);
+// --------------------------------------------------------------------------
+// LINKS (scope -> profile)
+// --------------------------------------------------------------------------
+router.post("/link/list", tokenValid, listScopeProfileLinks);
+router.post("/link/upsert", tokenValid, upsertScopeProfileLink);
+router.post("/link/update", tokenValid, updateScopeProfileLink);
+router.post("/link/delete", tokenValid, deleteScopeProfileLinkHard);
 
-// ============================================================================
-// ASIGNACIONES (UserProfileAssignment)
-// ============================================================================
-router.post("/assignment/list", tokenValid, listUserProfileAssignments);
-router.post("/assignment/upsert", tokenValid, upsertUserProfileAssignment);
-router.post("/assignment/update", tokenValid, updateUserProfileAssignment);
-router.post("/assignment/delete", tokenValid, deleteUserProfileAssignment);
-
-// ============================================================================
-// SYNC / BULK
-// ============================================================================
-router.post("/sync/userprofiles", tokenValid, syncUserProfiles);
-router.post("/bulk/applyprofiletoresourcemembers", tokenValid, applyProfileToResourceMembers);
+// --------------------------------------------------------------------------
+// SYNC (manual)
+// --------------------------------------------------------------------------
+router.post("/sync/user", tokenValid, syncUserNow);
 
 module.exports = router;

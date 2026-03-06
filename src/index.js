@@ -76,7 +76,7 @@ app.use('/api', leaveRoutes);
 app.use('/api', userChangeRequest);
 app.use('/api', volunteerApplicationRoutes);
 app.use('/api', toolsRoutes);
-app.use('/api', permissionsRoutes);
+app.use('/api/permissions', permissionsRoutes);
 
 
  

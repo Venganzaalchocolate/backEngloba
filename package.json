@@ -17,6 +17,7 @@
     "archiver": "^7.0.1",
     "are-we-there-yet": "^4.0.2",
     "bcrypt": "^6.0.0",
+    "canvas": "^3.2.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.0",
     "exceljs": "^4.4.0",

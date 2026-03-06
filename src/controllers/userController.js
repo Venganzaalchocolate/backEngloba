@@ -1872,6 +1872,113 @@ const profilePhotoGetBatch = async (req, res) => {
 };
 
 
+/* =========================
+ *  USER SIGNATURE (strokes)
+ * ========================= */
+const isNonEmptyString = (v) => typeof v === "string" && v.trim().length > 0;
+
+const parseStrokes = (raw) => {
+  // Permite venir como array o como string JSON (por si algún día lo mandas como string)
+  if (Array.isArray(raw)) return raw;
+  if (isNonEmptyString(raw)) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {}
+  }
+  throw new ClientError('Firma inválida: "strokes" debe ser un array', 400);
+};
+
+const validateStrokes = (strokes) => {
+  if (!Array.isArray(strokes) || strokes.length === 0) {
+    throw new ClientError("Firma inválida: strokes vacío", 400);
+  }
+
+  // signature_pad -> [{ points: [{x,y,time?}, ...], ... }, ...]
+  const hasAnyPoint = strokes.some(s =>
+    Array.isArray(s?.points) &&
+    s.points.some(p => typeof p?.x === "number" && typeof p?.y === "number")
+  );
+
+  if (!hasAnyPoint) {
+    throw new ClientError("Firma inválida: no hay puntos", 400);
+  }
+};
+
+const computeSignatureHash = (strokes) => {
+  // checksum simple para trazabilidad (no seguridad)
+  // si no quieres hash, puedes devolver null y ya.
+  const crypto = require("crypto");
+  const json = JSON.stringify(strokes);
+  return crypto.createHash("sha256").update(json).digest("hex");
+};
+const userSignatureGet = async (req, res) => {
+  const { userId } = req.body || {};
+  if (!userId) throw new ClientError("El campo userId es requerido", 400);
+  if (!mongoose.Types.ObjectId.isValid(userId)) throw new ClientError("userId no válido", 400);
+
+  const user = await User.findById(toId(userId))
+    .select("_id signature")
+    .lean();
+
+  if (!user) throw new ClientError("Usuario no encontrado", 404);
+
+  return response(res, 200, {
+    signature: user.signature || { format: "signature_pad_v1", strokes: [] },
+  });
+};
+const userSignatureUpsert = async (req, res) => {
+  const { userId, strokes, format } = req.body || {};
+  if (!userId) throw new ClientError("El campo userId es requerido", 400);
+  if (!mongoose.Types.ObjectId.isValid(userId)) throw new ClientError("userId no válido", 400);
+
+  const parsedStrokes = parseStrokes(strokes);
+  validateStrokes(parsedStrokes);
+
+  const now = new Date();
+  const sigFormat = isNonEmptyString(format) ? String(format).trim() : "signature_pad_v1";
+  const computedHash = computeSignatureHash(parsedStrokes);
+
+  const updated = await User.findByIdAndUpdate(
+    toId(userId),
+    {
+      $set: {
+        "signature.format": sigFormat,
+        "signature.strokes": parsedStrokes,
+        "signature.updatedAt": now,
+        "signature.computedHash": computedHash,
+      },
+    },
+    { new: true, runValidators: true }
+  );
+
+  if (!updated) throw new ClientError("Usuario no encontrado", 404);
+
+  return response(res, 200, updated);
+};
+const userSignatureDelete = async (req, res) => {
+  const { userId } = req.body || {};
+  if (!userId) throw new ClientError("El campo userId es requerido", 400);
+  if (!mongoose.Types.ObjectId.isValid(userId)) throw new ClientError("userId no válido", 400);
+
+  const updated = await User.findByIdAndUpdate(
+    toId(userId),
+    {
+      $unset: {
+        "signature.format": "",
+        "signature.strokes": "",
+        "signature.updatedAt": "",
+        "signature.computedHash": "",
+      },
+    },
+    { new: true }
+  );
+
+  if (!updated) throw new ClientError("Usuario no encontrado", 404);
+
+  return response(res, 200, updated);
+};
+
 module.exports = {
   postCreateUser: catchAsync(postCreateUser),
   getUsers: catchAsync(getUsers),
@@ -1891,4 +1998,7 @@ module.exports = {
   getPhotoProfile: catchAsync(getPhotoProfile),
   profilePhotoSet:catchAsync(profilePhotoSet),
   profilePhotoGetBatch:catchAsync(profilePhotoGetBatch),
+  userSignatureGet: catchAsync(userSignatureGet),
+  userSignatureUpsert: catchAsync(userSignatureUpsert),
+  userSignatureDelete: catchAsync(userSignatureDelete),
 };

@@ -49,6 +49,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/gmail.settings.basic',
   'https://www.googleapis.com/auth/gmail.settings.sharing',
   "https://www.googleapis.com/auth/admin.reports.audit.readonly",
+  
 
 ];
 // 3. Creamos la autenticación JWT con el 'subject'
@@ -785,8 +786,561 @@ async function sendPayrollWithAttachmentEmail(user, { month, year, idFile }) {
 }
 
 
+//---------------------
+//CHAT
+//--------------
+// ✅ Añade aquí solo scopes de Chat (no mezcles con Drive/Gmail para Chat)
+const CHAT_SCOPES = [
+  "https://www.googleapis.com/auth/chat.spaces.readonly", // spaces.list
+  "https://www.googleapis.com/auth/chat.spaces",          // spaces.patch
+  "https://www.googleapis.com/auth/chat.admin.spaces",    // spaces.search (admin)
+  "https://www.googleapis.com/auth/chat.admin.memberships",
+  "https://www.googleapis.com/auth/chat.messages.create",
+  // si quieres borrar espacios/mensajes como admin:
+  // "https://www.googleapis.com/auth/chat.admin.delete",
+];
+
+// Helpers
+const normEmail = (e) => String(e || "").trim().toLowerCase();
+const isEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normEmail(e));
+const assertSpaceName = (spaceName) => {
+  if (!spaceName || !String(spaceName).startsWith("spaces/")) {
+    throw new Error("spaceName inválido (esperado 'spaces/XXXX')");
+  }
+};
+const assertMembershipName = (membershipName) => {
+  if (!membershipName || !String(membershipName).includes("/members/")) {
+    throw new Error("membershipName inválido (esperado 'spaces/.../members/...')");
+  }
+};
+
+function readCredentials() {
+  return JSON.parse(
+    Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, "base64").toString("utf-8")
+  );
+}
+
+function buildJwtClient(asUser, scopes = CHAT_SCOPES) {
+  const credentials = readCredentials();
+  const { client_email, private_key } = credentials;
+
+  return new google.auth.JWT({
+    email: client_email,
+    key: private_key,
+    scopes,
+    subject: asUser,
+  });
+}
+
+// Chat client (googleapis) — OK para spaces.list/search/messages/create/patch
+function getChatClient(asUser, scopes = CHAT_SCOPES) {
+  const auth = buildJwtClient(asUser, scopes);
+  return google.chat({ version: "v1", auth });
+}
+
+// Token (para fallback HTTP)
+async function getChatAccessToken(asUser = "archi@engloba.org.es") {
+  const jwt = buildJwtClient(asUser, CHAT_SCOPES);
+  const { token } = await jwt.getAccessToken();
+  if (!token) throw new Error("No se pudo obtener access_token");
+  return token;
+}
+
+// Fallback HTTP: evita bug “Invalid filter query” del client en memberships.list
+async function chatFetch(asUser, url, { method = "GET", body = null } = {}) {
+  const token = await getChatAccessToken(asUser);
+
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = data?.error?.message || `HTTP ${res.status}`;
+    const err = new Error(msg);
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+/* ============================================================================
+   SPACES
+   ============================================================================ */
+
+// Lista espacios donde el usuario impersonado ES miembro
+async function chatListSpaces({ adminUser = "archi@engloba.org.es", pageSize = 200 } = {}) {
+  const chat = getChatClient(adminUser);
+
+  let pageToken;
+  const out = [];
+  do {
+    const res = await chat.spaces.list({ pageSize, pageToken });
+    out.push(...(res.data.spaces || []));
+    pageToken = res.data.nextPageToken;
+  } while (pageToken);
+
+  return out.map((s) => ({
+    name: s.name,
+    displayName: s.displayName,
+    spaceType: s.spaceType,
+  }));
+}
+
+// Búsqueda admin (catálogo dominio). Requiere useAdminAccess:true
+async function chatSearchSpaces({
+  adminUser = "archi@engloba.org.es",
+  query = "",
+  pageSize = 200,
+} = {}) {
+  const chat = getChatClient(adminUser);
+
+  let pageToken;
+  const out = [];
+  do {
+    const res = await chat.spaces.search({
+      useAdminAccess: true,
+      requestBody: { query, pageSize, pageToken },
+    });
+    out.push(...(res.data.spaces || []));
+    pageToken = res.data.nextPageToken;
+  } while (pageToken);
+
+  return out.map((s) => ({
+    name: s.name,
+    displayName: s.displayName,
+    spaceType: s.spaceType,
+  }));
+}
+
+// Get space (googleapis)
+async function chatGetSpace(spaceName, { adminUser = "archi@engloba.org.es", useAdminAccess = true } = {}) {
+  assertSpaceName(spaceName);
+  const chat = getChatClient(adminUser);
+  const res = await chat.spaces.get({ name: spaceName, useAdminAccess: !!useAdminAccess });
+  return res.data;
+}
+
+// Update space (renombrar, etc.)
+async function chatUpdateSpace(
+  spaceName,
+  patch = {},
+  {
+    adminUser = "archi@engloba.org.es",
+    useAdminAccess = true,
+    updateMask = "displayName",
+  } = {}
+) {
+  assertSpaceName(spaceName);
+  const chat = getChatClient(adminUser);
+
+  const res = await chat.spaces.patch({
+    name: spaceName,
+    useAdminAccess: !!useAdminAccess,
+    updateMask,
+    requestBody: patch,
+  });
+
+  return res.data;
+}
+
+/* ============================================================================
+   MEMBERS (CRUD)
+   - listMembers usa HTTP fallback para evitar “Invalid filter query”
+   ============================================================================ */
+
+// LIST members (HTTP fallback)
+async function chatListMembers(
+  spaceName,
+  {
+    adminUser = "archi@engloba.org.es",
+    useAdminAccess = true,
+    pageSize = 200,
+    // 👇 NUEVO: permite override si quieres
+    filter = null,
+    showGroups = false,
+    showInvited = false,
+  } = {}
+) {
+  assertSpaceName(spaceName);
+
+  let pageToken;
+  const all = [];
+
+  // ✅ regla obligatoria de Google cuando useAdminAccess=true
+  const effectiveFilter =
+    useAdminAccess
+      ? (filter && String(filter).trim() ? String(filter).trim() : `member.type = "HUMAN"`)
+      : (filter && String(filter).trim() ? String(filter).trim() : null);
+
+  do {
+    const qs = new URLSearchParams();
+    qs.set("pageSize", String(pageSize));
+    if (pageToken) qs.set("pageToken", pageToken);
+
+    if (useAdminAccess) qs.set("useAdminAccess", "true");
+
+    // ✅ AQUÍ LA CLAVE
+    if (effectiveFilter) qs.set("filter", effectiveFilter);
+
+    if (showGroups) qs.set("showGroups", "true");
+    if (showInvited) qs.set("showInvited", "true"); // ojo: según doc, puede requerir user auth
+
+    const url = `https://chat.googleapis.com/v1/${spaceName}/members?${qs.toString()}`;
+    const data = await chatFetch(adminUser, url);
+
+    all.push(...(data.memberships || []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return all.map((m) => ({
+    name: m.name,
+    state: m.state,
+    role: m.role,
+    memberName: m.member?.name,
+    memberType: m.member?.type,
+  }));
+}
+
+// ADD member (googleapis)
+async function chatAddMember(
+  spaceName,
+  email,
+  { adminUser = "archi@engloba.org.es", useAdminAccess = true } = {}
+) {
+  assertSpaceName(spaceName);
+  if (!isEmail(email)) throw new Error(`Email inválido: ${email}`);
+
+  const chat = getChatClient(adminUser);
+
+  const res = await chat.spaces.members.create({
+    parent: spaceName,
+    useAdminAccess: !!useAdminAccess,
+    requestBody: {
+      member: { type: "HUMAN", name: `users/${normEmail(email)}` },
+    },
+  });
+
+  return res.data; // { name, state, role, ... }
+}
+
+async function chatRemoveMember(
+  membershipName,
+  { adminUser = "archi@engloba.org.es", useAdminAccess = true } = {}
+) {
+  assertMembershipName(membershipName);
+
+  const chat = getChatClient(adminUser);
+  const res = await chat.spaces.members.delete({
+    name: membershipName,
+    useAdminAccess: !!useAdminAccess,
+  });
+
+  return res.data || { ok: true };
+}
+
+async function chatResolveUserIdByEmail(email) {
+  const userKey = String(email || "").trim().toLowerCase();
+  if (!userKey) return null;
+
+  // Admin SDK Directory: userKey puede ser email
+  const { data } = await directory.users.get({
+    userKey,
+    fields: "id,primaryEmail",
+  });
+
+  return data?.id ? String(data.id) : null;
+}
+
+async function chatRemoveMemberByEmail(
+  spaceName,
+  email,
+  {
+    adminUser = "archi@engloba.org.es",
+    useAdminAccess = true,
+  } = {}
+) {
+  assertSpaceName(spaceName);
+  if (!isEmail(email)) throw new Error(`Email inválido: ${email}`);
+
+  const targetEmail = normEmail(email);
+
+  // 1) Resolver userId (clave)
+  const userId = await chatResolveUserIdByEmail(targetEmail);
+  if (!userId) {
+    return { ok: false, reason: "USER_NOT_FOUND_IN_DIRECTORY", email: targetEmail };
+  }
+
+  const wantedById = `users/${userId}`;       // ✅ lo más habitual en memberships.list
+  const wantedByEmail = `users/${targetEmail}`; // ✅ a veces viene así
+
+  // 2) Listar miembros (admin access => filter obligatorio)
+  const members = await chatListMembers(spaceName, {
+    adminUser,
+    useAdminAccess,
+    filter: `member.type = "HUMAN"`,
+  });
+
+  // 3) Match flexible (ID o email)
+  const hit = members.find((m) => {
+    const mn = String(m.memberName || "").toLowerCase();
+    return mn === wantedById.toLowerCase() || mn === wantedByEmail.toLowerCase();
+  });
+
+  if (!hit) {
+    // útil para debug si vuelve a pasar
+    return {
+      ok: false,
+      reason: "NOT_FOUND",
+      email: targetEmail,
+      debug: {
+        wantedById,
+        wantedByEmail,
+        sampleMemberNames: members.slice(0, 10).map(x => x.memberName),
+      },
+    };
+  }
+
+  // 4) Borrar por membershipName
+  await chatRemoveMember(hit.name, { adminUser, useAdminAccess });
+
+  return { ok: true, removed: hit.name, email: targetEmail };
+}
+// UPDATE member role (googleapis)
+async function chatSetMemberRole(
+  membershipName,
+  role,
+  { adminUser = "archi@engloba.org.es", useAdminAccess = true } = {}
+) {
+  assertMembershipName(membershipName);
+
+  const allowed = new Set(["ROLE_MEMBER", "ROLE_ASSISTANT_MANAGER", "ROLE_MANAGER"]);
+  if (!allowed.has(role)) {
+    throw new Error(`role inválido. Usa: ${Array.from(allowed).join(", ")}`);
+  }
+
+  const chat = getChatClient(adminUser);
+
+  const res = await chat.spaces.members.patch({
+    name: membershipName,
+    useAdminAccess: !!useAdminAccess,
+    updateMask: "role",
+    requestBody: { role },
+  });
+
+  return res.data;
+}
+
+/* ============================================================================
+   MESSAGES
+   ============================================================================ */
+
+async function chatPostMessage(
+  spaceName,
+  text,
+  { adminUser = "archi@engloba.org.es" } = {}
+) {
+  assertSpaceName(spaceName);
+
+  const msg = String(text || "").trim();
+  if (!msg) throw new Error("text es obligatorio");
+
+  const chat = getChatClient(adminUser);
+
+  const res = await chat.spaces.messages.create({
+    parent: spaceName,
+    requestBody: { text: msg },
+  });
+
+  return res.data;
+}
 
 
+/* ============================================================================
+   PRUEBA LOCAL (opcional)
+   - Ejecuta con: node src/controllers/googleController.js
+   - Asegúrate de tener GOOGLE_SPACE_CHAT="spaces/AAQANd9GaSE" en .env
+   ============================================================================ */
+
+const spaceName = process.env.GOOGLE_SPACE_CHAT ;
+
+/**
+ * Añade al space de Google Chat a TODOS los responsables y coordinadores
+ * de Programas + Dispositivos (Dispositive).
+ *
+ * - Obtiene ids de responsables/coordinadores
+ * - Resuelve emails desde User
+ * - Dedupe
+ * - Añade miembros (uno a uno, con delay)
+ *
+ * @param {string} spaceName "spaces/AAQANd9GaSE"
+ * @param {{
+ *   adminUser?: string,
+ *   useAdminAccess?: boolean,
+ *   dryRun?: boolean,
+ *   delayMs?: number,
+ *   onlyActive?: boolean,          // filtra Program/Dispositive active=true
+ *   includePrograms?: boolean,
+ *   includeDispositives?: boolean,
+ *   extraEmails?: string[],        // por si quieres meter alguno fijo
+ *   logger?: Console
+ * }} opts
+ */
+async function chatSyncAddManagersFromProgramsAndDispositives(
+  spaceName,
+  {
+    adminUser = "archi@engloba.org.es",
+    useAdminAccess = true,
+    dryRun = true,
+    delayMs = 150,
+    onlyActive = true,
+    includePrograms = true,
+    includeDispositives = true,
+    extraEmails = [],
+    logger = console,
+  } = {}
+) {
+  assertSpaceName(spaceName);
+
+  const log = logger?.log || console.log;
+  const warn = logger?.warn || console.warn;
+  const error = logger?.error || console.error;
+  const ts = () => new Date().toISOString().replace("T", " ").slice(0, 19);
+
+  // 1) Programas / Dispositivos: recoger IDs
+  const idSet = new Set();
+
+  if (includePrograms) {
+    const q = onlyActive ? { active: true } : {};
+    const programs = await Program.find(q, { responsible: 1, coordinators: 1 }).lean();
+    for (const p of programs) {
+      for (const id of p.responsible || []) idSet.add(String(id));
+      for (const id of p.coordinators || []) idSet.add(String(id));
+    }
+    log(`[${ts()}] Programs: ${programs.length} → ids únicos: ${idSet.size}`);
+  }
+
+  if (includeDispositives) {
+    const q = onlyActive ? { active: true } : {};
+    const dispositives = await Dispositive.find(q, { responsible: 1, coordinators: 1 }).lean();
+    const before = idSet.size;
+    for (const d of dispositives) {
+      for (const id of d.responsible || []) idSet.add(String(id));
+      for (const id of d.coordinators || []) idSet.add(String(id));
+    }
+    log(`[${ts()}] Dispositives: ${dispositives.length} → +${idSet.size - before} ids`);
+  }
+
+  const ids = Array.from(idSet);
+  if (!ids.length) {
+    warn(`[${ts()}] No hay responsables/coordinadores para añadir.`);
+    return { ok: true, total: 0, added: 0, skipped: 0, errors: [] };
+  }
+
+  // 2) Resolver emails
+  const users = await User.find(
+    { _id: { $in: ids } },
+    { email: 1, firstName: 1, lastName: 1 }
+  ).lean();
+
+  // elegimos email corporativo como prioridad
+  const emails = [];
+  for (const u of users) {
+    const corp = String(u.email || "").trim().toLowerCase();
+    if (corp && corp.includes("@")) emails.push(corp);
+  }
+
+
+  const uniqueEmails = Array.from(new Set(emails));
+  if (!uniqueEmails.length) {
+    warn(`[${ts()}] No hay emails corporativos resolubles para añadir.`);
+    return { ok: true, total: 0, added: 0, skipped: 0, errors: [] };
+  }
+
+  // 3) (Opcional) evitar reintentos: listar miembros actuales y saltar los ya presentes
+  // Esto es útil para no spamear la API (y evitar errores de "already exists")
+  let existing = new Set();
+  try {
+    const members = await chatListMembers(spaceName, {
+      adminUser,
+      useAdminAccess,
+      filter: `member.type = "HUMAN"`,
+    });
+
+    // memberName puede venir como users/{id} o users/{email}. Nos vale guardar ambos.
+    for (const m of members) {
+      const mn = String(m.memberName || "").trim().toLowerCase();
+      if (mn.startsWith("users/")) existing.add(mn);
+    }
+  } catch (e) {
+    warn(`[${ts()}] No pude listar miembros existentes (sigo igual). ${e?.message || e}`);
+  }
+
+  const results = { ok: true, total: uniqueEmails.length, added: 0, skipped: 0, errors: [] };
+
+  log(`[${ts()}] Space: ${spaceName}`);
+  log(`[${ts()}] Emails únicos candidatos: ${uniqueEmails.length}`);
+  log(`[${ts()}] Modo: ${dryRun ? "DRY RUN" : "REAL"}`);
+
+  // 4) Añadir 1 a 1 (con delay)
+  for (let i = 0; i < uniqueEmails.length; i++) {
+    const emailToAdd = uniqueEmails[i];
+    const idx = `${i + 1}/${uniqueEmails.length}`;
+    const asMemberEmail = `users/${emailToAdd}`;
+
+    // si ya está por email (cuando Chat devuelve users/email)
+    if (existing.has(asMemberEmail)) {
+      results.skipped += 1;
+      log(`[${ts()}] [${idx}] ↩︎ ya estaba: ${emailToAdd}`);
+      continue;
+    }
+
+    try {
+      if (dryRun) {
+        results.added += 1;
+        log(`[${ts()}] [DRY ${idx}] añadir → ${emailToAdd}`);
+      } else {
+        const res = await chatAddMember(spaceName, emailToAdd, { adminUser, useAdminAccess });
+        results.added += 1;
+
+        // marca como existente para evitar duplicados si se repite
+        if (res?.member?.name) existing.add(String(res.member.name).toLowerCase());
+
+        log(
+          `[${ts()}] ✅ [${idx}] añadido → ${emailToAdd} (${res?.state || "OK"})`
+        );
+      }
+    } catch (err) {
+      const msg = err?.message || String(err);
+      results.errors.push({ email: emailToAdd, error: msg });
+      results.skipped += 1;
+      error(`[${ts()}] ❌ [${idx}] ${emailToAdd} → ${msg}`);
+    }
+
+    if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
+  }
+
+  log(
+    `[${ts()}] — Resumen Chat: candidatos ${results.total} | añadidos ${results.added} | omitidos ${results.skipped} | errores ${results.errors.length}`
+  );
+
+  return results;
+}
+
+
+const prueba=async()=>{
+
+// await chatPostMessage(spaceName, textDocs);
+// await chatPostMessage(spaceName, textGroups);
+}
+
+//prueba()
 
 module.exports = {
   uploadFileToDrive,

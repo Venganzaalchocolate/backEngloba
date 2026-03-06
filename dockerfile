@@ -4,6 +4,16 @@ FROM node:22
 # Establece el directorio de trabajo dentro del contenedor
 WORKDIR /usr/src/app
 
+# Dependencias nativas para canvas (cairo/pango/etc) + toolchain de build
+RUN apt-get update && apt-get install -y \
+  libcairo2-dev \
+  libpango1.0-dev \
+  libjpeg-dev \
+  libgif-dev \
+  librsvg2-dev \
+  build-essential \
+  python3 \
+  && rm -rf /var/lib/apt/lists/*
 # Copia los archivos package.json y package-lock.json
 COPY package*.json ./
 

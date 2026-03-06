@@ -27,9 +27,8 @@ module.exports = {
     "programsanddispositives",
     "root",
     "social",
-    "styles",
     "volunteer",
-    "workspace",
+    "permissions"
   ],
 
   // Acciones estándar por módulo.
@@ -45,21 +44,4 @@ module.exports = {
   // Jerarquía típica: responsable > coordinator > viewer
   RESOURCE_ROLES: ["responsable", "coordinator", "viewer"],
 
-  PRESETS : {
-  rrhh: {
-    moduleGrants: [
-      { module: "employer", actions: ["read", "manage", "export"] },
-      { module: "payroll", actions: ["read", "manage", "export"] },
-      { module: "globals", actions: ["read"] },
-    ],
-    resourceMemberships: [],
-  },
-  volunteer_manager: {
-    moduleGrants: [
-      { module: "volunteer", actions: ["read", "manage", "export"] },
-      { module: "lists", actions: ["read", "export"] },
-    ],
-    resourceMemberships: [],
-  },
-}
 };

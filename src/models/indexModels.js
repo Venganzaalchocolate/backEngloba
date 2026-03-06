@@ -17,9 +17,11 @@ const Leaves=require('./leave');
 const UserChangeRequest = require('./UserChangeRequest');
 const Dispositive=require('./dispositive');
 const VolunteerApplication = require('./volunteerApplication');
-const ResourceMembership = require('./permissions/resourceMembership');
-const ModuleGrant = require('./permissions/moduleGrant');
+
+const UserScope = require('./permissions/UserScope');
+const ScopeProfileLink = require('./permissions/ScopeProfileLink');
 const UserProfileAssignment = require('./permissions/userProfileAssignment');
+const ModuleGrant = require('./permissions/moduleGrant');
 const PermissionProfile = require('./permissions/permissionProfile');
 
 module.exports = {
@@ -41,8 +43,9 @@ module.exports = {
     UserChangeRequest,
     Dispositive,
     VolunteerApplication,
-    ResourceMembership,
+    PermissionProfile,
     ModuleGrant,
     UserProfileAssignment,
-    PermissionProfile
+    ScopeProfileLink,
+    UserScope
 }
