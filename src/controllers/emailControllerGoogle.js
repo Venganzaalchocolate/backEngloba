@@ -2,7 +2,7 @@
 const { google }   = require('googleapis');
 const MailComposer = require('nodemailer/lib/mail-composer');
 const { User, Periods, UserChangeRequest, Dispositive , Program, UserCv } = require('../models/indexModels');
-const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail, buildEqualityLgtbiqSurveyPlainText, buildEqualityLgtbiqSurveyHtmlEmail } = require('../templates/emailTemplates');
+const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail, buildEqualityLgtbiqSurveyPlainText, buildEqualityLgtbiqSurveyHtmlEmail, buildMiniTutorialsOpsPlainText, buildMiniTutorialsOpsHtmlEmail, buildSignatureUpdateHtmlEmail, buildSignatureUpdatePlainText } = require('../templates/emailTemplates');
 const { default: mongoose } = require('mongoose');
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -847,6 +847,442 @@ async function sendEqualityLgtbiqSurveyEmail({
 }
 
 
+
+
+
+
+
+
+
+
+
+// ✅ Envío masivo: aviso “Nueva firma”
+// - Solo a usuarios NO APAFA
+// - Solo si tienen email corporativo (user.email)
+// - Solo si tienen un Period activo HOY (active:true y (endDate null/undefined o >= hoy) y startDate <= hoy)
+// - NO usa email_personal
+// - Envío 1 a 1 con delay, con modo dryRun/preview
+//
+// Requiere que importes tus templates nuevos:
+///  buildSignatureUpdatePlainText, buildSignatureUpdateHtmlEmail
+//
+// y que tengas sendEmail() disponible en este mismo fichero.
+
+const DEFAULT_APP_URL = "https://app.engloba.org.es";
+
+async function sendSignatureUpdateToActiveWorkers({
+  previewOnly = true,                      // true = solo previewToList
+  previewToList = ["comunicacion@engloba.org.es"],
+
+  delayMs = 250,
+  logger = console.log,
+  errorLogger = console.error,
+
+  // contenido
+  subject = "Acción requerida · Registra tu firma en la app para firmar nóminas",
+  logoUrl = "https://app.engloba.org.es/graphic/logotipo_blanco.png",
+  supportEmail = "comunicacion@engloba.org.es",
+  appUrl = DEFAULT_APP_URL,
+
+  // para excluir ciertos correos (opc.)
+  excludeEmails = [],
+
+  // opcional: filtra por roles/estado si quieres (por defecto no hace falta)
+  // extraUserQuery = {},
+
+} = {}) {
+  const ts = () => new Date().toISOString().replace("T", " ").slice(0, 19);
+  const normEmail = (e) => String(e || "").trim().toLowerCase();
+  const excluded = new Set((excludeEmails || []).map(normEmail));
+
+  // 1) construir lista de destinatarios
+  let recipients = [];
+
+  if (previewOnly) {
+    recipients = Array.from(
+      new Set((previewToList || []).map(normEmail).filter(Boolean))
+    );
+    if (!recipients.length) {
+      logger(`[${ts()}] Firma: preview sin destinatarios.`);
+      return { ok: false, total: 0, sent: 0, skipped: 0, recipients: [] };
+    }
+  } else {
+    // --- Query Periods activos HOY ---
+    const now = new Date();
+
+    const activePeriods = await Periods.find(
+      {
+        active: true,
+        startDate: { $lte: now },
+        $or: [
+          { endDate: { $exists: false } },
+          { endDate: null },
+          { endDate: { $gte: now } },
+        ],
+      },
+      { idUser: 1 }
+    ).lean();
+
+    const userIds = Array.from(
+      new Set((activePeriods || []).map((p) => String(p.idUser)).filter(Boolean))
+    );
+
+    if (!userIds.length) {
+      logger(`[${ts()}] Firma: no hay Periods activos hoy.`);
+      return { ok: false, total: 0, sent: 0, skipped: 0, recipients: [] };
+    }
+
+    // --- Users válidos: NO apafa + email corporativo ---
+    const users = await User.find(
+      {
+        _id: { $in: userIds },
+        apafa: { $ne: true },
+        email: { $exists: true, $ne: "" },
+        // ...extraUserQuery,
+      },
+      { email: 1 }
+    ).lean();
+
+    recipients = Array.from(
+      new Set(
+        (users || [])
+          .map((u) => normEmail(u.email))
+          .filter((e) => e && e.includes("@") && !excluded.has(e))
+      )
+    );
+
+    if (!recipients.length) {
+      logger(`[${ts()}] Firma: no hay destinatarios tras filtros (apafa/email/period).`);
+      return { ok: false, total: 0, sent: 0, skipped: 0, recipients: [] };
+    }
+  }
+
+  // 2) preparar mapa para personalizar nombre (si se puede)
+  //    (en preview puede existir el user; en real también)
+  const usersForNames = await User.find(
+    { email: { $in: recipients } },
+    { email: 1, firstName: 1, lastName: 1 }
+  ).lean();
+
+  const nameByEmail = new Map(
+    (usersForNames || []).map((u) => [
+      normEmail(u.email),
+      `${u.firstName || ""} ${u.lastName || ""}`.trim(),
+    ])
+  );
+
+  logger(`[${ts()}] Firma: modo ${previewOnly ? "PREVIEW" : "REAL"} | destinatarios: ${recipients.length}`);
+
+  const results = { ok: true, total: recipients.length, sent: 0, skipped: 0, errors: [], recipients };
+
+  // 3) envío 1 a 1
+  for (let i = 0; i < recipients.length; i++) {
+    const to = recipients[i];
+    const idx = `${i + 1}/${recipients.length}`;
+
+    const displayName = nameByEmail.get(to) || "equipo";
+
+    // 🔻 Estas 2 funciones son las que te pasé antes
+    const text = buildSignatureUpdatePlainText(displayName, { appUrl, supportEmail });
+    const html = buildSignatureUpdateHtmlEmail(displayName, { logoUrl, appUrl, supportEmail });
+
+    try {
+      await sendEmail([to], subject, text, html);
+      results.sent += 1;
+      logger(`✅ [${ts()}] [${idx}] Enviado → ${to} (${displayName})`);
+    } catch (err) {
+      results.skipped += 1;
+      const msg = err?.message || String(err);
+      results.errors.push({ to, error: msg });
+      errorLogger(`❌ [${ts()}] [${idx}] Error → ${to}: ${msg}`);
+    }
+
+    if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
+  }
+
+  logger(`— Resumen Firma: total ${results.total} | OK ${results.sent} | Errores ${results.skipped}`);
+  return results;
+}
+
+const prueba=async()=>{
+  await sendSignatureUpdateToActiveWorkers({
+  previewOnly: true,
+  previewToList: ["comunicacion@engloba.org.es", "web@engloba.org.es"],
+});
+}
+// prueba()
+
+
+async function sendCenterContactReminderToActiveDeviceManagers({
+  previewOnly = true,
+  previewToList = ['comunicacion@engloba.org.es', 'web@engloba.org.es'],
+
+  delayMs = 250,
+  logger = console.log,
+  errorLogger = console.error,
+
+  subject = 'Acción requerida: completar dirección y teléfono del centro antes del 11 de marzo',
+  logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
+  supportEmail = 'paqui@engloba.org.es',
+  appUrl = 'https://app.engloba.org.es',
+  deadline = 'miércoles 11 de marzo de 2026',
+
+  excludeEmails = [],
+} = {}) {
+  const ts = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const normEmail = (e) => String(e || '').trim().toLowerCase();
+  const excluded = new Set((excludeEmails || []).map(normEmail));
+
+  let recipients = [];
+  let usersForNames = [];
+
+  if (previewOnly) {
+    recipients = Array.from(
+      new Set((previewToList || []).map(normEmail).filter(Boolean))
+    );
+
+    if (!recipients.length) {
+      logger(`[${ts()}] Recordatorio centros: preview sin destinatarios.`);
+      return { ok: false, total: 0, sent: 0, skipped: 0, recipients: [] };
+    }
+
+    usersForNames = await User.find(
+      { email: { $in: recipients } },
+      { email: 1, firstName: 1, lastName: 1 }
+    ).lean();
+  } else {
+    // 1) Dispositivos activos
+    const activeDispositives = await Dispositive.find(
+      { active: { $ne: false } }, // incluye true y también docs antiguos sin campo
+      { name: 1, responsible: 1, coordinators: 1 }
+    ).lean();
+
+    if (!activeDispositives.length) {
+      logger(`[${ts()}] Recordatorio centros: no hay dispositivos activos.`);
+      return { ok: false, total: 0, sent: 0, skipped: 0, recipients: [] };
+    }
+
+    // 2) IDs de responsables/coordinadores
+    const managerIds = Array.from(
+      new Set(
+        activeDispositives.flatMap(d => [
+          ...((d.responsible || []).map(String)),
+          ...((d.coordinators || []).map(String)),
+        ])
+      )
+    );
+
+    if (!managerIds.length) {
+      logger(`[${ts()}] Recordatorio centros: no hay responsables/coordinadores en dispositivos activos.`);
+      return { ok: false, total: 0, sent: 0, skipped: 0, recipients: [] };
+    }
+
+    // 3) Usuarios con email corporativo
+    usersForNames = await User.find(
+      {
+        _id: { $in: managerIds },
+        email: { $exists: true, $ne: '' },
+      },
+      { email: 1, firstName: 1, lastName: 1 }
+    ).lean();
+
+    recipients = Array.from(
+      new Set(
+        (usersForNames || [])
+          .map(u => normEmail(u.email))
+          .filter(e => e && e.includes('@') && !excluded.has(e))
+      )
+    );
+
+    if (!recipients.length) {
+      logger(`[${ts()}] Recordatorio centros: no hay correos válidos tras filtros.`);
+      return { ok: false, total: 0, sent: 0, skipped: 0, recipients: [] };
+    }
+  }
+
+  const nameByEmail = new Map(
+    (usersForNames || []).map(u => [
+      normEmail(u.email),
+      `${u.firstName || ''} ${u.lastName || ''}`.trim(),
+    ])
+  );
+
+  const buildText = (name = 'equipo') => `Hola ${name},
+
+Buenos días.
+
+Os escribimos para recordaros que es necesario revisar y completar, dentro del módulo "Programas y dispositivos", los datos de contacto de cada centro.
+
+En concreto, debéis añadir:
+- La dirección completa del centro
+- El teléfono del centro, si lo hubiese
+
+Es importante que esta información quede cumplimentada antes del ${deadline}, ya que necesitamos extraer estos datos para remitirlos a la administración.
+
+Ruta:
+Programas y dispositivos → seleccionar dispositivo → completar dirección y teléfono
+
+Por favor, revisad vuestro/s dispositivo/s cuanto antes para que la información quede correctamente registrada dentro del plazo.
+
+Si detectáis cualquier incidencia o tenéis dudas, podéis escribirnos a ${supportEmail}.
+
+Muchas gracias por vuestra colaboración.
+
+Un saludo,
+Departamento de Comunicación y Desarrollo Tecnológico
+Asociación Engloba`;
+
+  const buildHtml = (name = 'equipo') => `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Acción requerida · Completar dirección y teléfono del centro</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#ededed;font-family:'Roboto',Arial,sans-serif;color:#333;line-height:1.55;-webkit-text-size-adjust:100%}
+  .card{max-width:680px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+  .header{background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);color:#fff;text-align:center;padding:28px 20px}
+  .header h1{font-size:24px;margin:6px 0 0}
+  .logo{max-width:120px;height:auto;margin-bottom:8px}
+  .content{padding:32px 36px;font-size:16px}
+  .content p{margin:16px 0}
+  h2{color:#4f529f;font-size:18px;margin:26px 0 10px}
+  ul{margin:8px 0 16px 22px}
+  li{margin:6px 0}
+  .block{background:#f8f9ff;border:1px solid #e7e9ff;border-radius:10px;padding:14px 16px;margin:10px 0 18px}
+  .tag{display:inline-block;background:#eef0ff;color:#4f529f;border:1px solid #dfe2ff;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.2px;margin-left:8px;vertical-align:middle}
+  .kbd{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;background:#f1f1f1;border-radius:6px;padding:2px 6px;border:1px solid #e5e5e5}
+  .deadline{background:#fff4f4;border:1px solid #f1c7c7;color:#8a2d2d;border-radius:10px;padding:12px 14px;font-weight:700;margin:14px 0 18px}
+  .btn-td{border-radius:40px;background:#4f529f}
+  .btn-a{display:inline-block;padding:12px 22px;border-radius:40px;font-weight:700;color:#ffffff !important;text-decoration:none !important;background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%)}
+  .btns-row{margin:16px 0 6px;text-align:center}
+  .hint{font-size:14px;color:#555;margin-top:6px}
+  a.link{color:#4f529f;font-weight:700;text-decoration:none}
+  .footer{background:#bec3f4;text-align:center;padding:18px 16px;font-size:13px;color:#333}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      ${logoUrl ? `<img src="${logoUrl}" alt="Logo Engloba" class="logo">` : ''}
+      <h1>Completar datos del centro</h1>
+      <div style="opacity:.9;font-size:14px;margin-top:6px">Programas y dispositivos</div>
+    </div>
+
+    <div class="content">
+      <p>Hola ${name},</p>
+
+      <p>
+        Os escribimos para recordaros que es necesario <strong>revisar y completar los datos de contacto de cada centro</strong>
+        dentro del módulo <strong>Programas y dispositivos</strong>.
+      </p>
+
+      <div class="deadline">
+        Fecha límite: antes del ${deadline}
+      </div>
+
+      <h2>📍 Datos que debéis comprobar <span class="tag">Obligatorio</span></h2>
+      <div class="block">
+        <ul>
+          <li><strong>Dirección completa del centro</strong></li>
+          <li><strong>Teléfono del centro</strong>, si lo hubiese</li>
+        </ul>
+      </div>
+
+      <h2>🧭 Dónde hacerlo</h2>
+      <div class="block">
+        <p style="margin:0;">
+          <span class="kbd">Programas y dispositivos → seleccionar dispositivo → completar dirección y teléfono</span>
+        </p>
+      </div>
+
+      <h2>📄 ¿Por qué es importante?</h2>
+      <div class="block">
+        <p style="margin:0;">
+          Necesitamos que esta información esté correctamente registrada para poder <strong>extraer los datos y remitirlos a la administración</strong>.
+        </p>
+      </div>
+
+      <p>
+        Por favor, revisad vuestro/s dispositivo/s cuanto antes para que toda la información quede completada dentro del plazo.
+      </p>
+
+      <div class="btns-row">
+        <table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:8px auto">
+          <tr>
+            <td class="btn-td">
+              <a class="btn-a" href="${appUrl}" target="_blank" rel="noopener">Abrir aplicación ▸</a>
+            </td>
+          </tr>
+        </table>
+        <p class="hint">
+          Soporte: <a class="link" href="mailto:${supportEmail}">${supportEmail}</a>
+        </p>
+      </div>
+
+      <p>Muchas gracias por vuestra colaboración.</p>
+
+      <p>
+        Un saludo,<br>
+        <strong>Departamento de Comunicación y Desarrollo Tecnológico</strong><br>
+        Asociación Engloba
+      </p>
+    </div>
+
+    <div class="footer">
+      Este aviso se envía para facilitar la actualización de datos de los dispositivos.
+    </div>
+  </div>
+</body>
+</html>`;
+
+  logger(
+    `[${ts()}] Recordatorio centros: modo ${previewOnly ? 'PREVIEW' : 'REAL'} | destinatarios: ${recipients.length}`
+  );
+
+  const results = {
+    ok: true,
+    total: recipients.length,
+    sent: 0,
+    skipped: 0,
+    errors: [],
+    recipients,
+  };
+
+  for (let i = 0; i < recipients.length; i++) {
+    const to = recipients[i];
+    const idx = `${i + 1}/${recipients.length}`;
+    const displayName = nameByEmail.get(to) || 'equipo';
+
+    const text = buildText(displayName);
+    const html = buildHtml(displayName);
+
+    try {
+      await sendEmail([to], subject, text, html);
+      results.sent += 1;
+      logger(`✅ [${ts()}] [${idx}] Enviado → ${to} (${displayName})`);
+    } catch (err) {
+      results.skipped += 1;
+      const msg = err?.message || String(err);
+      results.errors.push({ to, error: msg });
+      errorLogger(`❌ [${ts()}] [${idx}] Error → ${to}: ${msg}`);
+    }
+
+    if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+  }
+
+  logger(`— Resumen Recordatorio centros: total ${results.total} | OK ${results.sent} | Errores ${results.skipped}`);
+  return results;
+}
+
+const prueba2 = async () => {
+  await sendCenterContactReminderToActiveDeviceManagers({
+    previewOnly: true,
+    previewToList: ['paqui@engloba.org.es'],
+  });
+};
+// prueba2()
 module.exports = {
   sendEmail,          // firma idéntica a tu antiguo SMTP
   generateEmailHTML,

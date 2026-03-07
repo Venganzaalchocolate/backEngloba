@@ -18,8 +18,8 @@ const UserChangeRequest = require('./UserChangeRequest');
 const Dispositive=require('./dispositive');
 const VolunteerApplication = require('./volunteerApplication');
 
-const UserScope = require('./permissions/UserScope');
-const ScopeProfileLink = require('./permissions/ScopeProfileLink');
+const UserScope = require('./permissions/userScope');
+const ScopeProfileLink = require('./permissions/scopeProfileLink');
 const UserProfileAssignment = require('./permissions/userProfileAssignment');
 const ModuleGrant = require('./permissions/moduleGrant');
 const PermissionProfile = require('./permissions/permissionProfile');

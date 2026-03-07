@@ -1854,4 +1854,138 @@ export function buildEqualityLgtbiqSurveyHtmlEmail(
 </html>`;
 }
 
+export function buildSignatureUpdatePlainText(
+  name = "",
+  {
+    appUrl = "https://app.engloba.org.es",
+    supportEmail = "comunicacion@engloba.org.es",
+  } = {}
+) {
+  const who = name?.trim() ? name.trim() : "equipo";
+
+  return (
+`Hola ${who},
+
+Buenos días.
+
+Hemos actualizado el sistema de firma de nóminas en la app.
+
+A partir de ahora, para poder firmar tus nóminas necesitas registrar tu firma una sola vez desde:
+Mi datos → Firma
+
+Pasos:
+1) Entra en la app: ${appUrl}
+2) Ve a “Mi Datos”
+3) Abre el apartado “Firma”
+4) Dibuja tu firma y guarda
+
+Una vez guardada, podrás firmar tus nóminas directamente desde el apartado “Nóminas”.
+
+Si al intentar firmar te aparece un aviso de “no hay firma guardada”, significa que todavía no la has registrado.
+
+Cualquier duda o incidencia: ${supportEmail}
+
+Un saludo,
+Asociación Engloba`
+  );
+}
+
+export function buildSignatureUpdateHtmlEmail(
+  name = "",
+  {
+    logoUrl = "https://app.engloba.org.es/graphic/logotipo_blanco.png",
+    appUrl = "https://app.engloba.org.es",
+    supportEmail = "comunicacion@engloba.org.es",
+  } = {}
+) {
+  const who = name?.trim() ? name.trim() : "equipo";
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Firma digital en la app · Acción requerida</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#ededed;font-family:'Roboto',Arial,sans-serif;color:#333;line-height:1.55;-webkit-text-size-adjust:100%}
+  .card{max-width:680px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+  .header{background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);color:#fff;text-align:center;padding:28px 20px}
+  .header h1{font-size:22px;margin:6px 0 0;font-weight:800}
+  .logo{max-width:140px;height:auto;margin-bottom:8px}
+  .content{padding:30px 34px;font-size:16px}
+  .content p{margin:14px 0}
+  .block{background:#f8f9ff;border:1px solid #e7e9ff;border-radius:10px;padding:14px 16px;margin:12px 0 16px}
+  .tag{display:inline-block;background:#eef0ff;color:#4f529f;border:1px solid #dfe2ff;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.2px;margin-left:8px;vertical-align:middle}
+  .kbd{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
+       background:#f1f1f1;border-radius:6px;padding:2px 6px;border:1px solid #e5e5e5}
+  .btns-row{margin:16px 0 6px;text-align:center}
+  .btn-td{border-radius:40px;background:#4f529f}
+  .btn-a{
+    display:inline-block;padding:12px 22px;border-radius:40px;font-weight:800;
+    color:#ffffff !important;text-decoration:none !important;
+    background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);
+  }
+  .hint{font-size:14px;color:#555;margin-top:8px}
+  a.link{color:#4f529f;font-weight:800;text-decoration:none}
+  .footer{background:#bec3f4;text-align:center;padding:18px 16px;font-size:13px;color:#333}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      ${logoUrl ? `<img src="${logoUrl}" alt="Asociación Engloba" class="logo">` : ""}
+      <h1>Nueva firma en la app <span class="tag">Acción requerida</span></h1>
+      <div style="opacity:.9;font-size:14px;margin-top:6px">Firma necesaria para firmar nóminas</div>
+    </div>
+
+    <div class="content">
+      <p>Hola ${who},</p>
+
+      <p>Hemos actualizado el sistema de firma de nóminas en la aplicación.</p>
+
+      <div class="block">
+        <p style="margin:0 0 10px 0;">
+          A partir de ahora, para poder firmar tus nóminas necesitas <strong>registrar tu firma una sola vez</strong> desde:
+        </p>
+        <p style="margin:0;">
+          <span class="kbd">Mi datos → Firma</span>
+        </p>
+      </div>
+
+      <p style="margin-top:10px;"><strong>Pasos:</strong></p>
+      <div class="block">
+        <p style="margin:0 0 8px 0;">1) Entra en la app: <a class="link" href="${appUrl}" target="_blank" rel="noopener">${appUrl}</a></p>
+        <p style="margin:0 0 8px 0;">2) Ve a <strong>Mi datos</strong></p>
+        <p style="margin:0 0 8px 0;">3) Abre el apartado <strong>Firma</strong></p>
+        <p style="margin:0;">4) Dibuja tu firma y pulsa <strong>Guardar</strong></p>
+      </div>
+
+      <p>Una vez guardada, podrás firmar tus nóminas desde el apartado <strong>Nóminas</strong>.</p>
+
+      <p class="hint">
+        Si al intentar firmar te aparece un aviso de “no hay firma guardada”, significa que todavía no la has registrado.
+      </p>
+
+      <div class="btns-row">
+        <table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:10px auto;">
+          <tr><td class="btn-td">
+            <a class="btn-a" href="${appUrl}" target="_blank" rel="noopener">Abrir la app ▸</a>
+          </td></tr>
+        </table>
+
+        <p class="hint">Soporte: <a class="link" href="mailto:${supportEmail}">${supportEmail}</a></p>
+      </div>
+
+      <p>Un saludo,<br><strong>Asociación Engloba</strong></p>
+    </div>
+
+    <div class="footer">
+      Este mensaje se ha generado automáticamente desde el sistema de nóminas.
+    </div>
+  </div>
+</body>
+</html>`;
+}
 
