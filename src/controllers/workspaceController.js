@@ -7,7 +7,7 @@ const { response } = require('../utils/response');
 const { error } = require('pdf-lib');
 const { ClientError } = require('../utils/clientError');
 // arriba del archivo (ajusta rutas)
-const { generateEmailHTML, sendEmail } = require('./emailControllerGoogle'); 
+const { generateEmailHTML, sendEmail, sendWelcomeEmail } = require('./emailControllerGoogle'); 
 
 // 1. Decodificamos las credenciales
 const credentials = JSON.parse(
@@ -205,7 +205,20 @@ function buildUserEmail(user) {
 }
 
 
+const emailExiste = async (email) => {
+  if (!email || typeof email !== 'string') return false;
 
+  try {
+    await directory.users.get({ userKey: String(email).trim().toLowerCase() });
+    return true;
+  } catch (err) {
+    const { code, reason } = parseGoogleError(err);
+    if (code === 404 || reason === 'notFound') {
+      return false;
+    }
+    throw err;
+  }
+};
 //------------------USUARIOS---------------------
 const createUserWS = async (userId, contador = 0) => {
   if (!userId) throw new ClientError('Falta el ID del usuario', 400);
@@ -1282,60 +1295,156 @@ const deleteGroupAliasWS = async (req, res) => {
   return response(res, 200, data);
 };
 
+// Rehacer correo corporativo
+async function recreateCorporateEmailByUserId(userIdRaw, {
+  sendWelcome = false,
+} = {}) {
+  const userId = String(userIdRaw || '').trim();
 
-/**
- * Recorre todos los grupos del dominio y les aplica el mismo conjunto de ajustes.
- */
-// async function updateAllGroupsSettings() {
-//   // const groups = await listAllGroups();
-//   // console.log(`🔍 Encontrados ${groups.length} grupos.`);
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return { ok: false, reason: 'INVALID_USER_ID', userId };
+  }
 
-//   const groups = ['pimenorestapiafem@engloba.org.es']
-//   for (const g of groups) {
-//     await patchWithBackoff(g, commonSettings);
-//   }
+  const user = await User.findById(userId);
+  if (!user) {
+    return { ok: false, reason: 'USER_NOT_FOUND', userId };
+  }
 
-//   //await patchWithBackoff('juridico.migraciones@engloba.org.es', commonSettings);
-// }
+  const oldEmail = String(user.email || '').trim().toLowerCase();
 
+  try {
+    const newEmail = String(buildUserEmail(user) || '').trim().toLowerCase();
+    const givenName = String(user.firstName || '').trim();
+    const familyName = String(user.lastName || '').trim();
 
-//updateAllGroupsSettings()
-// // // // Ejecuta la tarea:
-// updateAllGroupsSettings().catch(console.error);
+    if (!newEmail) {
+      return {
+        ok: false,
+        reason: 'NO_EMAIL_RETURNED',
+        userId: String(user._id),
+      };
+    }
 
-// añadir usuario a grupo con email de usuario y id de grupo
+    let email_cor = '';
+    let mode = 'created';
 
-// const prueba=async(groupKey) =>{
-//   if (!groupKey) throw new Error('Falta groupKey (email o id del grupo)');
+    if (oldEmail) {
+      if (newEmail !== oldEmail) {
+        const exists = await emailExiste(newEmail);
 
-//   await patchWithBackoff(groupKey, commonSettings);
+        if (exists) {
+          return {
+            ok: false,
+            reason: 'EMAIL_ALREADY_EXISTS',
+            userId: String(user._id),
+            oldEmail,
+            email: newEmail,
+          };
+        }
+      }
 
-//   // Verificación rápida
-//   const { data } = await groupsSettings.groups.get({ groupUniqueId: groupKey });
-//   console.log('✅ Ajustes aplicados a', groupKey, {
-//     primaryLanguage: data.primaryLanguage,
-//     enableCollaborativeInbox: data.enableCollaborativeInbox,
-//     membersCanPostAsTheGroup: data.membersCanPostAsTheGroup,
-//     whoCanAdd: data.whoCanAdd,
-//     whoCanModerateContent: data.whoCanModerateContent,
-//     whoCanPostMessage: data.whoCanPostMessage,
-//   });
-// }
-//  prueba('pimenoresalameda.edu@engloba.org.es')
+      try {
+        const { data } = await directory.users.patch({
+          userKey: oldEmail,
+          requestBody: {
+            primaryEmail: newEmail,
+            name: {
+              givenName,
+              familyName,
+            },
+          },
+        });
 
+        email_cor = String(data?.primaryEmail || newEmail).trim().toLowerCase();
+        mode = 'updated';
+      } catch (err) {
+        const { code, reason, message } = parseGoogleError(err);
 
-// ===================== SINCRONIZAR TODOS LOS DISPOSITIVOS CON WORKSPACE =====================
+        if (code === 404 || reason === 'notFound') {
+          const ws = await createUserWS(user._id);
 
-/**
- * Recorre todos los dispositivos y, para cada uno, intenta:
- *  - Localizar su grupo principal en Workspace a partir de su nombre.
- *  - Actualizar en Mongo:
- *      - email              -> email del grupo principal
- *      - groupWorkspace     -> id del grupo principal
- *      - subGroupWorkspace  -> ids de los subgrupos (miembros de tipo GROUP)
- *
- * Si algo falla con un dispositivo, se registra el error y se pasa al siguiente.
- */
+          if (!ws?.email) {
+            return {
+              ok: false,
+              reason: 'NO_EMAIL_RETURNED',
+              userId: String(user._id),
+            };
+          }
+
+          email_cor = String(ws.email).trim().toLowerCase();
+          mode = 'created';
+        } else if (
+          reason === 'duplicate' ||
+          code === 409 ||
+          /already exists/i.test(message || '')
+        ) {
+          return {
+            ok: false,
+            reason: 'EMAIL_ALREADY_EXISTS',
+            userId: String(user._id),
+            oldEmail,
+            email: newEmail,
+            error: message || err?.message || String(err),
+          };
+        } else {
+          throw err;
+        }
+      }
+    } else {
+      const exists = await emailExiste(newEmail);
+
+      if (exists) {
+        return {
+          ok: false,
+          reason: 'EMAIL_ALREADY_EXISTS',
+          userId: String(user._id),
+          oldEmail: null,
+          email: newEmail,
+        };
+      }
+
+      const ws = await createUserWS(user._id);
+
+      if (!ws?.email) {
+        return {
+          ok: false,
+          reason: 'NO_EMAIL_RETURNED',
+          userId: String(user._id),
+        };
+      }
+
+      email_cor = String(ws.email).trim().toLowerCase();
+      mode = 'created';
+    }
+
+    user.email = email_cor;
+
+    if (user.employmentStatus === 'ya no trabaja con nosotros') {
+      user.employmentStatus = 'en proceso de contratación';
+    }
+
+    await user.save();
+
+    if (sendWelcome) {
+      await sendWelcomeEmail(user, email_cor);
+    }
+
+    return {
+      ok: true,
+      userId: String(user._id),
+      oldEmail: oldEmail || null,
+      email: email_cor,
+      mode,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      reason: 'ERROR',
+      userId,
+      error: e?.message || String(e),
+    };
+  }
+}
 
 
 module.exports = {
@@ -1354,5 +1463,8 @@ module.exports = {
   deleteDeviceGroupsWS,
   infoGroup,
   moveUserBetweenDevicesWS,
-  ensureWorkspaceGroupsForModel
+  ensureWorkspaceGroupsForModel,
+  recreateCorporateEmailByUserId,
+  emailExiste
+
 };

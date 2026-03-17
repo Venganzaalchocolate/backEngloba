@@ -37,7 +37,15 @@ router.post('/userscurrentstatus', tokenValid, getUsersCurrentStatus)
 
 router.post('/recreatecorporateemail', tokenValid, recreateCorporateEmail)
 router.post('/getphotoprofile', tokenValid, getPhotoProfile);
-router.post('/profilephotoset',tokenValid, upload.single('file'), profilePhotoSet);
+router.post(
+  '/profilephotoset',
+  tokenValid,
+  upload.fields([
+    { name: 'file', maxCount: 1 },
+    { name: 'thumb', maxCount: 1 },
+  ]),
+  profilePhotoSet
+);
 router.post('/profilephotogetbatch', tokenValid, profilePhotoGetBatch)
 
 // =========================

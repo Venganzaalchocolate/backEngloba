@@ -1918,8 +1918,9 @@ export function buildSignatureUpdateHtmlEmail(
   .content p{margin:14px 0}
   .block{background:#f8f9ff;border:1px solid #e7e9ff;border-radius:10px;padding:14px 16px;margin:12px 0 16px}
   .tag{display:inline-block;background:#eef0ff;color:#4f529f;border:1px solid #dfe2ff;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.2px;margin-left:8px;vertical-align:middle}
-  .kbd{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
-       background:#f1f1f1;border-radius:6px;padding:2px 6px;border:1px solid #e5e5e5}
+  .kbd{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;background:#f1f1f1;border-radius:6px;padding:2px 6px;border:1px solid #e5e5e5}
+  .refreshBox{background:#fff8e8;border:1px solid #f3d38a;color:#6f4b00;border-radius:10px;padding:14px 16px;margin:14px 0 18px}
+  .refreshBox > strong{display:block;margin-bottom:6px;color:#8a5a00}
   .btns-row{margin:16px 0 6px;text-align:center}
   .btn-td{border-radius:40px;background:#4f529f}
   .btn-a{
@@ -1968,6 +1969,14 @@ export function buildSignatureUpdateHtmlEmail(
         Si al intentar firmar te aparece un aviso de “no hay firma guardada”, significa que todavía no la has registrado.
       </p>
 
+      <div class="refreshBox">
+        <strong>⚠️ Importante al entrar en la aplicación</strong>
+        <p style="margin:0;">
+          Por favor, pulsad <strong>F5 varias veces</strong> al acceder para asegurar que se cargan los últimos cambios.
+          En algunos casos, el navegador mantiene en caché una versión anterior y eso puede provocar fallos o que no se vean correctamente las actualizaciones.
+        </p>
+      </div>
+
       <div class="btns-row">
         <table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:10px auto;">
           <tr><td class="btn-td">
@@ -1988,4 +1997,3 @@ export function buildSignatureUpdateHtmlEmail(
 </body>
 </html>`;
 }
-

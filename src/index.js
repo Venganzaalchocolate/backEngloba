@@ -20,7 +20,6 @@ const hiringRoutes=require('./routes/hiringRoutes')
 const leaveRoutes=require('./routes/leaveRoutes')
 const userChangeRequest=require('./routes/userChangeRoutes')
 const volunteerApplicationRoutes=require('./routes/volunteerApplicationRoutes')
-const toolsRoutes=require('./routes/toolsRoutes')
 const permissionsRoutes=require('./routes/permissionsRoutes')
 
 const { connectToDatabase } = require('./database/connect');
@@ -75,7 +74,6 @@ app.use('/api', hiringRoutes);
 app.use('/api', leaveRoutes);
 app.use('/api', userChangeRequest);
 app.use('/api', volunteerApplicationRoutes);
-app.use('/api', toolsRoutes);
 app.use('/api/permissions', permissionsRoutes);
 
 

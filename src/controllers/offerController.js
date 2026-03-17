@@ -1,8 +1,9 @@
 // controllers/offerController.js
-const { Types } = require('mongoose');
-const { Offer } = require('../models/indexModels');
+const mongoose = require('mongoose');
+const { Offer, Jobs, Program} = require('../models/indexModels');
 // IMPORTAMOS DESDE TUS UTILS
 const { catchAsync, response, ClientError, validateRequiredFields, toId } = require('../utils/indexUtils');
+
 
 // -------------------- Helpers --------------------
 
@@ -10,12 +11,7 @@ const { catchAsync, response, ClientError, validateRequiredFields, toId } = requ
 
 
 // -------------------- LIST --------------------
-const toIdStrict = (v, field) => {
-  if (v == null || v === '') throw new ClientError(`"${field}" está vacío`, 400);
-  const s = String(v);
-  if (!Types.ObjectId.isValid(s)) throw new ClientError(`"${field}" no es un ObjectId válido`, 400);
-  return new Types.ObjectId(s);
-};
+
 
 const parseBoolLoose = (v) => {
   if (v === true || v === 'true' || v === 1 || v === '1' || v === 'si' || v === 'sí') return true;
@@ -23,94 +19,161 @@ const parseBoolLoose = (v) => {
   return undefined;
 };
 
+const ensureArray = (v) => {
+  if (v == null || v === "") return [];
+  return Array.isArray(v) ? v : [v];
+};
+
 const offerList = async (req, res) => {
   const input = req.body;
 
   const {
-    q, active, type, sepe, jobId, studiesId, programId,
-    newDispositiveId,            // ⬅️ nuevo (nombre claro)
-    dateFrom, dateTo, sort = '-createdAt',
-    page, limit, all,
+    q,
+    active,
+    type,
+    sepe,
+    jobId,
+    studiesId,
+    programId,
+    newDispositiveId,
+    programIds,
+    newDispositiveIds,
+    dateFrom,
+    dateTo,
+    sort = "-createdAt",
+    page,
+    limit,
+    all,
+    entity,
   } = input;
 
   const filters = {};
 
-  // --- búsqueda por texto / job name (sin cambios) ---
+  // --- búsqueda por texto / job name ---
   if (q && String(q).trim()) {
-    const rx = new RegExp(String(q).trim(), 'i');
-    const jobDocs = await Job.find({ name: rx }, { _id: 1 }).lean();
+    const rx = new RegExp(String(q).trim(), "i");
+    const jobDocs = await Jobs.find({ name: rx }, { _id: 1 }).lean();
+
     filters.$or = [
       { location: rx },
       { job_title: rx },
-      ...(jobDocs.length ? [{ jobId: { $in: jobDocs.map(j => j._id) } }] : []),
+      ...(jobDocs.length ? [{ jobId: { $in: jobDocs.map((j) => j._id) } }] : []),
     ];
   }
 
-  // --- booleanos (sin cambios) ---
+  // --- booleanos ---
   const parsedActive = parseBoolLoose(active);
   if (parsedActive !== undefined) filters.active = parsedActive;
 
   if (type) {
-    if (!['internal', 'external'].includes(type)) throw new ClientError('type inválido', 400);
+    if (!["internal", "external"].includes(type)) {
+      throw new ClientError("type inválido", 400);
+    }
     filters.type = type;
   }
 
   const parsedSepe = parseBoolLoose(sepe);
   if (parsedSepe !== undefined) filters.sepe = parsedSepe;
 
-  // --- IDs (ampliado) ---
-  if (jobId) filters.jobId = toIdStrict(jobId, 'jobId');
+  // --- ids simples ---
+  if (jobId) filters.jobId = toId(jobId, "jobId");
 
   if (studiesId) {
     filters.studiesId = Array.isArray(studiesId)
-      ? { $in: studiesId.map((v, i) => toIdStrict(v, `studiesId[${i}]`)) }
-      : toIdStrict(studiesId, 'studiesId');
+      ? { $in: studiesId.map((v, i) => toId(v, `studiesId[${i}]`)) }
+      : toId(studiesId, "studiesId");
   }
 
-  if (programId) {
-    filters['dispositive.programId'] = toIdStrict(programId, 'programId');
+  if (entity) {
+    filters.entity = toId(entity, "entity");
   }
 
-  // ✅ NUEVO: filtro por dispositivo
-  const deviceId = newDispositiveId; // acepta ambos nombres
-  if (deviceId) {
-    filters['dispositive.newDispositiveId'] = toIdStrict(deviceId, 'newDispositiveId');
-  }
-
-  // --- rango fechas (sin cambios) ---
+  // --- rango fechas ---
   if (dateFrom || dateTo) {
     const createdAt = {};
     if (dateFrom) {
       const d = new Date(dateFrom);
-      if (Number.isNaN(d.getTime())) throw new ClientError('dateFrom inválida', 400);
+      if (Number.isNaN(d.getTime())) throw new ClientError("dateFrom inválida", 400);
       createdAt.$gte = d;
     }
     if (dateTo) {
       const d = new Date(dateTo);
-      if (Number.isNaN(d.getTime())) throw new ClientError('dateTo inválida', 400);
+      if (Number.isNaN(d.getTime())) throw new ClientError("dateTo inválida", 400);
       createdAt.$lte = d;
     }
     filters.createdAt = createdAt;
   }
 
-  // --- orden seguro (sin cambios) ---
-  const allowedSort = new Set(['createdAt','-createdAt','datecreate','-datecreate','job_title','-job_title']);
-  const sortSafe = allowedSort.has(String(sort)) ? String(sort) : '-createdAt';
 
-  // --- paginación (sin cambios) ---
+  // --- filtros directos de pantalla ---
+  const directProgramId = programId ? toId(programId) : null;
+  const directDeviceId = newDispositiveId ? toId(newDispositiveId) : null;
+
+  // --- alcance de permisos del usuario ---
+  const scopedProgramIds = ensureArray(programIds).map((v, i) =>toId(v));
+
+  const scopedDeviceIds = ensureArray(newDispositiveIds).map((v) =>toId(v));
+
+  const accessOr = [];
+
+  // filtros manuales (histórico / buscador)
+  if (directProgramId) {
+    accessOr.push({ "dispositive.programId": directProgramId });
+  }
+
+  if (directDeviceId) {
+    accessOr.push({ "dispositive.newDispositiveId": directDeviceId });
+  }
+
+  // permisos del usuario
+  if (scopedProgramIds.length) {
+    accessOr.push({ "dispositive.programId": { $in: scopedProgramIds } });
+  }
+
+  if (scopedDeviceIds.length) {
+    accessOr.push({ "dispositive.newDispositiveId": { $in: scopedDeviceIds } });
+  }
+
+  if (accessOr.length === 1) {
+    Object.assign(filters, accessOr[0]);
+  } else if (accessOr.length > 1) {
+    if (filters.$or) {
+      filters.$and = [{ $or: filters.$or }, { $or: accessOr }];
+      delete filters.$or;
+    } else {
+      filters.$or = accessOr;
+    }
+  }
+
+  // --- orden seguro ---
+  const allowedSort = new Set([
+    "createdAt",
+    "-createdAt",
+    "datecreate",
+    "-datecreate",
+    "job_title",
+    "-job_title",
+  ]);
+
+  const sortSafe = allowedSort.has(String(sort)) ? String(sort) : "-createdAt";
+
+  // --- paginación ---
   const forceAll = parseBoolLoose(all) === true;
-  const hasPage  = page !== undefined && page !== null && String(page) !== '';
-  const hasLimit = limit !== undefined && limit !== null && String(limit) !== '';
+  const hasPage = page !== undefined && page !== null && String(page) !== "";
+  const hasLimit = limit !== undefined && limit !== null && String(limit) !== "";
   const doPaginate = !forceAll && (hasPage || hasLimit);
 
   let pageNum = 1;
   let limitNum = 20;
+
   if (doPaginate) {
-    pageNum  = Math.max(1, Number(page) || 1);
+    pageNum = Math.max(1, Number(page) || 1);
     limitNum = Math.min(100, Math.max(1, Number(limit) || 20));
   }
 
-  let total, docs;
+  let total;
+  let docs;
+
   if (doPaginate) {
     total = await Offer.countDocuments(filters);
     docs = await Offer.find(filters)
@@ -123,12 +186,13 @@ const offerList = async (req, res) => {
     total = docs.length;
   }
 
-  const out = docs.map(d => ({
+  const out = docs.map((d) => ({
     ...d,
     userCvCount: Array.isArray(d.userCv) ? d.userCv.length : 0,
   }));
 
   const totalPages = doPaginate ? Math.max(1, Math.ceil(total / limitNum)) : 1;
+
   response(res, 200, {
     total,
     page: pageNum,
@@ -150,6 +214,9 @@ async function offerCreate(req, res) {
   if (b.type && !['internal', 'external'].includes(b.type)) {
     throw new ClientError('type debe ser "internal" o "external"', 400);
   }
+
+  const programIdAux=toId(b.programId)
+  const idEntity=await Program.findById(programIdAux).select('entity')
  let payload = {
     work_schedule: b.work_schedule,
     essentials_requirements: b.essentials_requirements || undefined,
@@ -160,7 +227,7 @@ async function offerCreate(req, res) {
     expected_incorporation_date: b.expected_incorporation_date,
     active: b.active === false ? false : true,
     dispositive: {
-      programId: toId(b.programId),
+      programId: programIdAux,
       newDispositiveId: toId(b.newDispositiveId),
     },
     sepe: b.sepe === true,
@@ -172,8 +239,11 @@ async function offerCreate(req, res) {
     datecreate: b.datecreate ? new Date(b.datecreate) : new Date(),
     studiesId: Array.isArray(b.studiesId) ? b.studiesId.map((s)=>toId(s)) : undefined,
     jobId: toId(b.jobId),
-    disability:b.disability===true?true:false
+    disability:b.disability===true?true:false,
+    entity:idEntity.entity
   };
+
+  
 
   const created = await Offer.create(payload)
   const doc = await Offer.findById(created._id);
@@ -184,7 +254,7 @@ async function offerCreate(req, res) {
 async function offerUpdate(req, res) {
   const b = req.body;
   const { offerId } = b;
-  if (!offerId || !Types.ObjectId.isValid(String(offerId))) {
+  if (!offerId) {
     throw new ClientError('offerId inválido', 400);
   }
 
@@ -228,6 +298,8 @@ async function offerUpdate(req, res) {
   const hasDispositiveLoose = b.programId !== undefined || b.newDispositiveId !== undefined;
 
   if (hasDispositiveObj || hasDispositiveLoose) {
+    const programIdAux=toId(b.programId)
+    const idEntity=await Program.findById(programIdAux).select('entity')
     const inObj = b.dispositive || {};
     const programId     = inObj.programId     ?? b.programId;
     const dispositiveId = inObj.newDispositiveId ?? b.newDispositiveId;
@@ -238,6 +310,7 @@ async function offerUpdate(req, res) {
     patch.dispositive = {
       programId: toId(programId),
       newDispositiveId: toId(dispositiveId),
+      entity:idEntity.entity
     };
   }
 
@@ -257,7 +330,7 @@ async function offerUpdate(req, res) {
 // -------------------- HARD DELETE --------------------
 async function offerHardDelete(req, res) {
   const { offerId } = req.body;
-  if (!offerId || !Types.ObjectId.isValid(offerId)) {
+  if (!offerId) {
     throw new ClientError('offerId inválido', 400);
   }
 
@@ -272,7 +345,7 @@ async function offerHardDelete(req, res) {
 
 async function offerId(req, res) {
   const { offerId, public: isPublic } = req.body; // renombramos para evitar confusiones
-  if (!offerId || !Types.ObjectId.isValid(offerId)) {
+  if (!offerId) {
     throw new ClientError('offerId inválido', 400);
   }
 
@@ -301,8 +374,7 @@ async function offerId(req, res) {
   response(res, 200, doc);
 }
 
-//migracionOfertasStudies();
-// migrateSolicitants({ apply: true });
+
 module.exports = {
   offerList: catchAsync(offerList),
   offerCreate: catchAsync(offerCreate),

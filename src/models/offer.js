@@ -2,9 +2,14 @@ const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 
 const offer= mongoose.Schema({
+    entity:{
+        type: Schema.Types.ObjectId,
+            required:true,
+            ref:'Entity'
+    },
     entinty:{
         type:String,
-        enum: ['ASOCIAIÓN ENGLOBA', 'ENTIDAD DOS'],
+        enum: ['ASOCIAIÓN ENGLOBA', 'ANIDE', 'APAFA'],
         default: 'ASOCIAIÓN ENGLOBA'
     },
     //es nombre compuesto por el el name de funcions y la provincia, sistema antiguo
@@ -59,9 +64,6 @@ const offer= mongoose.Schema({
             type: Schema.Types.ObjectId,
             required:true,
             ref:'Program'
-        },
-        dispositiveId:{
-            type: Schema.Types.ObjectId,
         },
         newDispositiveId:{
             type: Schema.Types.ObjectId,

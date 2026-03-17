@@ -1107,7 +1107,7 @@ async function sendCenterContactReminderToActiveDeviceManagers({
     ])
   );
 
-  const buildText = (name = 'equipo') => `Hola ${name},
+const buildText = (name = 'equipo') => `Hola ${name},
 
 Buenos días.
 
@@ -1124,6 +1124,10 @@ Programas y dispositivos → seleccionar dispositivo → completar dirección y 
 
 Por favor, revisad vuestro/s dispositivo/s cuanto antes para que la información quede correctamente registrada dentro del plazo.
 
+IMPORTANTE:
+Por favor, pulsad F5 varias veces al entrar en la aplicación para asegurar que se cargan los últimos cambios.
+En algunos casos el navegador conserva en caché una versión anterior y eso puede provocar fallos o que no se vean correctamente las actualizaciones.
+
 Si detectáis cualquier incidencia o tenéis dudas, podéis escribirnos a ${supportEmail}.
 
 Muchas gracias por vuestra colaboración.
@@ -1131,8 +1135,7 @@ Muchas gracias por vuestra colaboración.
 Un saludo,
 Departamento de Comunicación y Desarrollo Tecnológico
 Asociación Engloba`;
-
-  const buildHtml = (name = 'equipo') => `<!DOCTYPE html>
+const buildHtml = (name = 'equipo') => `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -1154,6 +1157,8 @@ Asociación Engloba`;
   .tag{display:inline-block;background:#eef0ff;color:#4f529f;border:1px solid #dfe2ff;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.2px;margin-left:8px;vertical-align:middle}
   .kbd{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;background:#f1f1f1;border-radius:6px;padding:2px 6px;border:1px solid #e5e5e5}
   .deadline{background:#fff4f4;border:1px solid #f1c7c7;color:#8a2d2d;border-radius:10px;padding:12px 14px;font-weight:700;margin:14px 0 18px}
+  .refreshBox{background:#fff8e8;border:1px solid #f3d38a;color:#6f4b00;border-radius:10px;padding:14px 16px;margin:14px 0 18px}
+  .refreshBox > strong{display:block;margin-bottom:6px;color:#8a5a00}
   .btn-td{border-radius:40px;background:#4f529f}
   .btn-a{display:inline-block;padding:12px 22px;border-radius:40px;font-weight:700;color:#ffffff !important;text-decoration:none !important;background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%)}
   .btns-row{margin:16px 0 6px;text-align:center}
@@ -1208,6 +1213,14 @@ Asociación Engloba`;
         Por favor, revisad vuestro/s dispositivo/s cuanto antes para que toda la información quede completada dentro del plazo.
       </p>
 
+      <div class="refreshBox">
+        <strong>⚠️ Importante al entrar en la aplicación</strong>
+        <p style="margin:0;">
+          Por favor, pulsad <strong>F5 varias veces</strong> al acceder para asegurar que se cargan los últimos cambios.
+          En algunos casos, el navegador mantiene en caché una versión anterior y eso puede provocar fallos o que no se vean correctamente las actualizaciones.
+        </p>
+      </div>
+
       <div class="btns-row">
         <table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:8px auto">
           <tr>
@@ -1236,7 +1249,6 @@ Asociación Engloba`;
   </div>
 </body>
 </html>`;
-
   logger(
     `[${ts()}] Recordatorio centros: modo ${previewOnly ? 'PREVIEW' : 'REAL'} | destinatarios: ${recipients.length}`
   );
@@ -1276,13 +1288,12 @@ Asociación Engloba`;
   return results;
 }
 
-const prueba2 = async () => {
-  await sendCenterContactReminderToActiveDeviceManagers({
-    previewOnly: true,
-    previewToList: ['paqui@engloba.org.es'],
-  });
-};
-// prueba2()
+
+
+
+
+
+
 module.exports = {
   sendEmail,          // firma idéntica a tu antiguo SMTP
   generateEmailHTML,

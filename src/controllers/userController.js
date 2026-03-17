@@ -4,10 +4,9 @@ const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { validateRequiredFields, createAccentInsensitiveRegex } = require('../utils/utils');
 const { uploadFileToDrive, getFileById, deleteFileById, gestionAutomaticaNominas, obtenerCarpetaContenedora } = require('./googleController');
-const { createUserWS, deleteUserByEmailWS, addUserToGroup, deleteMemeberAllGroups } = require('./workspaceController');
+const { createUserWS, deleteUserByEmailWS, addUserToGroup, recreateCorporateEmailByUserId } = require('./workspaceController');
 const { actualizacionHiringyLeave } = require('./periodoTransicionController');
 const { sendWelcomeEmail } = require('./emailControllerGoogle');
-const { removeBgProfile512FromBuffer } = require('./toolsServiceController');
 const { default: pLimit } = require('p-limit');
 
 const WEEKLY_HOURS = 38.5;
@@ -56,7 +55,6 @@ const toObjectId = (id, fieldName) => {
   return new mongoose.Types.ObjectId(id);
 };
 const normalizeDni = (dni) => String(dni).replace(/\s+/g, '').trim().toUpperCase();
-const debug = (...args) => console.log('[postCreateUser]', ...args);
 
 const normalizeVacationEntries = (arr) => {
   if (!Array.isArray(arr)) return [];
@@ -586,11 +584,11 @@ const getAllUsersWithOpenPeriods = async (req, res) => {
     const rx = createAccentInsensitiveRegex(req.body.lastName);
     filters.lastName = { $regex: rx };
   }
+
   if (req.body.email) filters.email = { $regex: req.body.email, $options: 'i' };
   if (req.body.phone) filters.phone = { $regex: req.body.phone, $options: 'i' };
   if (req.body.dni)   filters.dni   = { $regex: req.body.dni,   $options: 'i' };
   if (req.body.gender) filters.gender = req.body.gender;
-
   if (req.body.fostered === "si") filters.fostered = true;
   if (req.body.fostered === "no") filters.fostered = false;
   if (req.body.apafa === "si") filters.apafa = true;
@@ -829,8 +827,8 @@ const userPut = async (req, res) => {
           400
         );
       }
-      if (userAux.email) await deleteUserByEmailWS(userAux.email);
 
+      if (userAux.email) await deleteUserByEmailWS(userAux.email);
       updateFields.employmentStatus = "ya no trabaja con nosotros";
       updateFields.email = "";
 
@@ -1617,95 +1615,25 @@ const getUserListDays = async (req, res) => {
   });
 };
 
-// Rehacer correo corporativo por ID de usuario, eliminando primero el usuario WS existente
-async function recreateCorporateEmailByUserId(userIdRaw, {
-  deleteFirst = true,
-  delayAfterDeleteMs = 0,
-  sendWelcome = false,   // normalmente false
-  logger = console,
-} = {}) {
-  const userId = String(userIdRaw || '').trim();
-
-  if (!mongoose.Types.ObjectId.isValid(userId)) {
-    return { ok: false, reason: 'INVALID_USER_ID', userId };
-  }
-
-  const user = await User.findById(userId);
-  if (!user) return { ok: false, reason: 'USER_NOT_FOUND', userId };
-
-  const oldEmail = (user.email || '').trim().toLowerCase();
-
-  try {
-    // 1) eliminar el usuario WS del correo corporativo actual (si existe)
-    if (deleteFirst && oldEmail) {
-      const del = await deleteUserByEmailWS(oldEmail);
-      logger.log(`[recreateCorporateEmailByUserId] deleteUserByEmailWS:`, del);
-    }
-
-    // 2) limpiar email en Mongo para evitar inconsistencias
-    user.email = '';
-    await user.save();
-
-    if (delayAfterDeleteMs) {
-      await new Promise(r => setTimeout(r, delayAfterDeleteMs));
-    }
-
-    // 3) crear de nuevo en WS (createUserWS debe encargarse del fallback por duplicados)
-    const ws = await createUserWS(user._id);
-
-    if (!ws?.email) {
-      return { ok: false, reason: 'NO_EMAIL_RETURNED', userId: String(user._id) };
-    }
-
-    // 4) guardar y (opcional) welcome
-    const email_cor = String(ws.email).toLowerCase().trim();
-    user.email = email_cor;
-
-    // opcional: si estabas marcando estados al crear correo
-    if (user.employmentStatus === 'ya no trabaja con nosotros') {
-      user.employmentStatus = 'en proceso de contratación';
-    }
-
-    await user.save();
-
-    if (sendWelcome) {
-      await sendWelcomeEmail(user, email_cor);
-    }
-
-    return {
-      ok: true,
-      userId: String(user._id),
-      oldEmail: oldEmail || null,
-      email: email_cor,
-    };
-  } catch (e) {
-    logger.error(`[recreateCorporateEmailByUserId] ERROR ${userId}:`, e?.message || e);
-    return { ok: false, reason: 'ERROR', userId, error: e?.message || String(e) };
-  }
-}
-
-
 const recreateCorporateEmail = async (req, res) => {
-  const { userId} = req.body || {};
+
+  const { userId } = req.body || {};
 
   if (!userId) throw new ClientError('El campo userId es requerido', 400);
 
   const result = await recreateCorporateEmailByUserId(userId, {
-    deleteFirst: true,
-    delayAfterDeleteMs: 0,
     sendWelcome: true,
   });
-
   if (!result.ok) {
-    // mapeo de errores a HTTP
     if (result.reason === 'INVALID_USER_ID') throw new ClientError('userId no válido', 400);
     if (result.reason === 'USER_NOT_FOUND') throw new ClientError('Usuario no encontrado', 404);
     if (result.reason === 'NO_EMAIL_RETURNED') throw new ClientError('No se pudo generar un email corporativo', 400);
+    if (result.reason === 'EMAIL_ALREADY_EXISTS') throw new ClientError('El email corporativo ya existe', 409);
     throw new ClientError('No se pudo recrear el email corporativo', 400);
   }
 
-  // devolvemos usuario actualizado (o sólo el email si prefieres)
-  const updatedUser = await User.findById(result.userId).lean();
+const updatedUser = await User.findById(result.userId).lean();
+
   response(res, 200, updatedUser);
 };
 
@@ -1719,94 +1647,140 @@ const profilePhotoSet = async (req, res) => {
 
   const idUser = req.body?.idUser;
   if (!idUser) throw new ClientError("Falta idUser", 400);
+  if (!mongoose.Types.ObjectId.isValid(idUser)) {
+    throw new ClientError("idUser no válido", 400);
+  }
 
-  const file = req.file;
-  if (!file) throw new ClientError('Falta archivo (field "file")', 400);
+  const normalFile = req.files?.file?.[0];
+  const thumbFile = req.files?.thumb?.[0] || normalFile;
 
-  // 1) usuario existe + photoProfile previo
+  if (!normalFile) {
+    throw new ClientError('Falta archivo normal (field "file")', 400);
+  }
+
+  const ensureValidImage = (file, fieldName) => {
+    if (!file) {
+      throw new ClientError(`Falta archivo ${fieldName}`, 400);
+    }
+    if (!file.mimetype || !file.mimetype.startsWith("image/")) {
+      throw new ClientError(`El archivo "${fieldName}" debe ser una imagen`, 400);
+    }
+    const maxBytes = 10 * 1024 * 1024; // 10 MB
+    if (file.size > maxBytes) {
+      throw new ClientError(
+        `La imagen "${fieldName}" es demasiado grande. Máximo 10 MB`,
+        400
+      );
+    }
+  };
+
+  ensureValidImage(normalFile, "file");
+  ensureValidImage(thumbFile, "thumb");
+
   const current = await User.findById(toId(idUser)).select("_id photoProfile");
   if (!current) throw new ClientError("Usuario no encontrado", 404);
 
-  const prev512 = current.photoProfile?.normal || "";
+  const prevNormal = current.photoProfile?.normal || "";
   const prevThumb = current.photoProfile?.thumb || "";
 
-  // 2) tools-service => { normal, thumb }
-  const out = await removeBgProfile512FromBuffer({
-    buffer: file.buffer,
-    mimetype: file.mimetype,
-    filename: file.originalname || "profile",
-  });
+  const extFromMime = (mime) => {
+    switch (mime) {
+      case "image/jpeg":
+        return "jpg";
+      case "image/png":
+        return "png";
+      case "image/webp":
+        return "webp";
+      default:
+        return "img";
+    }
+  };
 
-  // 3) subir a Drive
-  const driveName512 = `${idUser}_photoProfile_512.png`;
-  const driveName96 = `${idUser}_photoProfile_96.png`;
+  const normalExt = extFromMime(normalFile.mimetype);
+  const thumbExt = extFromMime(thumbFile.mimetype);
 
-  const [drive512, driveThumb] = await Promise.all([
+  const driveNameNormal = `${idUser}_photoProfile_512.${normalExt}`;
+  const driveNameThumb = `${idUser}_photoProfile_96.${thumbExt}`;
+
+  const [uploadedNormal, uploadedThumb] = await Promise.all([
     uploadFileToDrive(
-      { buffer: out.normal.buffer, mimetype: out.normal.mimetype },
+      {
+        buffer: normalFile.buffer,
+        mimetype: normalFile.mimetype,
+        originalname: normalFile.originalname || driveNameNormal,
+      },
       PHOTOUSER_FOLDER,
-      driveName512
+      driveNameNormal
     ),
     uploadFileToDrive(
-      { buffer: out.thumb.buffer, mimetype: out.thumb.mimetype },
+      {
+        buffer: thumbFile.buffer,
+        mimetype: thumbFile.mimetype,
+        originalname: thumbFile.originalname || driveNameThumb,
+      },
       PHOTOUSER_FOLDER,
-      driveName96
+      driveNameThumb
     ),
   ]);
 
-  if (!drive512?.id || !driveThumb?.id) {
+  if (!uploadedNormal?.id || !uploadedThumb?.id) {
     throw new ClientError("No se pudo subir la foto a Drive", 502);
   }
 
-  // 4) borrar anteriores (best-effort)
-  if (prev512 && prev512 !== drive512.id) await deleteFileById(prev512).catch(() => {});
-  if (prevThumb && prevThumb !== driveThumb.id) await deleteFileById(prevThumb).catch(() => {});
+  // borrar anteriores evitando duplicados
+  const oldIds = [...new Set([prevNormal, prevThumb].filter(Boolean))];
+  for (const oldId of oldIds) {
+    if (oldId !== uploadedNormal.id && oldId !== uploadedThumb.id) {
+      await deleteFileById(oldId).catch(() => {});
+    }
+  }
 
-  // 5) guardar en user + "v" para cache-busting
-  // Usa timestamp (o increment). Timestamp es perfecto.
   const v = Date.now();
 
   const updated = await User.findByIdAndUpdate(
     toId(idUser),
     {
       $set: {
-        "photoProfile.normal": drive512.id,
-        "photoProfile.thumb": driveThumb.id,
+        "photoProfile.normal": uploadedNormal.id,
+        "photoProfile.thumb": uploadedThumb.id,
         "photoProfile.v": v,
       },
     },
     { new: true, runValidators: true }
   );
 
-  // IMPORTANTE: si no quieres devolver todo el user, haz select aquí:
-  // const updated = await User.findById(toId(idUser)).select("_id photoProfile firstName lastName ...")
+
 
   return response(res, 200, updated);
 };
-
 // ====================================
 // GET (stream) con cache fuerte + 304
 // ====================================
 const getPhotoProfile = async (req, res) => {
-  const { idUser, size = "thumb" } = req.body || {}; // 👈 todo por body
+  const { idUser, size = "thumb" } = req.body || {};
 
   if (!idUser) throw new ClientError("Falta idUser", 400);
-  if (!["thumb", "normal"].includes(size)) throw new ClientError("size inválido", 400);
+  if (!mongoose.Types.ObjectId.isValid(idUser)) {
+    throw new ClientError("idUser no válido", 400);
+  }
+  if (!["thumb", "normal"].includes(size)) {
+    throw new ClientError("size inválido", 400);
+  }
 
   const user = await User.findById(toId(idUser)).select("_id photoProfile").lean();
   if (!user) throw new ClientError("Usuario no encontrado", 404);
 
-  const fileId = size === "normal"
-    ? user.photoProfile?.normal
-    : user.photoProfile?.thumb;
+  const fileId =
+    size === "normal"
+      ? user.photoProfile?.normal
+      : user.photoProfile?.thumb;
 
   if (!fileId) throw new ClientError("Usuario sin foto de perfil", 404);
 
   const { file, stream } = await getFileById(fileId);
   if (!stream) throw new ClientError("No se pudo obtener la foto", 502);
 
-  res.setHeader("Content-Type", file?.mimeType || "image/png");
-  // (Opcional) Cache en POST no es tan útil como en GET, pero no molesta:
+  res.setHeader("Content-Type", file?.mimeType || "image/jpeg");
   res.setHeader("Cache-Control", "no-store");
 
   return stream.pipe(res);
@@ -1815,7 +1789,8 @@ const getPhotoProfile = async (req, res) => {
 // =========================================// BATCH: devuelve dataURL (base64) + v
 const profilePhotoGetBatch = async (req, res) => {
   const ids = req.body?.userIds;
-  const size = req.body?.size || "thumb"; // "thumb" | "normal" (por si algún día lo quieres)
+  const size = req.body?.size || "thumb";
+
   if (!Array.isArray(ids) || ids.length === 0) {
     throw new ClientError("Falta userIds (array)", 400);
   }
@@ -1825,48 +1800,59 @@ const profilePhotoGetBatch = async (req, res) => {
 
   const uniqueIds = [...new Set(ids.map(String))].slice(0, 200);
 
-  const users = await User.find({ _id: { $in: uniqueIds.map(toId) } })
+  const validIds = uniqueIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+  if (!validIds.length) {
+    return response(res, 200, { photos: {} });
+  }
+
+  const users = await User.find({ _id: { $in: validIds.map(toId) } })
     .select("_id photoProfile")
     .lean();
 
   const byId = new Map(
-    users.map(u => [
+    users.map((u) => [
       String(u._id),
       {
-        fileId: size === "normal" ? (u.photoProfile?.normal || "") : (u.photoProfile?.thumb || ""),
-        v: u.photoProfile?.v || 0
-      }
+        fileId:
+          size === "normal"
+            ? (u.photoProfile?.normal || "")
+            : (u.photoProfile?.thumb || ""),
+        v: u.photoProfile?.v || 0,
+      },
     ])
   );
 
-  // limita concurrencia para Drive
   const limit = pLimit(6);
-
   const photos = {};
-  await Promise.all(uniqueIds.map(userId => limit(async () => {
-    const meta = byId.get(String(userId));
-    if (!meta?.fileId) return;
 
-    const { file, stream } = await getFileById(meta.fileId);
-    if (!stream || !file) return;
+  await Promise.all(
+    uniqueIds.map((userId) =>
+      limit(async () => {
+        const meta = byId.get(String(userId));
+        if (!meta?.fileId) return;
 
-    const chunks = [];
-    await new Promise((resolve, reject) => {
-      stream.on("data", c => chunks.push(c));
-      stream.on("end", resolve);
-      stream.on("error", reject);
-    });
+        const { file, stream } = await getFileById(meta.fileId);
+        if (!stream || !file) return;
 
-    const buffer = Buffer.concat(chunks);
-    const mime = file.mimeType || "image/png";
-    const b64 = buffer.toString("base64");
+        const chunks = [];
+        await new Promise((resolve, reject) => {
+          stream.on("data", (c) => chunks.push(c));
+          stream.on("end", resolve);
+          stream.on("error", reject);
+        });
 
-    photos[String(userId)] = {
-      v: meta.v,
-      mime,
-      dataUrl: `data:${mime};base64,${b64}`,
-    };
-  })));
+        const buffer = Buffer.concat(chunks);
+        const mime = file.mimeType || "image/jpeg";
+        const b64 = buffer.toString("base64");
+
+        photos[String(userId)] = {
+          v: meta.v,
+          mime,
+          dataUrl: `data:${mime};base64,${b64}`,
+        };
+      })
+    )
+  );
 
   return response(res, 200, { photos });
 };

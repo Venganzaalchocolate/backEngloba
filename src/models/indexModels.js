@@ -24,6 +24,8 @@ const UserProfileAssignment = require('./permissions/userProfileAssignment');
 const ModuleGrant = require('./permissions/moduleGrant');
 const PermissionProfile = require('./permissions/permissionProfile');
 
+const Entity=require('./entity');
+
 module.exports = {
     User,
     UserCv,
@@ -47,5 +49,6 @@ module.exports = {
     ModuleGrant,
     UserProfileAssignment,
     ScopeProfileLink,
-    UserScope
+    UserScope,
+    Entity
 }

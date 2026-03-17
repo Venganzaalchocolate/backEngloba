@@ -1,16 +1,28 @@
-const { Jobs, Studies, Provinces, Work_schedule, Finantial, Offer, Program, User, Leavetype, Documentation, Filedrive, Dispositive } = require('../models/indexModels');
-const leavetype = require('../models/leavetype');
-const { default: cache } = require('../utils/cache');
-const { catchAsync, response, ClientError } = require('../utils/indexUtils');
-const mongoose = require('mongoose');
-
+const {
+  Jobs,
+  Studies,
+  Provinces,
+  Work_schedule,
+  Finantial,
+  Offer,
+  Program,
+  User,
+  Leavetype,
+  Documentation,
+  Filedrive,
+  Dispositive,
+  Entity,
+} = require("../models/indexModels");
+const leavetype = require("../models/leavetype");
+const { default: cache } = require("../utils/cache");
+const { catchAsync, response, ClientError } = require("../utils/indexUtils");
+const mongoose = require("mongoose");
 
 /* -------------------------------
    Helpers para construir índices
 ---------------------------------*/
 
-const { uploadFileToDrive, updateFileInDrive, deleteFileById } = require('./googleController');
-
+const { uploadFileToDrive, updateFileInDrive, deleteFileById } = require("./googleController");
 
 const sanitizeDriveName = (text) =>
   String(text || "")
@@ -28,78 +40,47 @@ const parseSiNo = (v) => {
 };
 
 const resolveModelsFolderId = () => {
-  // fallback seguro: modelos -> files
-  return (
-    process.env.GOOGLE_DRIVE_FILES ||
-    null
-  );
+  return process.env.GOOGLE_DRIVE_FILES || null;
 };
 
 
 
-// Upload con fallback si el env apunta a un FILE (y no a carpeta)
-async function uploadModelPdfWithFallback({ reqFile, folderId, driveName }) {
-  try {
-    return await uploadFileToDrive(reqFile, folderId, driveName, false);
-  } catch (err) {
-    const msg = String(err?.message || "");
-    const isNotFound =
-      msg.includes("File not found") || msg.includes("notFound") || msg.includes("404");
-
-    if (isNotFound) {
-      const parentId = await obtenerCarpetaContenedora(folderId).catch(() => null);
-      if (parentId && parentId !== folderId) {
-        console.log("🟨 [documentation] folderId era un fileId, reintentando con parent:", parentId);
-        return await uploadFileToDrive(reqFile, parentId, driveName, false);
-      }
-    }
-    throw err;
-  }
-}
-
-
-// utils de índice (reemplaza createCategoryAndSubcategoryIndex por esta versión)
+// utils de índice
 function createCategoryAndSubcategoryIndex(list = []) {
-  // Indexa raíz y subs; si existe "public", lo preserva
   const out = {};
   for (const p of list) {
     const pid = String(p._id);
-    out[pid] = { 
-      name: p.name || '', 
-      isRoot: true 
+    out[pid] = {
+      name: p.name || "",
+      isRoot: true,
     };
-    if (typeof p.public === 'boolean') out[pid].public = p.public;
+    if (typeof p.public === "boolean") out[pid].public = p.public;
 
-    for (const sc of (p.subcategories || [])) {
+    for (const sc of p.subcategories || []) {
       const sid = String(sc._id);
       out[sid] = {
-        name: sc.name || '',
+        name: sc.name || "",
         parent: p._id,
-        isSub: true
+        isSub: true,
       };
-      if (typeof sc.public === 'boolean') out[sid].public = sc.public;
+      if (typeof sc.public === "boolean") out[sid].public = sc.public;
     }
   }
   return out;
 }
 
-
 function createProgramIndex(programs = []) {
-  // Mantiene la estructura legacy: por cada programa, lista sus "devices"
-  // devices = [{ _id, name, province }]
   const byProgram = new Map();
   for (const p of programs) {
     byProgram.set(String(p._id), {
       _id: p._id,
-      name: p.name || '',
-      acronym: p.acronym || '',
-      type:'program',
-      active:p.active
+      name: p.name || "",
+      acronym: p.acronym || "",
+      type: "program",
+      active: p.active,
     });
   }
 
-
-  // Devuelve un objeto indexado por id de programa (como antes)
   const out = {};
   for (const [k, v] of byProgram.entries()) out[k] = v;
   return out;
@@ -110,62 +91,71 @@ function createDispositiveIndex(dispositives = []) {
   for (const d of dispositives) {
     out[String(d._id)] = {
       _id: d._id,
-      name: d.name || '',
-      program: d.program ? String(d.program) : null,   // <<< necesario
+      name: d.name || "",
+      program: d.program ? String(d.program) : null,
       province: d.province ? String(d.province) : null,
-      type:'dispositive',
-      active:d.active
+      type: "dispositive",
+      active: d.active,
     };
   }
   return out;
 }
 
-
-
-
 const getEnums = async (req, res) => {
-    const cached = cache.get('enums');
-    if (cached) return response(res, 200, cached);
+  const cached = cache.get("enums");
+  if (cached) return response(res, 200, cached);
 
-    const [jobs, provinces, work_schedule, studies, finantial, programs] = await Promise.all([
-      Jobs.find().lean(),           // solo campo name
-      Provinces.find().lean(),
-      Work_schedule.find().lean(),
-      Studies.find().lean(),
-      Finantial.find().lean(),
-      Program.find({active:true}, { name: 1, acronym: 1 }).lean(),
-    ]);
+const [jobs, provinces, work_schedule, studies, finantial, programs, dispositives, entity] =
+  await Promise.all([
+    Jobs.find().lean(),
+    Provinces.find().lean(),
+    Work_schedule.find().lean(),
+    Studies.find().lean(),
+    Finantial.find().lean(),
+    Program.find({ active: true }, { name: 1, acronym: 1 }).lean(),
+    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1 }).lean(),
+    Entity.find().lean(),
+  ]);
 
-    const jobsIndex = createCategoryAndSubcategoryIndex(jobs);
-    const provincesIndex = createCategoryAndSubcategoryIndex(provinces);
-    const studiesIndex    = createCategoryAndSubcategoryIndex(studies);
+  const jobsIndex = createCategoryAndSubcategoryIndex(jobs);
+  const provincesIndex = createCategoryAndSubcategoryIndex(provinces);
+  const studiesIndex = createCategoryAndSubcategoryIndex(studies);
+  const dispositiveIndex = createDispositiveIndex(dispositives);
 
-    if (!jobs || !provinces || !work_schedule || !studies || !finantial) {
-      throw new ClientError('No se han podido cargar todos los enums', 500);
-    }
+  if (!jobs || !provinces || !work_schedule || !studies || !finantial || !entity) {
+    throw new ClientError("No se han podido cargar todos los enums", 500);
+  }
 
-    const enumValues = { jobs, provinces, work_schedule, studies, finantial, programs, jobsIndex, provincesIndex, studiesIndex };
+  const enumValues = {
+    jobs,
+    provinces,
+    work_schedule,
+    studies,
+    finantial,
+    programs,
+    entity,
+    jobsIndex,
+    provincesIndex,
+    studiesIndex,
+    dispositiveIndex,
+  };
 
-
-    cache.set('enums', enumValues);
-    response(res, 200, enumValues);
-}
-
+  cache.set("enums", enumValues);
+  response(res, 200, enumValues);
+};
 
 /* --------------------------------
    Handler principal (sin caché)
 ----------------------------------*/
 const getEnumEmployers = async (req, res) => {
-  // status no necesita await (enum del schema)
-  const status = User.schema.path('employmentStatus')?.enumValues || [];
+  const status = User.schema.path("employmentStatus")?.enumValues || [];
 
-  // Cargas en paralelo
   const [
     workSchedule,
     offers,
     jobs,
     provinces,
-    leavetype,
+    leaveTypes,
     programs,
     studies,
     finantial,
@@ -173,35 +163,34 @@ const getEnumEmployers = async (req, res) => {
     dispositives,
     docCats,
     fileCats,
+    entity,
   ] = await Promise.all([
     Work_schedule.find({}).lean(),
-    // Ajusta los campos mínimos que usa tu front
     Offer.find({ active: true }).lean(),
     Jobs.find({}, { name: 1, subcategories: 1 }).lean(),
     Provinces.find({}, { name: 1, subcategories: 1 }).lean(),
     Leavetype.find({}, { name: 1 }).lean(),
-    Program.find({},{ name: 1, acronym: 1,  active:1  }).lean(),
+    Program.find({}, { name: 1, acronym: 1, active: 1 }).lean(),
     Studies.find({}, { name: 1, subcategories: 1 }).lean(),
     Finantial.find({}).lean(),
     Documentation.find({}).lean(),
-    Dispositive.find({},{ name: 1, program: 1, province: 1, active:1 }).lean(),
-    // categorías posibles para categoryFiles (desde Documentation)
-    Documentation.distinct('categoryFiles').catch(() => []),
-    // ...y también desde FileDrive si existe ese campo
-    Filedrive.distinct('category').catch(() => []),
+    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1 }).lean(),
+    Documentation.distinct("categoryFiles").catch(() => []),
+    Filedrive.distinct("category").catch(() => []),
+    Entity.find({}, { name: 1 }).lean(),
   ]);
 
-  // Índices
   const jobsIndex = createCategoryAndSubcategoryIndex(jobs);
   const provincesIndex = createCategoryAndSubcategoryIndex(provinces);
-  const leavesIndex = createCategoryAndSubcategoryIndex(leavetype);
+  const leavesIndex = createCategoryAndSubcategoryIndex(leaveTypes);
   const programsIndex = createProgramIndex(programs);
-const dispositiveIndex      = createDispositiveIndex(dispositives);
-const studiesIndex    = createCategoryAndSubcategoryIndex(studies);
+  const dispositiveIndex = createDispositiveIndex(dispositives);
+  const studiesIndex = createCategoryAndSubcategoryIndex(studies);
 
-  // Categorías de ficheros (unificadas + ordenadas)
-  const categoryFiles = Array.from(new Set([...(docCats || []), ...(fileCats || [])]
-    .filter(Boolean))).sort();
+  const categoryFiles = Array.from(
+    new Set([...(docCats || []), ...(fileCats || [])].filter(Boolean))
+  ).sort();
+
   response(res, 200, {
     status,
     work_schedule: workSchedule,
@@ -210,11 +199,12 @@ const studiesIndex    = createCategoryAndSubcategoryIndex(studies);
     provincesIndex,
     dispositiveIndex,
     leavesIndex,
-    programsIndex,   // mismo nombre/estructura que antes (program + devices)
+    programsIndex,
     studiesIndex,
     finantial,
     documentation,
     categoryFiles,
+    entity,
   });
 };
 
@@ -227,6 +217,7 @@ const validTypes = {
   finantial: Finantial,
   documentation: Documentation,
   leavetype: leavetype,
+  entity: Entity,
 };
 
 // Función auxiliar para obtener el modelo según el tipo
@@ -236,33 +227,37 @@ const getModelByType = (type) => {
   return Model;
 };
 
-
 // POST Subcategoría: Agrega una subcategoría a un documento existente
 const postSubcategory = async (req, res) => {
-  if (!req.body.id || !req.body.name || !req.body.type)
+  if (!req.body.id || !req.body.name || !req.body.type) {
     throw new ClientError("Los datos no son correctos", 400);
-  const filter = { _id: req.body.id };
-  // Construimos el objeto de la subcategoría
-  const subData = { name: req.body.name };
-  if (req.body.type === "jobs") {
-    subData.public = req.body.public === 'si';
   }
+
+  const filter = { _id: req.body.id };
+  const subData = { name: req.body.name };
+
+  if (req.body.type === "jobs") {
+    subData.public = req.body.public === "si";
+  }
+
   const update = { $push: { subcategories: subData } };
   const Model = getModelByType(req.body.type);
   const updatedEnum = await Model.findOneAndUpdate(filter, update, { new: true });
+
   response(res, 200, updatedEnum);
 };
 
-
-
 // DELETE Subcategoría: Eliminar una subcategoría de un documento existente
 const deleteSubcategory = async (req, res) => {
-  if (!req.body.id || !req.body.idCategory || !req.body.type)
+  if (!req.body.id || !req.body.idCategory || !req.body.type) {
     throw new ClientError("Los datos no son correctos", 400);
+  }
+
   const filter = { _id: req.body.id };
   const update = { $pull: { subcategories: { _id: req.body.idCategory } } };
   const Model = getModelByType(req.body.type);
   const updatedEnum = await Model.findOneAndUpdate(filter, update, { new: true });
+
   response(res, 200, updatedEnum);
 };
 
@@ -298,10 +293,8 @@ const postEnums = async (req, res) => {
     newData.public = pub === "si";
   }
 
-  // 1) Crear documento Mongo
   const savedEnum = await new Model(newData).save();
 
-  // 2) Subir modelo PDF si viene archivo
   if (type === "documentation" && req.file) {
     const folderId = resolveModelsFolderId();
 
@@ -340,11 +333,13 @@ const putEnums = async (req, res) => {
     "finantial",
     "documentation",
     "leavetype",
+    "entity",
   ];
 
   if (!req.body.id || !req.body.name || !req.body.type) {
     throw new ClientError("Los datos no son correctos", 400);
   }
+
   if (!allowedTypes.includes(req.body.type)) {
     throw new ClientError("El tipo no es correcto", 400);
   }
@@ -352,12 +347,15 @@ const putEnums = async (req, res) => {
   const { id, type, subId } = req.body;
   const Model = getModelByType(type);
 
-  // subcategorías
   if (subId) {
-    if (type === "documentation") throw new ClientError("Documentation no tiene subcategorías", 400);
+    if (type === "documentation") {
+      throw new ClientError("Documentation no tiene subcategorías", 400);
+    }
 
     const updateData = { "subcategories.$[elem].name": req.body.name };
-    if (type === "jobs") updateData["subcategories.$[elem].public"] = req.body.public === "si";
+    if (type === "jobs") {
+      updateData["subcategories.$[elem].public"] = req.body.public === "si";
+    }
 
     const updatedEnum = await Model.findOneAndUpdate(
       { _id: id },
@@ -369,11 +367,12 @@ const putEnums = async (req, res) => {
     return response(res, 200, updatedEnum);
   }
 
-  // doc principal
   const updateData = { name: req.body.name };
 
   if (type === "documentation") {
-    if (!req.body.model) throw new ClientError("El campo model es obligatorio para documentation", 400);
+    if (!req.body.model) {
+      throw new ClientError("El campo model es obligatorio para documentation", 400);
+    }
 
     updateData.model = req.body.model;
     updateData.date = parseSiNo(req.body.date);
@@ -383,18 +382,20 @@ const putEnums = async (req, res) => {
 
     if (updateData.date) {
       if (!req.body.duration) {
-        throw new ClientError("El campo duración (en días) es obligatorio si el documento tiene fecha", 400);
+        throw new ClientError(
+          "El campo duración (en días) es obligatorio si el documento tiene fecha",
+          400
+        );
       }
       updateData.duration = Number(req.body.duration);
     } else {
       updateData.duration = undefined;
     }
 
-    // Si viene archivo, actualizar/subir modeloPDF
     if (req.file) {
       const folderId = resolveModelsFolderId();
       if (!folderId) {
-        throw new ClientError("Falta  GOOGLE_DRIVE_FILES para subir el modeloPDF", 500);
+        throw new ClientError("Falta GOOGLE_DRIVE_FILES para subir el modeloPDF", 500);
       }
 
       const prev = await Model.findById(id).lean();
@@ -421,7 +422,9 @@ const putEnums = async (req, res) => {
     }
   }
 
-  if (type === "jobs") updateData.public = req.body.public === "si";
+  if (type === "jobs") {
+    updateData.public = req.body.public === "si";
+  }
 
   const updated = await Model.findByIdAndUpdate(id, updateData, { new: true });
   if (!updated) throw new ClientError("Elemento no encontrado", 404);
@@ -457,28 +460,26 @@ const deleteEnums = async (req, res) => {
   response(res, 200, result);
 };
 
-const deleteFileEnums=async (req, res) =>{
+const deleteFileEnums = async (req, res) => {
   if (!req.body.modeloPDF || !req.body.id) {
     throw new ClientError("Faltan datos", 400);
   }
-  const infoDelete=await deleteFileById(req.body.modeloPDF)
-  if(infoDelete.success){
-    const data=await Documentation.updateOne(
-    { _id: req.body.id },
-    { $unset: { modeloPDF: 1 } },
-    { new: true }
+
+  const infoDelete = await deleteFileById(req.body.modeloPDF);
+
+  if (infoDelete.success) {
+    const data = await Documentation.updateOne(
+      { _id: req.body.id },
+      { $unset: { modeloPDF: 1 } },
+      { new: true }
     );
     response(res, 200, data);
   } else {
-   response(res, 200, infoDelete); 
+    response(res, 200, infoDelete);
   }
-  
-}
-
-
+};
 
 module.exports = {
-  //gestiono los errores con catchAsync
   getEnums: catchAsync(getEnums),
   putEnums: catchAsync(putEnums),
   postEnums: catchAsync(postEnums),
@@ -487,4 +488,4 @@ module.exports = {
   deleteSubcategory: catchAsync(deleteSubcategory),
   getEnumEmployers: catchAsync(getEnumEmployers),
   deleteFileEnums: catchAsync(deleteFileEnums),
-}
+};

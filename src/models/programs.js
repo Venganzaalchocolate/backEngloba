@@ -13,6 +13,15 @@ const cronologySchema=new Schema({
 
 
 const programSchema = new Schema({
+    entity:{
+        type: Schema.Types.ObjectId,
+        ref:'Entity'
+    },
+    entinty:{
+        type:String,
+        enum: ['ASOCIAIÓN ENGLOBA', 'ANIDE', 'APAFA'],
+        default: 'ASOCIAIÓN ENGLOBA'
+    },
     area:{
         type: String,
         enum: ['igualdad', 'desarrollo comunitario', 'lgtbiq', 'infancia y juventud', 'personas con discapacidad', 'mayores','migraciones', 'no identificado'],

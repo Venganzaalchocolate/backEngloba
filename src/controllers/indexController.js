@@ -240,7 +240,7 @@ const {
 } = require("./volunteerApplicationController");
 
 // ----------------------------- TOOLS SERVICE --------------------------------
-const { removeBgProfile512FromBuffer } = require("./toolsServiceController");
+
 
 // ----------------------------- PERMISSIONS (profiles-first) -----------------
 // ----------------------------- PERMISSIONS (admin | unified) -----------------
@@ -488,8 +488,7 @@ module.exports = {
   volunteerChronologyUpdate,
   volunteerChronologyDelete,
 
-  // Tools
-  removeBgProfile512FromBuffer,
+
 
   // PROFILES
   listProfiles,
