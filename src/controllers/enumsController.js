@@ -71,6 +71,7 @@ function createCategoryAndSubcategoryIndex(list = []) {
 
 function createProgramIndex(programs = []) {
   const byProgram = new Map();
+ 
   for (const p of programs) {
     byProgram.set(String(p._id), {
       _id: p._id,
@@ -78,6 +79,7 @@ function createProgramIndex(programs = []) {
       acronym: p.acronym || "",
       type: "program",
       active: p.active,
+      entity: p.entity
     });
   }
 
@@ -112,7 +114,7 @@ const [jobs, provinces, work_schedule, studies, finantial, programs, dispositive
     Work_schedule.find().lean(),
     Studies.find().lean(),
     Finantial.find().lean(),
-    Program.find({ active: true }, { name: 1, acronym: 1 }).lean(),
+    Program.find({ active: true }, { name: 1, acronym: 1, entity:1 }).lean(),
     Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1 }).lean(),
     Entity.find().lean(),
   ]);
@@ -121,6 +123,7 @@ const [jobs, provinces, work_schedule, studies, finantial, programs, dispositive
   const provincesIndex = createCategoryAndSubcategoryIndex(provinces);
   const studiesIndex = createCategoryAndSubcategoryIndex(studies);
   const dispositiveIndex = createDispositiveIndex(dispositives);
+
 
   if (!jobs || !provinces || !work_schedule || !studies || !finantial || !entity) {
     throw new ClientError("No se han podido cargar todos los enums", 500);
@@ -138,6 +141,7 @@ const [jobs, provinces, work_schedule, studies, finantial, programs, dispositive
     provincesIndex,
     studiesIndex,
     dispositiveIndex,
+
   };
 
   cache.set("enums", enumValues);
@@ -170,7 +174,7 @@ const getEnumEmployers = async (req, res) => {
     Jobs.find({}, { name: 1, subcategories: 1 }).lean(),
     Provinces.find({}, { name: 1, subcategories: 1 }).lean(),
     Leavetype.find({}, { name: 1 }).lean(),
-    Program.find({}, { name: 1, acronym: 1, active: 1 }).lean(),
+    Program.find({}, { name: 1, acronym: 1, active: 1, entity:1 }).lean(),
     Studies.find({}, { name: 1, subcategories: 1 }).lean(),
     Finantial.find({}).lean(),
     Documentation.find({}).lean(),
@@ -186,6 +190,7 @@ const getEnumEmployers = async (req, res) => {
   const programsIndex = createProgramIndex(programs);
   const dispositiveIndex = createDispositiveIndex(dispositives);
   const studiesIndex = createCategoryAndSubcategoryIndex(studies);
+    const entityIndex=createCategoryAndSubcategoryIndex(entity);
 
   const categoryFiles = Array.from(
     new Set([...(docCats || []), ...(fileCats || [])].filter(Boolean))
@@ -205,6 +210,7 @@ const getEnumEmployers = async (req, res) => {
     documentation,
     categoryFiles,
     entity,
+    entityIndex
   });
 };
 

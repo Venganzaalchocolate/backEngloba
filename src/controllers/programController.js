@@ -1,4 +1,4 @@
-const { Program, Provinces, Dispositive, Filedrive } = require('../models/indexModels');
+const { Program, Filedrive, Offer } = require('../models/indexModels');
 const { catchAsync, response, ClientError, toId } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { generateEmailHTML, sendEmail } = require('./emailControllerGoogle');
@@ -8,15 +8,16 @@ const { ensureWorkspaceGroupsForModel } = require('./workspaceController');
 
 const postCreateProgram = async (req, res) => {
 
-  const { name, acronym, area, active, responsible, finantial, about } = req.body;
+  const { name, acronym, area, active, responsible, finantial, about, entity } = req.body;
 
-  if (!name || !acronym) throw new ClientError('Falta datos', 400);
+  if (!name || !acronym || !entity) throw new ClientError('Falta datos', 400);
 
   const newProgram = new Program({
     name,
     acronym,
     area: area || "no identificado",
     active: active,
+    entity: toId(entity),
     responsible: Array.isArray(responsible) ? responsible.filter(id => mongoose.Types.ObjectId.isValid(id)) : [],
     finantial: Array.isArray(finantial) ? finantial.filter(id => mongoose.Types.ObjectId.isValid(id)) : [],
     about: {
@@ -85,9 +86,30 @@ const ProgramDeleteId = async (req, res) => {
 
 
 const ProgramPut = async (req, res) => {
-  const { id, name, acronym, area, active, finantial, about, cronology, type, essentialDocumentationProgram, essentialDocumentationDevice } = req.body;
+  const {
+    id,
+    name,
+    acronym,
+    area,
+    active,
+    finantial,
+    about,
+    cronology,
+    type,
+    essentialDocumentationProgram,
+    essentialDocumentationDevice,
+    entity
+  } = req.body;
+
   let query = { _id: id };
   const updateObj = {};
+
+  const currentProgram = await Program.findById(id).select('entity');
+  if (!currentProgram) throw new ClientError('No existe el programa', 404);
+
+  const nextEntityId = entity !== undefined ? String(toId(entity)) : null;
+  const currentEntityId = currentProgram.entity ? String(currentProgram.entity) : null;
+  const entityChanged = nextEntityId !== null && nextEntityId !== currentEntityId;
 
   // Actualiza campos simples
   const update = {};
@@ -95,54 +117,72 @@ const ProgramPut = async (req, res) => {
   if (acronym !== undefined) update.acronym = acronym;
   if (area !== undefined) update.area = area;
   if (active !== undefined) update.active = active;
-  if (Array.isArray(finantial)) update.finantial = finantial.filter(i => mongoose.Types.ObjectId.isValid(i));
+  if (entity !== undefined) update.entity = toId(entity);
+  if (Array.isArray(finantial)) {
+    update.finantial = finantial.filter(i => mongoose.Types.ObjectId.isValid(i));
+  }
+
   if (about) {
     if (about.description !== undefined) update['about.description'] = about.description;
     if (about.objectives !== undefined) update['about.objectives'] = about.objectives;
     if (about.profile !== undefined) update['about.profile'] = about.profile;
-  };
-
-
+  }
 
   if (Object.keys(update).length) updateObj.$set = update;
 
-  // Procesa documentación (solo "add" o "delete")
+  // Procesa documentación
   const processDoc = (field, doc) => {
-    if (!type || !['add', 'delete'].includes(type))
+    if (!type || !['add', 'delete'].includes(type)) {
       throw new ClientError('Falta el tipo o es inválido para documentación', 400);
-    if (!mongoose.Types.ObjectId.isValid(doc))
+    }
+    if (!mongoose.Types.ObjectId.isValid(doc)) {
       throw new ClientError('Documento inválido', 400);
+    }
     return type === 'add'
       ? { $addToSet: { [field]: doc } }
       : { $pull: { [field]: doc } };
   };
 
-
-  if (essentialDocumentationProgram !== undefined)
+  if (essentialDocumentationProgram !== undefined) {
     Object.assign(updateObj, processDoc('essentialDocumentationProgram', essentialDocumentationProgram));
-  if (essentialDocumentationDevice !== undefined)
-    Object.assign(updateObj, processDoc('essentialDocumentationDevice', essentialDocumentationDevice));
+  }
 
-  // Procesa cronology (se permiten "add", "delete" y "edit")
+  if (essentialDocumentationDevice !== undefined) {
+    Object.assign(updateObj, processDoc('essentialDocumentationDevice', essentialDocumentationDevice));
+  }
+
+  // Procesa cronology
   if (cronology !== undefined) {
-    if (!type || !['add', 'delete', 'edit'].includes(type))
+    if (!type || !['add', 'delete', 'edit'].includes(type)) {
       throw new ClientError('Falta el tipo o es inválido para cronology', 400);
+    }
+
     if (type === 'add') {
       Object.assign(updateObj, { $addToSet: { cronology } });
     } else if (type === 'delete') {
-      if (!cronology._id)
+      if (!cronology._id) {
         throw new ClientError('Falta _id para eliminar cronology', 400);
+      }
       Object.assign(updateObj, { $pull: { cronology: { _id: cronology._id } } });
     } else if (type === 'edit') {
-      if (!cronology._id)
+      if (!cronology._id) {
         throw new ClientError('Falta _id para editar cronology', 400);
-      Object.assign(updateObj, { $set: { "cronology.$": cronology } });
+      }
+      Object.assign(updateObj, { $set: { ...(updateObj.$set || {}), "cronology.$": cronology } });
       query["cronology._id"] = cronology._id;
     }
   }
 
   const program = await Program.findOneAndUpdate(query, updateObj, { new: true });
-  if (!program) return response(res, 400, { error: "No existe el programa" });
+  if (!program) throw new ClientError("No existe el programa", 404);
+
+  if (entityChanged) {
+    await Offer.updateMany(
+      { "dispositive.programId": toId(id) },
+      { $set: { entity: toId(entity) } }
+    );
+  }
+
   response(res, 200, program);
 };
 
