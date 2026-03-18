@@ -73,6 +73,10 @@ const offer= mongoose.Schema({
         type:Boolean,
         default:false
     }, 
+    urlSepe:{
+        type:String,
+        trim:true
+    },
     //es studiesId pero el name en vez de la referecnia este es del sistema antiguo
     studies:[{
         type:String,

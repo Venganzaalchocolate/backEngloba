@@ -6,9 +6,34 @@ const { catchAsync, response, ClientError, validateRequiredFields, toId } = requ
 
 
 // -------------------- Helpers --------------------
+const isValidHttpUrl = (value) => {
+  if (!value) return false;
 
+  try {
+    const url = new URL(String(value).trim());
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
 
+const normalizeUrlSepe = (v) => {
+  if (v == null) return undefined;
+  const s = String(v).trim();
+  return s ? s : undefined;
+};
 
+const resolveOfferType = ({ sepe, urlSepe, requestedType, currentType }) => {
+  if (sepe === true) {
+    return urlSepe ? 'external' : 'internal';
+  }
+
+  if (requestedType && ['internal', 'external'].includes(requestedType)) {
+    return requestedType;
+  }
+
+  return currentType || 'external';
+};
 
 // -------------------- LIST --------------------
 
@@ -208,16 +233,38 @@ const offerList = async (req, res) => {
 // -------------------- CREATE --------------------
 async function offerCreate(req, res) {
   const b = req.body || {};
-  // Reutilizamos tus utils para requeridos (sin dot paths)
-  validateRequiredFields(b, ['work_schedule', 'location', 'expected_incorporation_date', 'jobId','programId', 'newDispositiveId']);
+
+  validateRequiredFields(b, [
+    'work_schedule',
+    'location',
+    'expected_incorporation_date',
+    'jobId',
+    'programId',
+    'newDispositiveId'
+  ]);
 
   if (b.type && !['internal', 'external'].includes(b.type)) {
     throw new ClientError('type debe ser "internal" o "external"', 400);
   }
 
-  const programIdAux=toId(b.programId)
-  const idEntity=await Program.findById(programIdAux).select('entity')
- let payload = {
+  const programIdAux = toId(b.programId);
+  const idEntity = await Program.findById(programIdAux).select('entity');
+  if (!idEntity) throw new ClientError('Programa no encontrado', 404);
+
+  const sepe = b.sepe === true;
+  const urlSepe = sepe ? normalizeUrlSepe(b.urlSepe) : undefined;
+
+  if (sepe && urlSepe && !isValidHttpUrl(urlSepe)) {
+    throw new ClientError('urlSepe inválida', 400);
+  }
+
+  const typeResolved = resolveOfferType({
+    sepe,
+    urlSepe,
+    requestedType: b.type,
+  });
+
+  const payload = {
     work_schedule: b.work_schedule,
     essentials_requirements: b.essentials_requirements || undefined,
     optionals_requirements: b.optionals_requirements || undefined,
@@ -230,30 +277,31 @@ async function offerCreate(req, res) {
       programId: programIdAux,
       newDispositiveId: toId(b.newDispositiveId),
     },
-    sepe: b.sepe === true,
+    sepe,
+    urlSepe,
     rejectCv: Array.isArray(b.rejectCv) ? b.rejectCv.map(toId) : [],
     favoritesCv: Array.isArray(b.favoritesCv) ? b.favoritesCv.map(toId) : [],
     viewCv: Array.isArray(b.viewCv) ? b.viewCv.map(toId) : [],
     userCv: Array.isArray(b.userCv) ? b.userCv.map(toId) : [],
-    type: b.type || 'external',
+    type: typeResolved,
     datecreate: b.datecreate ? new Date(b.datecreate) : new Date(),
-    studiesId: Array.isArray(b.studiesId) ? b.studiesId.map((s)=>toId(s)) : undefined,
+    studiesId: Array.isArray(b.studiesId) ? b.studiesId.map((s) => toId(s)) : undefined,
     jobId: toId(b.jobId),
-    disability:b.disability===true?true:false,
-    entity:idEntity.entity
+    disability: b.disability === true,
+    entity: idEntity.entity,
   };
 
-  
-
-  const created = await Offer.create(payload)
+  const created = await Offer.create(payload);
   const doc = await Offer.findById(created._id);
   response(res, 201, doc);
 }
 
 // -------------------- UPDATE --------------------
+// -------------------- UPDATE --------------------
 async function offerUpdate(req, res) {
   const b = req.body;
   const { offerId } = b;
+
   if (!offerId) {
     throw new ClientError('offerId inválido', 400);
   }
@@ -265,61 +313,85 @@ async function offerUpdate(req, res) {
 
   // ------- campos simples
   const simple = [
-    'work_schedule', 'essentials_requirements', 'optionals_requirements',
-    'conditions', 'location', 'expected_incorporation_date', 'type',
+    'work_schedule',
+    'essentials_requirements',
+    'optionals_requirements',
+    'conditions',
+    'location',
+    'expected_incorporation_date',
   ];
+
   for (const f of simple) {
     if (b[f] !== undefined) patch[f] = b[f] || undefined;
   }
-  if (patch.type && !['internal', 'external'].includes(patch.type)) {
-    throw new ClientError('type debe ser "internal" o "external"', 400);
-  }
 
   // ------- fechas / booleanos
-  if (b.date !== undefined)       patch.date = b.date ? new Date(b.date) : undefined;
+  if (b.date !== undefined) patch.date = b.date ? new Date(b.date) : undefined;
   if (b.datecreate !== undefined) patch.datecreate = b.datecreate ? new Date(b.datecreate) : undefined;
-  if (b.active !== undefined)     patch.active = !!b.active;
-  if (b.sepe !== undefined)       patch.sepe = !!b.sepe;
+  if (b.active !== undefined) patch.active = !!b.active;
+  if (b.sepe !== undefined) patch.sepe = !!b.sepe;
+  if (b.disability !== undefined) patch.disability = b.disability === true;
+
+  // ------- urlSepe
+  if (b.urlSepe !== undefined) {
+    patch.urlSepe = normalizeUrlSepe(b.urlSepe);
+  }
 
   // ------- arrays de refs
-  if (b.rejectCv !== undefined)   patch.rejectCv    = Array.isArray(b.rejectCv)    ? b.rejectCv.map(toId)    : [];
-  if (b.favoritesCv !== undefined)patch.favoritesCv = Array.isArray(b.favoritesCv) ? b.favoritesCv.map(toId) : [];
-  if (b.viewCv !== undefined)     patch.viewCv      = Array.isArray(b.viewCv)      ? b.viewCv.map(toId)      : [];
-  if (b.userCv !== undefined)     patch.userCv      = Array.isArray(b.userCv)      ? b.userCv.map(toId)      : [];
-  if (b.studiesId !== undefined)  patch.studiesId   = Array.isArray(b.studiesId)   ? b.studiesId.map(toId)   : [];
+  if (b.rejectCv !== undefined) patch.rejectCv = Array.isArray(b.rejectCv) ? b.rejectCv.map(toId) : [];
+  if (b.favoritesCv !== undefined) patch.favoritesCv = Array.isArray(b.favoritesCv) ? b.favoritesCv.map(toId) : [];
+  if (b.viewCv !== undefined) patch.viewCv = Array.isArray(b.viewCv) ? b.viewCv.map(toId) : [];
+  if (b.userCv !== undefined) patch.userCv = Array.isArray(b.userCv) ? b.userCv.map(toId) : [];
+  if (b.studiesId !== undefined) patch.studiesId = Array.isArray(b.studiesId) ? b.studiesId.map(toId) : [];
 
-  // ------- IDs directos (opcionales en UPDATE)
-  if (b.jobId !== undefined)      patch.jobId      = b.jobId ? toId(b.jobId) : undefined;
+  // ------- IDs directos
+  if (b.jobId !== undefined) patch.jobId = b.jobId ? toId(b.jobId) : undefined;
   if (b.provinceId !== undefined) patch.provinceId = b.provinceId ? toId(b.provinceId) : undefined;
-  if (b.disability!==undefined) patch.disability= b.disability===true?true:false
- 
-  // ------- dispositive (acepta varias formas de enviar)
-  const hasDispositiveObj = b.newDispositiveId !== undefined;
+
+  // ------- dispositive
+  const hasDispositiveObj = b.dispositive !== undefined;
   const hasDispositiveLoose = b.programId !== undefined || b.newDispositiveId !== undefined;
 
   if (hasDispositiveObj || hasDispositiveLoose) {
-    const programIdAux=toId(b.programId)
-    const idEntity=await Program.findById(programIdAux).select('entity')
     const inObj = b.dispositive || {};
-    const programId     = inObj.programId     ?? b.programId;
+    const programId = inObj.programId ?? b.programId;
     const dispositiveId = inObj.newDispositiveId ?? b.newDispositiveId;
 
     if (!programId || !dispositiveId) {
-      throw new ClientError('Faltan programId y/o dispositiveId para actualizar el dispositivo', 400);
+      throw new ClientError('Faltan programId y/o newDispositiveId para actualizar el dispositivo', 400);
     }
+
+    const programIdAux = toId(programId);
+    const idEntity = await Program.findById(programIdAux).select('entity');
+    if (!idEntity) throw new ClientError('Programa no encontrado', 404);
+
     patch.dispositive = {
-      programId: toId(programId),
+      programId: programIdAux,
       newDispositiveId: toId(dispositiveId),
-      entity:idEntity.entity
     };
+
+    patch.entity = idEntity.entity;
   }
 
+  // ------- type/urlSepe resueltos automáticamente para SEPE
+  const finalSepe = patch.sepe !== undefined ? patch.sepe : !!current.sepe;
+  const incomingUrlSepe = patch.urlSepe !== undefined ? patch.urlSepe : current.urlSepe;
+  const finalUrlSepe = finalSepe ? incomingUrlSepe : undefined;
 
-  // Si no hay nada que actualizar, devolver la actual
-  if (Object.keys(patch).length === 0) {
-    const doc = await Offer.findById(offerId);
-    return response(res, 200, doc);
+    
+  if (finalSepe && finalUrlSepe && !isValidHttpUrl(finalUrlSepe)) {
+    throw new ClientError('urlSepe inválida', 400);
   }
+
+  patch.urlSepe = finalUrlSepe;
+
+
+  patch.type = resolveOfferType({
+    sepe: finalSepe,
+    urlSepe: finalUrlSepe,
+    requestedType: b.type,
+    currentType: current.type,
+  });
 
   await Offer.updateOne({ _id: offerId }, { $set: patch }, { runValidators: true });
   const doc = await Offer.findById(offerId);
