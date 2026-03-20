@@ -11,12 +11,12 @@ const {
     updateDispositive,
     deleteDispositive,
     tokenValid,
-    handleCoordinators,
-    handleResponsibles,
-    listsResponsiblesAndCoordinators,
     createDispositive,
-    getDispositiveResponsable,
-    getProgramId
+    getProgramId,
+    handleScopedRole,
+    listScopedRoles,
+    getUserScopedRoles,
+    getOrganizationChart
 } = require('../controllers/indexController');
 
 // Configura `multer` para almacenamiento en memoria
@@ -36,10 +36,15 @@ router.post('/createdispositive', tokenValid, createDispositive); // Añadir un 
 router.post('/dispositive', tokenValid, getDispositiveId); // Obtener un dispositivo específico dentro de un programa
 router.put('/updatedevice', tokenValid, updateDispositive); // Actualizar un dispositivo específico dentro de un programa
 router.delete('/deletedispositive', tokenValid, deleteDispositive); // Eliminar un dispositivo específico dentro de un programa
-router.post('/dispositiveresponsable', tokenValid, getDispositiveResponsable);
-router.post('/coordinators', tokenValid, handleCoordinators);
-router.post('/responsibles', tokenValid, handleResponsibles);
-router.post('/listsresponsiblesprogram', tokenValid, listsResponsiblesAndCoordinators)
 // router.post("/fileProgram", tokenValid, upload.single('pdf'), filesProgram)
+
+// Scoped roles
+router.post('/scopedrole', tokenValid, handleScopedRole);
+router.post('/listscopedroles', tokenValid, listScopedRoles);
+router.post('/userscopedroles', tokenValid, getUserScopedRoles);
+
+//organigrama
+// organigrama
+router.post('/organizationchart', tokenValid, getOrganizationChart);
 
 module.exports = router;

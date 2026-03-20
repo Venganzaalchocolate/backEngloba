@@ -4,72 +4,7 @@ const { catchAsync, response, ClientError, comprobarPass, generarToken, verifyTo
 const jwt = require('jsonwebtoken');
 const { sendEmail, generateEmailHTML } = require('./emailControllerGoogle');
 const mongoose = require('mongoose');
-
-async function listResponsable (id) {
-  const userId = new mongoose.Types.ObjectId(id);
-  // 1) Programas donde el usuario es responsable del programa
-  const programsResp = await Program.find(
-    { responsible: userId },
-    { _id: 1, name: 1, acronym: 1 }
-  ).lean();
-
-  const progRespSet = new Set(programsResp.map(p => String(p._id)));
-
-  // 2) Dispositivos donde el usuario es responsable o coordinador
-  const dispositives = await Dispositive.find(
-    {
-      $or: [
-        { responsible: userId },
-        { coordinators: userId }
-      ]
-    },
-    { _id: 1, name: 1, program: 1, responsible: 1, coordinators: 1 }
-  )
-    .populate({ path: 'program', select: 'name acronym' })
-    .lean();
-
-  const result = [];
-
-  // 2a) Filas por cada dispositivo con rol
-  for (const d of dispositives) {
-    const progId = d.program ? (d.program._id ?? d.program) : null;
-    const progIdStr = progId ? String(progId) : null;
-
-    const isDeviceResponsible  = Array.isArray(d.responsible)  && d.responsible.some(x => String(x) === String(userId));
-    const isDeviceCoordinator  = Array.isArray(d.coordinators) && d.coordinators.some(x => String(x) === String(userId));
-    const isProgramResponsible = progIdStr ? progRespSet.has(progIdStr) : false;
-
-    result.push({
-      idProgram: progId || null,
-      programName: d.program?.name ?? '',
-      programAcronym: d.program?.acronym ?? '',
-      isProgramResponsible,
-      dispositiveName: d.name || null,
-      dispositiveId: d._id,
-      isDeviceResponsible,
-      isDeviceCoordinator,
-    });
-  }
-
-  // 3) Añadir filas "solo programa" donde el usuario es responsable de programa
-  //    pero no tiene ningún dispositivo con rol en ese programa.
-  const alreadyListedProgIds = new Set(result.map(r => String(r.idProgram)).filter(Boolean));
-  for (const p of programsResp) {
-    if (!alreadyListedProgIds.has(String(p._id))) {
-      result.push({
-        idProgram: p._id,
-        programName: p.name,
-        programAcronym: p.acronym,
-        isProgramResponsible: true,
-        dispositiveName: null,
-        dispositiveId: null,
-        isDeviceResponsible: false,
-        isDeviceCoordinator: false,
-      });
-    }
-  }
-  return result
-};
+const { getUserScopedRolesData } = require('./scopedRolesController');
 
 
 // Función para generar un código de 6 dígitos
@@ -172,7 +107,7 @@ const verifyCode = async (req, res) => {
         path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
         model: 'Filedrive',       // Nombre del modelo de Filedrive
       });
-    const list= await listResponsable(user._id)
+    const list= await getUserScopedRolesData(user._id)
     const token = await generarToken(user); // Ajusta según tu lógica de JWT
     
     response(res, 200, {
@@ -193,7 +128,7 @@ const validToken = async (req, res) => {
             path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
             model: 'Filedrive',       // Nombre del modelo de Filedrive
           });
-        const list= await listResponsable(id)
+        const list= await getUserScopedRolesData(id);
         response(res, 200, {
         user,
         listResponsability:list

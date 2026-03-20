@@ -215,10 +215,6 @@ const {
   createDispositive,
   updateDispositive,
   deleteDispositive,
-  handleCoordinators,
-  handleResponsibles,
-  listsResponsiblesAndCoordinators,
-  getDispositiveResponsable,
 } = require("./dispositiveController");
 
 // ----------------------------- VOLUNTEER APPLICATIONS -----------------------
@@ -239,10 +235,36 @@ const {
   deleteInternalNote,
 } = require("./volunteerApplicationController");
 
-// ----------------------------- TOOLS SERVICE --------------------------------
+// ----------------------------- SESAME ---------------------------------------
+const {
+  postSesameCreateEmployee,
+  postSesameListEmployees,
+  postSesameGetEmployee,
+  putSesameEmployee,
+  deleteSesameEmployee,
 
+  postSesameCreateDepartment,
+  postSesameListDepartments,
+  postSesameGetDepartment,
+  putSesameDepartment,
+  deleteSesameDepartment,
 
-// ----------------------------- PERMISSIONS (profiles-first) -----------------
+  postSesameCreateWorkplace,
+  postSesameListWorkplaces,
+  postSesameGetWorkplace,
+  putSesameWorkplace,
+  deleteSesameWorkplace,
+} = require("./sesameController");
+
+// ----------------------------- SCOPED ROLES ---------------------------------
+const {
+  handleScopedRole,
+  listScopedRoles,
+  getUserScopedRoles,
+  getUserScopedRolesData,
+  getOrganizationChart,
+} = require("./scopedRolesController");
+
 // ----------------------------- PERMISSIONS (admin | unified) -----------------
 const {
   // PROFILES
@@ -367,10 +389,6 @@ module.exports = {
   createDispositive,
   updateDispositive,
   deleteDispositive,
-  handleCoordinators,
-  handleResponsibles,
-  listsResponsiblesAndCoordinators,
-  getDispositiveResponsable,
 
   // Offers
   offerList,
@@ -516,8 +534,34 @@ module.exports = {
   updateScopeProfileLink,
   deleteScopeProfileLinkHard,
 
+    // Sesame
+  postSesameCreateEmployee,
+  postSesameListEmployees,
+  postSesameGetEmployee,
+  putSesameEmployee,
+  deleteSesameEmployee,
+
+  postSesameCreateDepartment,
+  postSesameListDepartments,
+  postSesameGetDepartment,
+  putSesameDepartment,
+  deleteSesameDepartment,
+
+  postSesameCreateWorkplace,
+  postSesameListWorkplaces,
+  postSesameGetWorkplace,
+  putSesameWorkplace,
+  deleteSesameWorkplace,
+
   // SYNC
   syncUserNow,
+
+    // Scoped roles
+  handleScopedRole,
+  listScopedRoles,
+  getUserScopedRoles,
+  getUserScopedRolesData,
+  getOrganizationChart
 
 };
 

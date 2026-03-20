@@ -173,7 +173,20 @@ const ProgramPut = async (req, res) => {
     }
   }
 
-  const program = await Program.findOneAndUpdate(query, updateObj, { new: true });
+  const program = await Program.findOneAndUpdate(query, updateObj, { new: true }).populate([
+  {
+    path: "responsible",
+    select: "firstName lastName email phoneJob",
+  },
+  {
+    path: "coordinators",
+    select: "firstName lastName email phoneJob",
+  },
+  {
+    path: "supervisors",
+    select: "firstName lastName email phoneJob",
+  },
+]);
   if (!program) throw new ClientError("No existe el programa", 404);
 
   if (entityChanged) {
@@ -202,12 +215,20 @@ const getProgramId = async (req, res) => {
   const files = await Filedrive.find({ idModel: id });
 
   // 2) Obtener datos del programa + responsables
-  let data = await Program.findById(id).populate([
-    {
-      path: "responsible",
-      select: "firstName lastName email phoneJob",
-    }
-  ]);
+let data = await Program.findById(id).populate([
+  {
+    path: "responsible",
+    select: "firstName lastName email phoneJob",
+  },
+  {
+    path: "coordinators",
+    select: "firstName lastName email phoneJob",
+  },
+  {
+    path: "supervisors",
+    select: "firstName lastName email phoneJob",
+  },
+]);
 
   if (!data) {
     throw new ClientError("Programa no encontrado", 404);
