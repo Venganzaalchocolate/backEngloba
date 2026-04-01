@@ -237,23 +237,29 @@ const {
 
 // ----------------------------- SESAME ---------------------------------------
 const {
-  postSesameCreateEmployee,
+
   postSesameListEmployees,
   postSesameGetEmployee,
-  putSesameEmployee,
-  deleteSesameEmployee,
+  postSesameGetEmployeeContext,
+  postSesameAssignEmployeeOffice,
+  postSesameDeleteEmployeeOfficeAssignation,
+  postSesameAssignEmployeeOfficeRole,
+  postSesameDeleteEmployeeOfficeRole,
+  postSesameGetDepartmentEmployees,
+  postSesameGetOfficeEmployees,
+  postSesameAssignOfficeEmployee,
+  postSesameDeleteOfficeEmployee,
+  postSesameAssignDepartmentEmployee,
+  postSesameDeleteDepartmentEmployee,
+  postSesameUpdateEmployeeManagersByEmployee,
+  postSesameEligibleManagersByEmployee,
+  postSesameCreateDepartmentForUser,
+  postSesameDeleteDepartment,
+  postSesameTransferDepartment,
+  postSesameToggleEmployeeForUser,
+  postSesameInviteEmployeeForUser,
+  postSesameGetOfficeManagers,
 
-  postSesameCreateDepartment,
-  postSesameListDepartments,
-  postSesameGetDepartment,
-  putSesameDepartment,
-  deleteSesameDepartment,
-
-  postSesameCreateWorkplace,
-  postSesameListWorkplaces,
-  postSesameGetWorkplace,
-  putSesameWorkplace,
-  deleteSesameWorkplace,
 } = require("./sesameController");
 
 // ----------------------------- SCOPED ROLES ---------------------------------
@@ -535,23 +541,28 @@ module.exports = {
   deleteScopeProfileLinkHard,
 
     // Sesame
-  postSesameCreateEmployee,
   postSesameListEmployees,
   postSesameGetEmployee,
-  putSesameEmployee,
-  deleteSesameEmployee,
+  postSesameGetEmployeeContext,
+  postSesameAssignEmployeeOffice,
+  postSesameDeleteEmployeeOfficeAssignation,
+  postSesameAssignEmployeeOfficeRole,
+  postSesameDeleteEmployeeOfficeRole,
+  postSesameGetOfficeEmployees,
+  postSesameGetDepartmentEmployees,
+  postSesameAssignOfficeEmployee,
+  postSesameDeleteOfficeEmployee,
+  postSesameAssignDepartmentEmployee,
+  postSesameDeleteDepartmentEmployee,
+  postSesameUpdateEmployeeManagersByEmployee,
+  postSesameEligibleManagersByEmployee,
+  postSesameCreateDepartmentForUser,
+  postSesameDeleteDepartment,
+  postSesameTransferDepartment,
+  postSesameToggleEmployeeForUser,
+postSesameInviteEmployeeForUser,
+postSesameGetOfficeManagers,
 
-  postSesameCreateDepartment,
-  postSesameListDepartments,
-  postSesameGetDepartment,
-  putSesameDepartment,
-  deleteSesameDepartment,
-
-  postSesameCreateWorkplace,
-  postSesameListWorkplaces,
-  postSesameGetWorkplace,
-  putSesameWorkplace,
-  deleteSesameWorkplace,
 
   // SYNC
   syncUserNow,

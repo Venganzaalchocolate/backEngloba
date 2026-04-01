@@ -5,9 +5,14 @@ const mongoose = require('mongoose');
 const { validateRequiredFields, createAccentInsensitiveRegex } = require('../utils/utils');
 const { uploadFileToDrive, getFileById, deleteFileById, gestionAutomaticaNominas, obtenerCarpetaContenedora } = require('./googleController');
 const { createUserWS, deleteUserByEmailWS, addUserToGroup, recreateCorporateEmailByUserId } = require('./workspaceController');
-const { actualizacionHiringyLeave } = require('./periodoTransicionController');
 const { sendWelcomeEmail } = require('./emailControllerGoogle');
 const { default: pLimit } = require('p-limit');
+const {
+  ensureSesameEmployeeForUser,
+  disableSesameEmployeeForUser,
+  deleteSesameEmployeeForUser,
+  syncSesameEmployeeForUser,
+} = require('./sesameController');
 
 const WEEKLY_HOURS = 38.5;
 // Día equivalente “redondeado”
@@ -113,6 +118,7 @@ const postCreateUser = async (req, res) => {
     phoneJobNumber,
     phoneJobExtension,
     hiringPeriods,
+    officeIdSesame
   } = req.body;
 
   // 1) User payload
@@ -134,7 +140,7 @@ const postCreateUser = async (req, res) => {
   }
   userData.birthday = bday;
 
-  
+
 
   if (disability) userData.disability = disability;
   if (fostered === 'si') userData.fostered = true;
@@ -183,6 +189,7 @@ const postCreateUser = async (req, res) => {
 
   try {
     newUser = await User.create(userData);
+
   } catch (error) {
     if (error.code === 11000) {
       const [[, dupValue]] = Object.entries(error.keyValue);
@@ -252,7 +259,7 @@ const postCreateUser = async (req, res) => {
     if (groupWorkspaceId) {
       await addUserToGroup(newUser._id, groupWorkspaceId);
     } else {
-      debug('No groupWorkspaceId for dispositive; skipping addUserToGroup');
+      console.log('No groupWorkspaceId for dispositive; skipping addUserToGroup');
     }
 
     // Preferents: cerrar coincidentes por puesto + provincia del dispositive
@@ -268,21 +275,29 @@ const postCreateUser = async (req, res) => {
       );
     }
   } catch (e) {
-    debug('Workspace/Preferents (non-blocking):', e?.name, e?.message);
+    console.log('Workspace/Preferents (non-blocking):', e?.name, e?.message);
   }
 
 
-  try {
+try {
   const ws = await createUserWS(newUser._id);
   if (ws?.email) {
-    const email_cor=String(ws.email).toLowerCase();
-    newUser.email = email_cor
-    await newUser.save();         // mantiene la variable y el doc sincronizados
-    await sendWelcomeEmail(newUser, email_cor)
- 
+    const email_cor = String(ws.email).toLowerCase();
+    newUser.email = email_cor;
+    await newUser.save();
+    await sendWelcomeEmail(newUser, email_cor);
   }
 } catch (e) {
-  console.log('no se ha podido crear el email corporativo'+ e);
+  console.log("no se ha podido crear el email corporativo", e?.message || e);
+}
+
+try {
+  const sesameResult = await ensureSesameEmployeeForUser(newUser._id, { status: "inactive" });
+  if (sesameResult?.action !== "not-created" && sesameResult?.action !== "not-linked") {
+    newUser = await User.findById(newUser._id);
+  }
+} catch (e) {
+  console.log("no se ha podido crear/sincronizar el usuario en Sesame", e?.message || e);
 }
 
   response(res, 200, newUser);
@@ -406,11 +421,11 @@ async function getUsersCurrentStatus(req, res) {
           personDni: person.dni,
           leave: info
             ? {
-                typeName: info.typeName,
-                startLeaveDate: info.startLeaveDate,
-                expectedEndLeaveDate: info.expectedEndLeaveDate,
-                finished: info.finished,
-              }
+              typeName: info.typeName,
+              startLeaveDate: info.startLeaveDate,
+              expectedEndLeaveDate: info.expectedEndLeaveDate,
+              finished: info.finished,
+            }
             : null,
         };
       } else {
@@ -427,148 +442,6 @@ async function getUsersCurrentStatus(req, res) {
   return response(res, 200, { items });
 };
 
-// =========================
-// LIST USERS (migrado a Dispositive / dispositiveId)
-// =========================
-// const getUsers = async (req, res) => {
-//   if (!req.body.page || !req.body.limit) {
-//     throw new ClientError("Faltan datos no son correctos", 400);
-//   }
-
-//   const page  = parseInt(req.body.page, 10)  || 1;
-//   const limit = parseInt(req.body.limit, 10) || 10;
-
-//   const filters = {};
-
-//   // ---------------- Búsquedas por texto y flags de User ----------------
-//   if (req.body.firstName) {
-//     const rx = createAccentInsensitiveRegex(req.body.firstName);
-//     filters.firstName = { $regex: rx };
-//   }
-//   if (req.body.lastName) {
-//     const rx = createAccentInsensitiveRegex(req.body.lastName);
-//     filters.lastName = { $regex: rx };
-//   }
-
-//   if (req.body.email) filters.email = { $regex: req.body.email, $options: 'i' };
-//   if (req.body.phone) filters.phone = { $regex: req.body.phone, $options: 'i' };
-//   if (req.body.dni)   filters.dni   = { $regex: req.body.dni,   $options: 'i' };
-//   if (req.body.gender) filters.gender = req.body.gender;
-
-//   if (req.body.fostered === "si") filters.fostered = true;
-//   if (req.body.fostered === "no") filters.fostered = false;
-//   if (req.body.apafa === "si") filters.apafa = true;
-//   if (req.body.apafa === "no") filters.apafa = false;
-
-//   if (req.body.disability !== undefined) {
-//     if (req.body.disability === "si") filters["disability.percentage"] = { $gt: 0 };
-//     if (req.body.disability === "no") filters["disability.percentage"] = 0;
-//   }
-
-//   // Estado laboral
-//   if (req.body.status) {
-//     if (req.body.status === 'total') {
-//       filters.employmentStatus = { $in: ['activo', 'en proceso de contratación'] };
-//     } else {
-//       filters.employmentStatus = req.body.status;
-//     }
-//   }
-
-//   // ---------------- Resolución por provincia / programa / dispositive via Dispositive ----------------
-//   const intersectArrays = (a, b) => {
-//     if (!a || !b) return [];
-//     const s = new Set(a);
-//     return b.filter(x => s.has(x));
-//   };
-
-//   let dispositiveIdsFromProvinces = null;
-//   let dispositiveIdsFromProgram   = null;
-
-//   // provinces -> lista de dispositiveIds de esa provincia
-//   if (req.body.provinces && mongoose.Types.ObjectId.isValid(req.body.provinces)) {
-//     const byProv = await Dispositive.find({ province: toId(req.body.provinces) })
-//       .select('_id').lean();
-//     dispositiveIdsFromProvinces = byProv.map(d => String(d._id));
-//   }
-
-//   // programId -> lista de dispositiveIds del programa
-//   if (req.body.programId && mongoose.Types.ObjectId.isValid(req.body.programId)) {
-//     const byProg = await Dispositive.find({ program: toId(req.body.programId) })
-//       .select('_id').lean();
-//     dispositiveIdsFromProgram = byProg.map(d => String(d._id));
-//   }
-
-//   let finalDispositiveIds = null;
-//   if (dispositiveIdsFromProvinces && dispositiveIdsFromProgram) {
-//     finalDispositiveIds = intersectArrays(dispositiveIdsFromProvinces, dispositiveIdsFromProgram);
-//   } else if (dispositiveIdsFromProvinces) {
-//     finalDispositiveIds = dispositiveIdsFromProvinces;
-//   } else if (dispositiveIdsFromProgram) {
-//     finalDispositiveIds = dispositiveIdsFromProgram;
-//   }
-
-//   // position
-//   let positionId = null;
-//   if (req.body.position && mongoose.Types.ObjectId.isValid(req.body.position)) {
-//     positionId = String(req.body.position);
-//   }
-
-//   // dispositive concreto
-//   let singleDispositiveId = null;
-//   if (req.body.dispositive && mongoose.Types.ObjectId.isValid(req.body.dispositive)) {
-//     singleDispositiveId = String(req.body.dispositive);
-//   }
-
-//   // ¿Necesitamos filtrar por periodos abiertos?
-//   const mustFilterByOpenPeriods =
-//     !!finalDispositiveIds || !!positionId || !!singleDispositiveId;
-
-//   if (mustFilterByOpenPeriods) {
-//     // Combinar dispositivo concreto con la lista (intersección)
-//     let allowedDispositiveIds = finalDispositiveIds;
-//     if (singleDispositiveId) {
-//       allowedDispositiveIds = allowedDispositiveIds
-//         ? intersectArrays(allowedDispositiveIds, [singleDispositiveId])
-//         : [singleDispositiveId];
-//     }
-
-//     const periodFilter = {
-//       $or: [{ endDate: null }, { endDate: { $exists: false } }],
-//     };
-
-//     if (allowedDispositiveIds && allowedDispositiveIds.length) {
-//       periodFilter.dispositiveId = { $in: allowedDispositiveIds.map(id => new mongoose.Types.ObjectId(id)) };
-//     }
-//     if (positionId) {
-//       periodFilter.position = new mongoose.Types.ObjectId(positionId);
-//     }
-
-//     const userIdsFromPeriods = await Periods
-//       .find(periodFilter)
-//       .distinct('idUser');
-
-//     if (!userIdsFromPeriods.length) {
-//       return response(res, 200, { users: [], totalPages: 0 });
-//     }
-
-//     filters._id = { $in: userIdsFromPeriods };
-//   }
-
-//   // ---------------- Paginación sobre Users ya filtrados ----------------
-//   const totalDocs  = await User.countDocuments(filters);
-//   const totalPages = Math.ceil(totalDocs / limit);
-
-//   const users = await User.find(filters)
-//     .populate({
-//       path: 'files.filesId',
-//       model: 'Filedrive',
-//     })
-//     .sort({ createdAt: -1 })
-//     .skip((page - 1) * limit)
-//     .limit(limit);
-
-//   return response(res, 200, { users, totalPages });
-// };
 
 // =========================
 // getAllUsersWithOpenPeriods (migrado a Dispositive / dispositiveId)
@@ -587,7 +460,7 @@ const getAllUsersWithOpenPeriods = async (req, res) => {
 
   if (req.body.email) filters.email = { $regex: req.body.email, $options: 'i' };
   if (req.body.phone) filters.phone = { $regex: req.body.phone, $options: 'i' };
-  if (req.body.dni)   filters.dni   = { $regex: req.body.dni,   $options: 'i' };
+  if (req.body.dni) filters.dni = { $regex: req.body.dni, $options: 'i' };
   if (req.body.gender) filters.gender = req.body.gender;
   if (req.body.fostered === "si") filters.fostered = true;
   if (req.body.fostered === "no") filters.fostered = false;
@@ -724,7 +597,7 @@ const getUserName = async (req, res) => {
 
   const users = await User.find(
     { _id: { $in: uniqueIds } },
-    { firstName: 1, lastName: 1, email:1, phoneJob:1 }
+    { firstName: 1, lastName: 1, email: 1, phoneJob: 1, userIdSesame: 1 }
   );
 
   response(res, 200, users);
@@ -768,11 +641,11 @@ const UserDeleteId = async (req, res) => {
   if (!id) {
     throw new ClientError('Falta id de usuario', 400);
   }
-  const LeaveModel   = Leaves;
+  const LeaveModel = Leaves;
   const PeriodsModel = Periods;
 
   const userToDelete = await User.findById(id);
-  if (!userToDelete) {throw new ClientError('Falta usuario no encontrado', 400);}
+  if (!userToDelete) { throw new ClientError('Falta usuario no encontrado', 400); }
 
   const driveFileIds = [];
   if (Array.isArray(userToDelete.files)) {
@@ -782,13 +655,13 @@ const UserDeleteId = async (req, res) => {
   }
   if (Array.isArray(userToDelete.payrolls)) {
     for (const p of userToDelete.payrolls) {
-      if (p?.pdf)  driveFileIds.push(p.pdf);
+      if (p?.pdf) driveFileIds.push(p.pdf);
       if (p?.sign) driveFileIds.push(p.sign);
     }
   }
   for (const fileId of driveFileIds) {
     const del = await deleteFileById(fileId);
-    if(!del.success) throw new ClientError('Error al borrar archivos en drive', 400);
+    if (!del.success) throw new ClientError('Error al borrar archivos en drive', 400);
   }
 
   await LeaveModel.deleteMany({ idUser: id });
@@ -799,7 +672,11 @@ const UserDeleteId = async (req, res) => {
       console.log('[UserDeleteId] Fallo al borrar en Workspace:', e?.message || e);
     }
   }
-
+  try {
+    await deleteSesameEmployeeForUser(id);
+  } catch (e) {
+    console.log('[UserDeleteId] Fallo al borrar en Sesame:', e?.message || e);
+  }
   const userDeleteResult = await User.deleteOne({ _id: id });
   return response(res, 200, userDeleteResult);
 };
@@ -808,138 +685,120 @@ const UserDeleteId = async (req, res) => {
 // userPut (igual salvo lógica previa intacta)
 // =========================
 const userPut = async (req, res) => {
-  if (!req.body._id) {
-    throw new ClientError("El ID de usuario es requerido", 400);
-  }
+  if (!req.body._id) throw new ClientError("El ID de usuario es requerido", 400);
 
   const updateFields = {};
   const userId = toId(req.body._id);
+  const userAux = await User.findById(userId).select("email employmentStatus userIdSesame");
+  if (!userAux) throw new ClientError("Usuario no encontrado", 404);
 
-  // =============== EMPLOYMENT STATUS (requiere lógica especial) ===============
-  if (req.body.employmentStatus) {
-    const userAux = await User.findById(userId).select("email");
+if (req.body.employmentStatus) {
+  const nextStatus = req.body.employmentStatus;
 
-    if (req.body.employmentStatus === "ya no trabaja con nosotros") {
-      const open = await hasOpenHiring(userId);
-      if (open) {
-        throw new ClientError(
-          `Para cambiar el estado laboral a "Ya no trabaja con nosotros" debes cerrar todos los periodos abiertos`,
-          400
-        );
-      }
+  if (nextStatus === "ya no trabaja con nosotros") {
+    const open = await hasOpenHiring(userId);
+    if (open) throw new ClientError(`Para cambiar el estado laboral a "Ya no trabaja con nosotros" debes cerrar todos los periodos abiertos`, 400);
 
-      if (userAux.email) await deleteUserByEmailWS(userAux.email);
-      updateFields.employmentStatus = "ya no trabaja con nosotros";
-      updateFields.email = "";
+    if (userAux?.userIdSesame) await disableSesameEmployeeForUser(userId);
+    if (userAux.email) await deleteUserByEmailWS(userAux.email);
 
-      // 3) Eliminar responsabilidades y coordinaciones en DISPOSITIVOS y PROGRAMAS
-      //    - Dispositive.responsible[]
-      //    - Dispositive.coordinators[]
-      //    - Program.responsible[]
-      
-      await Dispositive.updateMany(
-        {
-          $or: [
-            { responsible: userId },
-            { coordinators: userId },
-          ],
-        },
-        {
-          $pull: {
-            responsible: userId,
-            coordinators: userId,
-          },
-        }
-      );
+    updateFields.employmentStatus = "ya no trabaja con nosotros";
+    updateFields.email = "";
 
-      await Program.updateMany(
-        { responsible: userId },
-        { $pull: { responsible: userId } }
-      );
-    } else {
-      updateFields.employmentStatus = req.body.employmentStatus;
+    await Dispositive.updateMany(
+      { $or: [{ responsible: userId }, { coordinators: userId }] },
+      { $pull: { responsible: userId, coordinators: userId } }
+    );
 
-      if (!userAux.email) {
-        const ws = await createUserWS(userId);
-        updateFields.email = ws.email;
-      }
+    await Program.updateMany(
+      { responsible: userId },
+      { $pull: { responsible: userId } }
+    );
+  } else {
+    updateFields.employmentStatus = nextStatus;
+
+    if (!userAux.email) {
+      const ws = await createUserWS(userId);
+      updateFields.email = ws.email;
     }
   }
+}
 
-  // =============== CAMPOS BÁSICOS ===============
   if (req.body.firstName) updateFields.firstName = toTitleCase(req.body.firstName);
   if (req.body.lastName) updateFields.lastName = toTitleCase(req.body.lastName);
-  if (req.body.email_personal)
-    updateFields.email_personal = req.body.email_personal.toLowerCase();
+  if (req.body.email_personal) updateFields.email_personal = req.body.email_personal.toLowerCase();
   if (req.body.role) updateFields.role = req.body.role;
   if (req.body.phone) updateFields.phone = req.body.phone;
-  if (req.body.dni)
-    updateFields.dni = req.body.dni.replace(/\s+/g, "").trim().toUpperCase();
-  if (req.body.socialSecurityNumber)
-    updateFields.socialSecurityNumber = req.body.socialSecurityNumber;
-  if (req.body.bankAccountNumber)
-    updateFields.bankAccountNumber = req.body.bankAccountNumber;
+  if (req.body.dni) updateFields.dni = req.body.dni.replace(/\s+/g, "").trim().toUpperCase();
+  if (req.body.socialSecurityNumber) updateFields.socialSecurityNumber = req.body.socialSecurityNumber;
+  if (req.body.bankAccountNumber) updateFields.bankAccountNumber = req.body.bankAccountNumber;
+  if (req.body.gender) updateFields.gender = req.body.gender;
 
-  // =============== BIRTHDAY ===============
   if (req.body.birthday) {
     const parsed = new Date(req.body.birthday);
     if (isNaN(parsed)) throw new ClientError("Fecha de nacimiento no válida", 400);
     updateFields.birthday = parsed;
   }
 
-  // =============== DISCAPACIDAD ===============
-  if (req.body.disPercentage || req.body.disNotes) {
+  if (req.body.disPercentage !== undefined || req.body.disNotes !== undefined) {
     updateFields.disability = {};
-    if (req.body.disPercentage)
-      updateFields.disability.percentage = req.body.disPercentage;
-    if (req.body.disNotes) updateFields.disability.notes = req.body.disNotes;
+    if (req.body.disPercentage !== undefined) updateFields.disability.percentage = req.body.disPercentage;
+    if (req.body.disNotes !== undefined) updateFields.disability.notes = req.body.disNotes;
   }
 
-  // =============== FOSTERED / APAFA / PDP / TRACKING ===============
   if (req.body.fostered === "si") updateFields.fostered = true;
   if (req.body.fostered === "no") updateFields.fostered = false;
 
   if (req.body.apafa === "si") updateFields.apafa = true;
   if (req.body.apafa === "no") updateFields.apafa = false;
 
-  if (req.body.consetmentDataProtection === "si")
-    updateFields.consetmentDataProtection = true;
-  if (req.body.consetmentDataProtection === "no")
-    updateFields.consetmentDataProtection = false;
+  if (req.body.consetmentDataProtection === "si") updateFields.consetmentDataProtection = true;
+  if (req.body.consetmentDataProtection === "no") updateFields.consetmentDataProtection = false;
 
   if (req.body.tracking === "si") updateFields.tracking = true;
   if (req.body.tracking === "no") updateFields.tracking = false;
 
-  // =============== STUDIES ===============
   if (req.body.studies) {
     const studiesParsed = parseField(req.body.studies, "studies");
     updateFields.studies = studiesParsed.map((s) => new mongoose.Types.ObjectId(s));
   }
 
-  // =============== PHONEJOB ===============
-  if (req.body.phoneJobNumber || req.body.phoneJobExtension) {
+  if (req.body.phoneJobNumber !== undefined || req.body.phoneJobExtension !== undefined) {
     updateFields.phoneJob = {};
-    if (req.body.phoneJobNumber)
-      updateFields.phoneJob.number = req.body.phoneJobNumber;
-    if (req.body.phoneJobExtension)
-      updateFields.phoneJob.extension = req.body.phoneJobExtension;
+    if (req.body.phoneJobNumber !== undefined) updateFields.phoneJob.number = req.body.phoneJobNumber;
+    if (req.body.phoneJobExtension !== undefined) updateFields.phoneJob.extension = req.body.phoneJobExtension;
   }
 
-  // =============== VACACIONES / ASUNTOS PROPIOS POR HORAS (campos nuevos) ===============
-if (Array.isArray(req.body.vacationHours)) {
-  updateFields.vacationHours = normalizeVacationEntries(req.body.vacationHours);
-}
+  if (Array.isArray(req.body.vacationHours)) updateFields.vacationHours = normalizeVacationEntries(req.body.vacationHours);
+  if (Array.isArray(req.body.personalHours)) updateFields.personalHours = normalizeVacationEntries(req.body.personalHours);
+  if (req.body.notes !== undefined) updateFields.notes = req.body.notes;
 
-if (Array.isArray(req.body.personalHours)) {
-  updateFields.personalHours = normalizeVacationEntries(req.body.personalHours);
-}
-  // =============== ACTUALIZACIÓN FINAL ===============
   try {
     const updatedUser = await User.findOneAndUpdate(
       { _id: userId },
       { $set: updateFields },
       { new: true, runValidators: true }
-    )
+    );
+
+    const relevantFieldsChanged =
+      req.body.firstName !== undefined ||
+      req.body.lastName !== undefined ||
+      req.body.email_personal !== undefined ||
+      req.body.phone !== undefined ||
+      req.body.dni !== undefined ||
+      req.body.socialSecurityNumber !== undefined ||
+      req.body.bankAccountNumber !== undefined ||
+      req.body.birthday !== undefined ||
+      req.body.gender !== undefined ||
+      req.body.notes !== undefined ||
+      req.body.phoneJobNumber !== undefined ||
+      req.body.phoneJobExtension !== undefined ||
+      req.body.employmentStatus !== undefined;
+
+if (relevantFieldsChanged && userAux?.userIdSesame && updatedUser.employmentStatus !== "activo") {
+  await disableSesameEmployeeForUser(updatedUser._id);
+}
+
     if (req.body.personalHours || req.body.vacationHours) {
       const payload = {
         _id: updatedUser._id,
@@ -950,20 +809,17 @@ if (Array.isArray(req.body.personalHours)) {
       };
       return response(res, 200, payload);
     }
+
     return response(res, 200, updatedUser);
   } catch (error) {
-    
+    console.log(error);
     if (error.code === 11000) {
       const [[, dupValue]] = Object.entries(error.keyValue);
-      throw new ClientError(
-        `'${dupValue}' ya existe. No se pudo actualizar el usuario porque debe ser único`,
-        400
-      );
+      throw new ClientError(`'${dupValue}' ya existe. No se pudo actualizar el usuario porque debe ser único`, 400);
     }
     throw new ClientError("Error al actualizar el usuario", 500);
   }
 };
-
 
 // =========================
 // Payroll (igual)
@@ -991,7 +847,7 @@ const deletePayroll = async (userId, payrollId) => {
 
     // 2) Borramos firma (si existe)
     if (payroll.sign) {
-      await deleteFileById(payroll.sign).catch(() => {});
+      await deleteFileById(payroll.sign).catch(() => { });
     }
 
     // 3) Borramos PDF principal; si falla, abortamos
@@ -1026,7 +882,7 @@ const createPayroll = async (idUser, file, payrollYear, payrollMonth) => {
     const fileNameAux = `${userAux.dni}_${payrollMonth}_${payrollYear}.pdf`;
     const folderId = process.env.GOOGLE_DRIVE_NUEVAS_NOMINAS;
     const fileAux = await uploadFileToDrive(file, folderId, fileNameAux, true);
-    
+
     if (!fileAux) {
       throw new Error('Error al subir el archivo a Google Drive');
     }
@@ -1096,9 +952,9 @@ const payroll = async (req, res) => {
 
   const { userId, type } = req.body || {};
 
-    if (!userId) throw new ClientError('El campo userId es requerido', 400);
+  if (!userId) throw new ClientError('El campo userId es requerido', 400);
   if (!type) throw new ClientError('La acción es requerida', 400);
-  
+
   const id = userId;
 
   const file = req.file || (Array.isArray(req.files) ? req.files[0] : null);
@@ -1358,24 +1214,24 @@ const toAccentInsensitiveRegex = (term) => {
 };
 
 const getBasicUserSearch = async (req, res) => {
-    const q = (req.body.query || "").trim();
-    if (q.length < 2) return response(res, 200, { users: [] });
+  const q = (req.body.query || "").trim();
+  if (q.length < 2) return response(res, 200, { users: [] });
 
-    // Normaliza espacios y quita acentos SOLO para dividir términos;
-    // el matching real lo hará el regex acentual.
-    const normalized = q
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
+  // Normaliza espacios y quita acentos SOLO para dividir términos;
+  // el matching real lo hará el regex acentual.
+  const normalized = q
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 
-    const terms = normalized.split(" ");
+  const terms = normalized.split(" ");
 
-    // construimos un regex por término
-    const regexTerms = terms.map(toAccentInsensitiveRegex);
+  // construimos un regex por término
+  const regexTerms = terms.map(toAccentInsensitiveRegex);
 
-    // cada término debe aparecer en alguno de los campos
-    const filters = {
+  // cada término debe aparecer en alguno de los campos
+  const filters = {
     $and: [
       ...regexTerms.map((rx) => ({
         $or: [
@@ -1388,12 +1244,12 @@ const getBasicUserSearch = async (req, res) => {
     ],
   };
 
-    const users = await User.find(filters)
-      .limit(100)
-      .select("_id firstName lastName email")
-      .lean();
+  const users = await User.find(filters)
+    .limit(100)
+    .select("_id firstName lastName email userIdSesame")
+    .lean();
 
-    return response(res, 200, { users });
+  return response(res, 200, { users });
 };
 
 
@@ -1445,7 +1301,7 @@ const getUsers = async (req, res) => {
     throw new ClientError("Faltan datos no son correctos", 400);
   }
 
-  const pageNum  = parseInt(page, 10)  || 1;
+  const pageNum = parseInt(page, 10) || 1;
   const limitNum = parseInt(limit, 10) || 10;
 
   const body = req.body || {};
@@ -1530,19 +1386,20 @@ const getUsers = async (req, res) => {
     birthday: 1,
     tracking: 1,
     role: 1,
-    studies:1,
+    studies: 1,
     _id: 1,
-    socialSecurityNumber:1,
-    phoneJob:1,
-    photoProfile:1
+    socialSecurityNumber: 1,
+    phoneJob: 1,
+    photoProfile: 1,
+    userIdSesame: 1
   };
 
   // ---------------- Paginación sobre Users ya filtrados ----------------
-  const totalDocs  = await User.countDocuments(filters);
+  const totalDocs = await User.countDocuments(filters);
   const totalPages = Math.ceil(totalDocs / limitNum);
 
   const users = await User.find(filters, projection)
-    .sort({ createdAt: -1})
+    .sort({ createdAt: -1 })
     .skip((pageNum - 1) * limitNum)
     .limit(limitNum)
     .lean();
@@ -1575,12 +1432,12 @@ const getUsers = async (req, res) => {
   ]);
 
   const pendingSet = new Set(pendingIds.map((id) => String(id)));
-  const leaveSet   = new Set(leaveIds.map((id) => String(id)));
+  const leaveSet = new Set(leaveIds.map((id) => String(id)));
 
   const usersWithFlags = users.map((u) => ({
     ...u,
     hasPendingRequests: pendingSet.has(String(u._id)),
-    isOnLeave:          leaveSet.has(String(u._id)),
+    isOnLeave: leaveSet.has(String(u._id)),
   }));
   response(res, 200, { users: usersWithFlags, totalPages });
 };
@@ -1632,7 +1489,7 @@ const recreateCorporateEmail = async (req, res) => {
     throw new ClientError('No se pudo recrear el email corporativo', 400);
   }
 
-const updatedUser = await User.findById(result.userId).lean();
+  const updatedUser = await User.findById(result.userId).lean();
 
   response(res, 200, updatedUser);
 };
@@ -1731,7 +1588,7 @@ const profilePhotoSet = async (req, res) => {
   const oldIds = [...new Set([prevNormal, prevThumb].filter(Boolean))];
   for (const oldId of oldIds) {
     if (oldId !== uploadedNormal.id && oldId !== uploadedThumb.id) {
-      await deleteFileById(oldId).catch(() => {});
+      await deleteFileById(oldId).catch(() => { });
     }
   }
 
@@ -1870,7 +1727,7 @@ const parseStrokes = (raw) => {
     try {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed;
-    } catch {}
+    } catch { }
   }
   throw new ClientError('Firma inválida: "strokes" debe ser un array', 400);
 };
@@ -1978,12 +1835,12 @@ module.exports = {
   getUserName: catchAsync(getUserName),
   getAllUsersWithOpenPeriods: catchAsync(getAllUsersWithOpenPeriods),
   getUsersCurrentStatus: catchAsync(getUsersCurrentStatus),
-  getBasicUserSearch:catchAsync(getBasicUserSearch),
-  getUserListDays:catchAsync(getUserListDays),
-  recreateCorporateEmail:catchAsync(recreateCorporateEmail),
+  getBasicUserSearch: catchAsync(getBasicUserSearch),
+  getUserListDays: catchAsync(getUserListDays),
+  recreateCorporateEmail: catchAsync(recreateCorporateEmail),
   getPhotoProfile: catchAsync(getPhotoProfile),
-  profilePhotoSet:catchAsync(profilePhotoSet),
-  profilePhotoGetBatch:catchAsync(profilePhotoGetBatch),
+  profilePhotoSet: catchAsync(profilePhotoSet),
+  profilePhotoGetBatch: catchAsync(profilePhotoGetBatch),
   userSignatureGet: catchAsync(userSignatureGet),
   userSignatureUpsert: catchAsync(userSignatureUpsert),
   userSignatureDelete: catchAsync(userSignatureDelete),

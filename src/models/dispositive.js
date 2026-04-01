@@ -23,6 +23,16 @@ const dispositiveSchema = new Schema({
   subGroupWorkspace: { type: [String], default: [] },
   cronology: [cronologySchema],
   program: { type: Schema.Types.ObjectId, ref: 'Program' },
+  officeIdSesame: {
+    type: String,
+    index: true,
+    default: null,
+  },
+  coordinates: {
+  lat: { type: Number, default: null },
+  lng: { type: Number, default: null },
+},
+
 }, { timestamps: true });
 
 dispositiveSchema.index(

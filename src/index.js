@@ -75,8 +75,9 @@ app.use('/api', hiringRoutes);
 app.use('/api', leaveRoutes);
 app.use('/api', userChangeRequest);
 app.use('/api', volunteerApplicationRoutes);
-app.use('/api/permissions', permissionsRoutes);
 app.use('/api', sesameRoutes)
+app.use('/api/permissions', permissionsRoutes);
+
 
 
  
@@ -99,10 +100,11 @@ app.use((err, req, res, next) => {            // <-- ¡las 4 params!
 const startServer = async () => {
 
   await connectToDatabase();
-
+  
   app.listen(port, () => {
     console.log(`Servidor ejecutándose en el puerto ${port}`);
   });
+  
 };
 
 // Llamar a la función para iniciar el servidor

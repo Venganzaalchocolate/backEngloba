@@ -2,6 +2,7 @@
 const cron = require('node-cron');
 const { gestionAutomaticaNominas } = require('./googleController');
 const volunteerApplication = require('../models/volunteerApplication');
+const { syncSesameResponsibilities } = require('./sesameController');
 
 let isRunning = false;
 
@@ -28,7 +29,7 @@ if (isDev) {
     }
   }, { timezone: 'Europe/Madrid' });
 
-   // 2) Cada día a las 03:10: deshabilitar solicitudes de voluntariado caducadas (2 años)
+  // 2) Cada día a las 03:10: deshabilitar solicitudes de voluntariado caducadas (2 años)
   cron.schedule('10 3 * * *', async () => {
     if (isRunningDisableVolunteers) {
       console.log('🕑 Aún sigue ejecutándose disableExpired() de voluntariado, esperando siguiente turno.');
@@ -53,3 +54,47 @@ if (isDev) {
 }
 
 
+
+cron.schedule(
+  "30 3 * * *",
+  async () => {
+    try {
+      const batchSize = 20;
+      const delayMs = 800;
+      let startFrom = 0;
+      let totalProcessed = 0;
+      let totalSaved = 0;
+      let totalErrors = 0;
+
+      while (true) {
+        const result = await syncSesameResponsibilities({
+          startFrom,
+          limitUsers: batchSize,
+          delayMs,
+        });
+
+        console.log(`Lote desde ${startFrom}:`, result);
+
+        if (!result.processedUsers) break;
+
+        totalProcessed += result.processedUsers;
+        totalSaved += result.totalResponsibilitiesSaved || 0;
+        totalErrors += result.totalErrors || 0;
+
+        startFrom += batchSize;
+      }
+
+      console.log({
+        ok: true,
+        totalProcessed,
+        totalSaved,
+        totalErrors,
+      });
+    } catch (error) {
+      console.error("[CRON] Error syncing Sesame responsibilities:", error);
+    }
+  },
+  {
+    timezone: "Europe/Madrid",
+  }
+);

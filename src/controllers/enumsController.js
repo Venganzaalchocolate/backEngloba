@@ -98,6 +98,8 @@ function createDispositiveIndex(dispositives = []) {
       province: d.province ? String(d.province) : null,
       type: "dispositive",
       active: d.active,
+      officeIdSesame:d.officeIdSesame?String(d.officeIdSesame):null
+      
     };
   }
   return out;
@@ -115,7 +117,7 @@ const [jobs, provinces, work_schedule, studies, finantial, programs, dispositive
     Studies.find().lean(),
     Finantial.find().lean(),
     Program.find({ active: true }, { name: 1, acronym: 1, entity:1 }).lean(),
-    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1 }).lean(),
+    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1,  officeIdSesame:1 }).lean(),
     Entity.find().lean(),
   ]);
 
@@ -178,7 +180,7 @@ const getEnumEmployers = async (req, res) => {
     Studies.find({}, { name: 1, subcategories: 1 }).lean(),
     Finantial.find({}).lean(),
     Documentation.find({}).lean(),
-    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1 }).lean(),
+    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1, officeIdSesame:1 }).lean(),
     Documentation.distinct("categoryFiles").catch(() => []),
     Filedrive.distinct("category").catch(() => []),
     Entity.find({}, { name: 1 }).lean(),

@@ -4,6 +4,10 @@ const { catchAsync, response, ClientError, toId } = require('../utils/indexUtils
 const mongoose = require('mongoose');
 const { generateEmailHTML, sendEmail } = require('./emailControllerGoogle');
 const { deleteDeviceGroupsWS, ensureWorkspaceGroupsForModel } = require('./workspaceController');
+const {
+  syncSesameOfficeForDispositive,
+  deleteSesameOfficeForDispositive,
+} = require('./sesameController');
 
 
 const isValidId = (v) => mongoose.Types.ObjectId.isValid(v);
@@ -27,16 +31,34 @@ const createDispositive = async (req, res) => {
       province,
       program,
       programId,
+      coordinates,
+      createSesameOffice,
     } = req.body;
 
     if (!name) {
       throw new ClientError("Falta el nombre del dispositivo", 400);
     }
 
+    const wantsSesameOffice =
+      createSesameOffice === true || createSesameOffice === "true";
+
+    if (wantsSesameOffice) {
+      if (!address || !String(address).trim()) {
+        throw new ClientError("La dirección es obligatoria para crear el centro en Sesame", 400);
+      }
+
+      if (
+        !coordinates ||
+        !Number.isFinite(Number(coordinates.lat)) ||
+        !Number.isFinite(Number(coordinates.lng))
+      ) {
+        throw new ClientError("Latitud y longitud válidas son obligatorias para crear el centro en Sesame", 400);
+      }
+    }
+
     const programRef = program ?? programId ?? null;
     let programDoc = null;
 
-    // Validar programa (si viene)
     if (programRef) {
       if (!isValidId(programRef)) {
         throw new ClientError("program inválido", 400);
@@ -48,10 +70,9 @@ const createDispositive = async (req, res) => {
       }
     }
 
-    // Crear dispositivo base
     const payload = {
       name,
-      active: active,
+      active: active !== undefined ? active : true,
       address: address || "",
       email: "",
       phone: phone || "",
@@ -60,11 +81,26 @@ const createDispositive = async (req, res) => {
       province: isValidId(province) ? province : null,
       files: [],
       program: programDoc ? programDoc._id : undefined,
+      coordinates: { lat: null, lng: null },
     };
+
+    if (
+      coordinates &&
+      Number.isFinite(Number(coordinates.lat)) &&
+      Number.isFinite(Number(coordinates.lng))
+    ) {
+      payload.coordinates = {
+        lat: Number(coordinates.lat),
+        lng: Number(coordinates.lng),
+      };
+    }
 
     const created = await Dispositive.create(payload);
 
-    // Asociar al programa padre (si hay)
+    if (wantsSesameOffice) {
+      await syncSesameOfficeForDispositive(created._id);
+    }
+
     if (programDoc) {
       await Program.updateOne(
         { _id: programDoc._id },
@@ -72,19 +108,16 @@ const createDispositive = async (req, res) => {
       );
     }
 
-    //crear grupos de workspace no critico y no espera 
     if (programDoc) {
-      // Fire-and-forget (evita unhandled rejection con catch)
       void ensureWorkspaceGroupsForModel({
         type: 'device',
         id: created._id,
-        requiredSubgroups: ['direction'], // los que quieras por defecto
+        requiredSubgroups: ['direction'],
       }).catch(err => {
         console.warn('⚠️ Workspace groups (device) falló:', created._id, err?.message || err);
       });
     }
 
-    // Propagar documentación tipo "Dispositive" del programa
     if (programDoc) {
       const programObjectId = new mongoose.Types.ObjectId(programDoc._id);
 
@@ -108,7 +141,6 @@ const createDispositive = async (req, res) => {
       }
     }
 
-    // Email informativo (no crítico)
     const asunto = "Creación de un nuevo dispositivo";
     const textoPlano = `Programa padre: ${programDoc ? programDoc.name : "—"}
 Nombre del Dispositivo: ${created.name}
@@ -120,8 +152,7 @@ Creador: ${req.body?.userCreate || "—"}`;
       greetingName: "Persona maravillosa",
       bodyText: "Se ha creado un nuevo dispositivo",
       highlightText: textoPlano,
-      footerText:
-        "Gracias por usar nuestra plataforma. Si tienes dudas, contáctanos.",
+      footerText: "Gracias por usar nuestra plataforma. Si tienes dudas, contáctanos.",
     });
 
     try {
@@ -131,15 +162,14 @@ Creador: ${req.body?.userCreate || "—"}`;
         textoPlano,
         htmlContent
       );
-    } catch (_) {
-      // Ignoramos error de correo: no debe romper la creación
-    }
+    } catch (_) { }
 
     return response(res, 200, {
       dispositive: created,
       programId: created.program || null,
     });
   } catch (error) {
+    
     if (error.code === 11000) {
       const [[, dupValue]] = Object.entries(error.keyValue || {});
       throw new ClientError(
@@ -210,7 +240,7 @@ const getDispositiveId = async (req, res) => {
  * - Si llega program = null/''/false: desvincula del programa y lo saca de devicesId
  */
 const updateDispositive = async (req, res) => {
-  const { dispositiveId, active, name, address, email, phone, province, program, cronology, type } = req.body;
+  const { dispositiveId, active, name, address, email, phone, province, program, cronology, type, coordinates } = req.body;
   if (!dispositiveId) throw new ClientError('Falta dispositiveId', 400);
 
   const current = await Dispositive.findById(dispositiveId);
@@ -222,17 +252,17 @@ const updateDispositive = async (req, res) => {
   let newProgramId = null;
   const oldProgramId = current.program ? String(current.program) : null;
 
-  // Campos generales
   if (active !== undefined) {
     update.active = active;
     if (!active) {
-      //active:true o no existe el campo endDate o no tiene fecha
       const existHiringActive = await Periods.findOne({
-        dispositiveId: dispositiveId, $or: [           // activo explícitamente
-          { endDate: { $exists: false } }, // sin campo endDate
-          { endDate: null },          // o endDate = null
+        dispositiveId: dispositiveId,
+        $or: [
+          { endDate: { $exists: false } },
+          { endDate: null },
         ],
-      })
+      });
+
       if (existHiringActive) {
         throw new ClientError('No se puede cerrar un dispositivo si tiene trabajadores con un periodo de contratación activo', 400);
       }
@@ -243,10 +273,23 @@ const updateDispositive = async (req, res) => {
   if (address !== undefined) update.address = address;
   if (email !== undefined) update.email = email;
   if (phone !== undefined) update.phone = phone;
-  if (province !== undefined)
-    update.province = isValidId(province) ? province : null;
+  if (province !== undefined) update.province = isValidId(province) ? province : null;
 
-  // Programa
+  if (coordinates !== undefined) {
+    if (
+      coordinates &&
+      Number.isFinite(Number(coordinates.lat)) &&
+      Number.isFinite(Number(coordinates.lng))
+    ) {
+      update.coordinates = {
+        lat: Number(coordinates.lat),
+        lng: Number(coordinates.lng),
+      };
+    } else if (coordinates === null) {
+      update.coordinates = { lat: null, lng: null };
+    }
+  }
+
   if (program !== undefined) {
     if (isDetach(program)) {
       unset = { program: '' };
@@ -261,7 +304,6 @@ const updateDispositive = async (req, res) => {
     }
   }
 
-  // 🧩 CRONOLOGY
   const updateObj = {};
   if (cronology !== undefined) {
     if (!type || !['add', 'delete', 'edit'].includes(type))
@@ -281,7 +323,6 @@ const updateDispositive = async (req, res) => {
     }
   }
 
-  // Combinar los $set/$unset generados arriba con updateObj de cronology
   if (Object.keys(update).length) {
     Object.assign(updateObj, { $set: { ...(updateObj.$set || {}), ...update } });
   }
@@ -289,7 +330,6 @@ const updateDispositive = async (req, res) => {
     Object.assign(updateObj, { $unset: unset });
   }
 
-  // 🧠 Ejecutar actualización
   let updated;
   try {
     updated = await Dispositive.findOneAndUpdate(query, updateObj, {
@@ -306,7 +346,7 @@ const updateDispositive = async (req, res) => {
       },
       {
         path: "program",
-        select: "name acronym area _id", // opcional pero útil
+        select: "name acronym area _id",
       },
       {
         path: "supervisors",
@@ -320,7 +360,12 @@ const updateDispositive = async (req, res) => {
     throw err;
   }
 
-  // 🔄 Sincronizar Program.devicesId si cambió de programa o se desvinculó
+  const shouldSyncSesameOffice = !!current.officeIdSesame || ( !!(update.address ?? current.address) && Number.isFinite(Number(update.coordinates?.lat ?? current.coordinates?.lat)) && Number.isFinite(Number(update.coordinates?.lng ?? current.coordinates?.lng)));
+
+if (!!shouldSyncSesameOffice) {
+  await syncSesameOfficeForDispositive(updated._id);
+}
+
   if (newProgramId && newProgramId !== oldProgramId) {
     if (oldProgramId) {
       await Program.updateOne({ _id: oldProgramId }, { $pull: { devicesId: updated._id } });
@@ -353,7 +398,7 @@ const deleteDispositive = async (req, res) => {
     );
     // NO lanzamos el error: el dispositivo se sigue borrando en Mongo
   }
-
+  await deleteSesameOfficeForDispositive(dispositiveId);
   await Dispositive.deleteOne({ _id: dispositiveId });
 
   if (oldProgramId) {

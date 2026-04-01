@@ -2,21 +2,21 @@ const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
 const fileSchema = new Schema({
-    filesId:{
-        type:Schema.Types.ObjectId,
-          ref: 'Filedrive'  
-      },
-fileName:  {type: String},
-  fileTag: {type: String},
-  description: {type: String},
-  date: {type: String}
+    filesId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Filedrive'
+    },
+    fileName: { type: String },
+    fileTag: { type: String },
+    description: { type: String },
+    date: { type: String }
 });
 
 
 // Esquema para Nóminas
 const PayrollSchema = new Schema({
-     // Mes de la nómina (1-12)
-     payrollMonth: {
+    // Mes de la nómina (1-12)
+    payrollMonth: {
         type: Number,
         required: true,
         min: 1, // El valor mínimo debe ser 1
@@ -46,66 +46,66 @@ const PayrollSchema = new Schema({
     sign: {
         type: String
     },
-    datetimeSign:{
-        type:Date
+    datetimeSign: {
+        type: Date
     }
 });
 
 const VacationEntrySchema = new Schema({
-  date: {
-    type: Date,
-    required: true,
-  },
-  hours: {
-    type: Number,
-    required: true,
-    min: 0,
-  },
+    date: {
+        type: Date,
+        required: true,
+    },
+    hours: {
+        type: Number,
+        required: true,
+        min: 0,
+    },
 }, { _id: false });
 
 
 // Esquema principal del Empleado
 const UserSchema = new Schema({
-    birthday:{
-        type:Date,
+    birthday: {
+        type: Date,
     },
-    disability:{
-        percentage:{
-            type:Number,
+    disability: {
+        percentage: {
+            type: Number,
             required: true,
             default: 0
         },
-        notes:{
+        notes: {
             type: String,
         }
     },
-    apafa:{
-        type:Boolean,
+    apafa: {
+        type: Boolean,
         default: false
     },
-    fostered:{
-        type:Boolean,
+    fostered: {
+        type: Boolean,
         default: false
     },
-    gender:{
-        type:String,
+    gender: {
+        type: String,
         enum: ['male', 'female', 'others', 'nonBinary'],
-        required:true,
+        required: true,
     },
-    role:{
+    role: {
         type: String,
         default: 'user',
         enum: ['global', 'root', 'auditor', 'employee', 'responsable'],
-        require:true,
+        require: true,
     },
     // DNI del empleado
     dni: {
-    type: String,
-    required: true,
-    unique: true,
-    index: true,
-    trim: true,
-    uppercase: true,
+        type: String,
+        required: true,
+        unique: true,
+        index: true,
+        trim: true,
+        uppercase: true,
     },
     // Nombre del empleado
     firstName: {
@@ -128,12 +128,12 @@ const UserSchema = new Schema({
         type: String,
         required: true,
     },
-    phoneJob:{
-        number:{
-           type: String, 
+    phoneJob: {
+        number: {
+            type: String,
         },
-        extension:{
-            type: String, 
+        extension: {
+            type: String,
         }
     },
 
@@ -141,9 +141,9 @@ const UserSchema = new Schema({
     employmentStatus: {
         type: String,
         enum: ['ya no trabaja con nosotros', 'activo', 'en proceso de contratación'],
-        default:  'en proceso de contratación'
+        default: 'en proceso de contratación'
     },
-    
+
     // Número de Seguridad Social del empleado
     socialSecurityNumber: {
         type: String,
@@ -161,44 +161,49 @@ const UserSchema = new Schema({
     // subida de archivos firmados
     // uploadFileSigned: pdf
     //vacationDays:[Date] y personalDays:[Date] son campos antiguos que no se deben tener en cuenta
-    vacationDays:[Date],
-    personalDays:[Date],
+    vacationDays: [Date],
+    personalDays: [Date],
     //NUEVOS CAMPOS
     vacationHours: [VacationEntrySchema],
     personalHours: [VacationEntrySchema],
-    
+
     files: [fileSchema],
-    notes:{
+    notes: {
         type: String,
     },
-    consetmentDataProtection:{
-        type:Boolean,
-        default:true,
+    consetmentDataProtection: {
+        type: Boolean,
+        default: true,
     },
     //
-    studies:{
-        type:[Schema.Types.ObjectId],
+    studies: {
+        type: [Schema.Types.ObjectId],
         ref: 'Studies'
     },
-    tracking:{
-        type:Boolean,
-        default:false
+    tracking: {
+        type: Boolean,
+        default: false
     },
-    photoProfile:{
+    photoProfile: {
         normal: { type: String, default: "" },
-        thumb:  { type: String, default: "" },
-        v:      { type: Number, default: 0 },
+        thumb: { type: String, default: "" },
+        v: { type: Number, default: 0 },
     },
     signature: {
-  format: { type: String, default: "signature_pad_v1" },
-  strokes: { type: [mongoose.Schema.Types.Mixed], default: undefined }, // toData()
-  computedHash: { type: String, default: null },
-  updatedAt: { type: Date, default: null },
-}
+        format: { type: String, default: "signature_pad_v1" },
+        strokes: { type: [mongoose.Schema.Types.Mixed], default: undefined }, // toData()
+        computedHash: { type: String, default: null },
+        updatedAt: { type: Date, default: null },
+    },
+    userIdSesame: {
+        type: String,
+        index: true,
+        default: null,
+    },
 
 }, { timestamps: true });
 //
 
 
 
-module.exports=mongoose.model('User', UserSchema)
+module.exports = mongoose.model('User', UserSchema)

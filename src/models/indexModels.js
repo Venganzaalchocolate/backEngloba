@@ -23,7 +23,7 @@ const ScopeProfileLink = require('./permissions/scopeProfileLink');
 const UserProfileAssignment = require('./permissions/userProfileAssignment');
 const ModuleGrant = require('./permissions/moduleGrant');
 const PermissionProfile = require('./permissions/permissionProfile');
-
+const SesameResponsibility=require('./sesameResponsability')
 const Entity=require('./entity');
 
 module.exports = {
@@ -50,5 +50,6 @@ module.exports = {
     UserProfileAssignment,
     ScopeProfileLink,
     UserScope,
-    Entity
+    Entity,
+    SesameResponsibility
 }

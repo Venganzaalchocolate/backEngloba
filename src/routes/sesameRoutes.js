@@ -1,49 +1,73 @@
-const router = require("express").Router();
-
 const {
-  tokenValid,
-
-  // Sesame - Employees
-  postSesameCreateEmployee,
-  postSesameListEmployees,
+  postSesameGetOfficeEmployees,
+  postSesameGetDepartmentEmployees,
+  postSesameDeleteEmployeeOfficeRole,
   postSesameGetEmployee,
-  putSesameEmployee,
-  deleteSesameEmployee,
-
-  // Sesame - Departments
-  postSesameCreateDepartment,
-  postSesameListDepartments,
-  postSesameGetDepartment,
-  putSesameDepartment,
-  deleteSesameDepartment,
-
-  // Sesame - Workplaces
-  postSesameCreateWorkplace,
-  postSesameListWorkplaces,
-  postSesameGetWorkplace,
-  putSesameWorkplace,
-  deleteSesameWorkplace,
+  postSesameListEmployees,
+  tokenValid,
+  postSesameGetEmployeeContext,
+  postSesameAssignEmployeeOffice,
+  postSesameDeleteEmployeeOfficeAssignation,
+  postSesameAssignEmployeeOfficeRole,
+  postSesameListEmployeeManagers,
+  postSesameAssignEmployeeManager,
+  postSesameUpdateEmployeeManager,
+  postSesameDeleteEmployeeManager,
+  postSesameAssignOfficeEmployee,
+  postSesameDeleteOfficeEmployee,
+  postSesameAssignDepartmentEmployee,
+  postSesameDeleteDepartmentEmployee,
+  postSesameUpdateEmployeeManagersByEmployee,
+  postSesameEligibleManagersByEmployee,
+  postSesameCreateDepartmentForUser,
+  postSesameDeleteDepartment,
+  postSesameTransferDepartment,
+  postSesameToggleEmployeeForUser,
+  postSesameInviteEmployeeForUser,
+  postSesameGetOfficeManagers,
 } = require("../controllers/indexController");
 
+const express = require("express");
+const router = express.Router();
+
 // EMPLOYEES
-router.post("/employees/list", tokenValid, postSesameListEmployees);
-router.post("/employees/get", tokenValid, postSesameGetEmployee);
-router.post("/employees/create", tokenValid, postSesameCreateEmployee);
-router.post("/employees/update", tokenValid, putSesameEmployee);
-router.post("/employees/delete", tokenValid, deleteSesameEmployee);
+router.post("/sesameemployeelist", tokenValid, postSesameListEmployees);
+router.post("/sesameemployeeget", tokenValid, postSesameGetEmployee);
+router.post("/sesameemployeegetcontext", tokenValid, postSesameGetEmployeeContext);
 
-// DEPARTMENTS
-router.post("/departments/list", tokenValid, postSesameListDepartments);
-router.post("/departments/get", tokenValid, postSesameGetDepartment);
-router.post("/departments/create", tokenValid, postSesameCreateDepartment);
-router.post("/departments/update", tokenValid, putSesameDepartment);
-router.post("/departments/delete", tokenValid, deleteSesameDepartment);
+// OFFICE ASSIGNATION DEL EMPLEADO ACTUAL
+router.post("/sesameemployeeofficeassign", tokenValid, postSesameAssignEmployeeOffice);
+router.post("/sesameemployeeofficedelete", tokenValid, postSesameDeleteEmployeeOfficeAssignation);
 
-// WORKPLACES
-router.post("/workplaces/list", tokenValid, postSesameListWorkplaces);
-router.post("/workplaces/get", tokenValid, postSesameGetWorkplace);
-router.post("/workplaces/create", tokenValid, postSesameCreateWorkplace);
-router.post("/workplaces/update", tokenValid, putSesameWorkplace);
-router.post("/workplaces/delete", tokenValid, deleteSesameWorkplace);
+// ROLE OFFICE MANAGER
+router.post("/sesameemployeeofficeassignrole", tokenValid, postSesameAssignEmployeeOfficeRole);
+router.post("/sesameemployeeofficeroledelete", tokenValid, postSesameDeleteEmployeeOfficeRole);
+
+// EMPLEADOS DE OFICINA / DEPARTAMENTO
+router.post("/sesamegetofficeemployees", tokenValid, postSesameGetOfficeEmployees);
+router.post("/sesamegetdepartmentemployees", tokenValid, postSesameGetDepartmentEmployees);
+
+// AÑADIR / QUITAR EMPLEADOS EN OFICINA
+router.post("/sesameofficeemployeeassign", tokenValid, postSesameAssignOfficeEmployee);
+router.post("/sesameofficeemployeedelete", tokenValid, postSesameDeleteOfficeEmployee);
+
+// AÑADIR / QUITAR EMPLEADOS EN DEPARTAMENTO
+router.post("/sesamedepartmentemployeeassign", tokenValid, postSesameAssignDepartmentEmployee);
+router.post("/sesamedepartmentemployeedelete", tokenValid, postSesameDeleteDepartmentEmployee);
+
+router.post( "/sesameemployeemanagersbyemployeeupdate",  tokenValid,  postSesameUpdateEmployeeManagersByEmployee);
+
+router.post( "/sesameeligiblemanagersbyemployee", tokenValid, postSesameEligibleManagersByEmployee);
+
+router.post("/sesamedepartmentcreateforuser", tokenValid, postSesameCreateDepartmentForUser);
+router.post("/sesamedepartmentdelete", tokenValid, postSesameDeleteDepartment);
+router.post("/sesamedepartmenttransfer", tokenValid, postSesameTransferDepartment);
+
+router.post("/sesameemployeetoggleforuser", tokenValid, postSesameToggleEmployeeForUser);
+router.post("/sesameemployeeinviteforuser", tokenValid, postSesameInviteEmployeeForUser);
+
+router.post("/sesamegetofficemanagers", tokenValid, postSesameGetOfficeManagers);
+
+
 
 module.exports = router;
