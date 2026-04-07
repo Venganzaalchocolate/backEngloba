@@ -15,7 +15,12 @@ const SESAME_ROLE_IDS = {
 const sleep = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const mapUserGenderToSesame = (gender) => gender === "male" || gender === "female" ? gender : undefined;
-const mapEmploymentStatusToSesame = (employmentStatus) => employmentStatus === "activo" ? "active" : employmentStatus === "ya no trabaja con nosotros" ? "inactive" : undefined;
+const mapEmploymentStatusToSesame = (employmentStatus) =>
+  employmentStatus === "activo"
+    ? "active"
+    : employmentStatus === "ya no trabaja con nosotros" || employmentStatus === "en proceso de contratación"
+    ? "inactive"
+    : undefined;
 const normalizeDniSesame = (value = "") => String(value || "").trim().toUpperCase().replace(/\s+/g, "").replace(/-/g, "");
 
 const getSesameEmployeeIdFromLocalUser = async (userId, errorLabel = "Usuario") => {
@@ -41,17 +46,59 @@ const assignEmployeeToScope = async ({ scopeType, scopeId, userId, isMainOffice 
   const { employeeIdSesame } = await getSesameEmployeeIdFromLocalUser(userId, "Usuario");
 
   if (scopeType === "office") {
-    const assignation = await sesameService.assignEmployeeOffice({employeeId: employeeIdSesame,officeId: scopeId});
+    const currentAssignationsRes = await sesameService.getEmployeeOfficeAssignations({
+      employeeId: employeeIdSesame,
+      limit: 50,
+      page: 1,
+    });
+
+    const currentAssignations = currentAssignationsRes?.data || [];
+
+    const existingAssignation =
+      currentAssignations.find(
+        (item) => String(item?.office?.id || item?.officeId || "") === String(scopeId)
+      ) || null;
+
+
+    let assignation = existingAssignation;
+
+    if (!assignation) {
+      assignation = await sesameService.assignEmployeeOffice({
+        employeeId: employeeIdSesame,
+        officeId: scopeId,
+      });
+
+    }
 
     if (isMainOffice !== null) {
-      const assignationId = assignation?.data?.id;
-      if (!assignationId) throw new ClientError("No se pudo obtener el id de la asignación de oficina en Sesame", 500);
-      await sesameService.updateEmployeeOfficeAssignation(assignationId, {isMainOffice: !!isMainOffice,});
+      const assignationId =
+        assignation?.data?.id ||
+        assignation?.id ||
+        assignation?._id;
+
+      if (!assignationId) {
+        throw new ClientError("No se pudo obtener el id de la asignación de oficina en Sesame", 500);
+      }
+
+      const updatedAssignation = await sesameService.updateEmployeeOfficeAssignation(assignationId, {
+        employeeId: employeeIdSesame,
+        officeId: scopeId,
+        isMainOffice: !!isMainOffice,
+      });
+
+      return updatedAssignation;
     }
+
     return assignation;
   }
 
-  if (scopeType === "department") return sesameService.assignEmployeeDepartment({employeeId: employeeIdSesame,departmentId: scopeId,});
+  if (scopeType === "department") {
+    return sesameService.assignEmployeeDepartment({
+      employeeId: employeeIdSesame,
+      departmentId: scopeId,
+    });
+  }
+
   throw new ClientError("scopeType no válido", 400);
 };
 

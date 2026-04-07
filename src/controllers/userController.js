@@ -692,37 +692,60 @@ const userPut = async (req, res) => {
   const userAux = await User.findById(userId).select("email employmentStatus userIdSesame");
   if (!userAux) throw new ClientError("Usuario no encontrado", 404);
 
-if (req.body.employmentStatus) {
-  const nextStatus = req.body.employmentStatus;
+  const prevEmploymentStatus = userAux.employmentStatus;
+  const nextEmploymentStatus =
+    req.body.employmentStatus !== undefined ? req.body.employmentStatus : userAux.employmentStatus;
+  const employmentStatusChanged =
+    req.body.employmentStatus !== undefined && req.body.employmentStatus !== userAux.employmentStatus;
 
-  if (nextStatus === "ya no trabaja con nosotros") {
-    const open = await hasOpenHiring(userId);
-    if (open) throw new ClientError(`Para cambiar el estado laboral a "Ya no trabaja con nosotros" debes cerrar todos los periodos abiertos`, 400);
+  if (req.body.employmentStatus) {
+    const nextStatus = req.body.employmentStatus;
 
-    if (userAux?.userIdSesame) await disableSesameEmployeeForUser(userId);
-    if (userAux.email) await deleteUserByEmailWS(userAux.email);
+    if (nextStatus === "ya no trabaja con nosotros") {
 
-    updateFields.employmentStatus = "ya no trabaja con nosotros";
-    updateFields.email = "";
+      const open = await hasOpenHiring(userId);
+  
 
-    await Dispositive.updateMany(
-      { $or: [{ responsible: userId }, { coordinators: userId }] },
-      { $pull: { responsible: userId, coordinators: userId } }
-    );
+      if (open) throw new ClientError(`Para cambiar el estado laboral a "Ya no trabaja con nosotros" debes cerrar todos los periodos abiertos`, 400);
 
-    await Program.updateMany(
-      { responsible: userId },
-      { $pull: { responsible: userId } }
-    );
-  } else {
-    updateFields.employmentStatus = nextStatus;
+      if (userAux?.userIdSesame) {
+        await disableSesameEmployeeForUser(userId);
+      }
 
-    if (!userAux.email) {
-      const ws = await createUserWS(userId);
-      updateFields.email = ws.email;
+      if (userAux.email) {
+        await deleteUserByEmailWS(userAux.email);
+     
+      }
+
+      updateFields.employmentStatus = "ya no trabaja con nosotros";
+      updateFields.email = "";
+
+     
+
+      const dispositiveResult = await Dispositive.updateMany(
+        { $or: [{ responsible: userId }, { coordinators: userId }] },
+        { $pull: { responsible: userId, coordinators: userId } }
+      );
+     
+
+      const programResult = await Program.updateMany(
+        { responsible: userId },
+        { $pull: { responsible: userId } }
+      );
+      
+    } else {
+  
+
+      updateFields.employmentStatus = nextStatus;
+
+      if (!userAux.email) {
+        
+        const ws = await createUserWS(userId);
+    
+        updateFields.email = ws.email;
+      }
     }
   }
-}
 
   if (req.body.firstName) updateFields.firstName = toTitleCase(req.body.firstName);
   if (req.body.lastName) updateFields.lastName = toTitleCase(req.body.lastName);
@@ -760,6 +783,7 @@ if (req.body.employmentStatus) {
 
   if (req.body.studies) {
     const studiesParsed = parseField(req.body.studies, "studies");
+  
     updateFields.studies = studiesParsed.map((s) => new mongoose.Types.ObjectId(s));
   }
 
@@ -773,12 +797,15 @@ if (req.body.employmentStatus) {
   if (Array.isArray(req.body.personalHours)) updateFields.personalHours = normalizeVacationEntries(req.body.personalHours);
   if (req.body.notes !== undefined) updateFields.notes = req.body.notes;
 
+
   try {
     const updatedUser = await User.findOneAndUpdate(
       { _id: userId },
       { $set: updateFields },
       { new: true, runValidators: true }
     );
+
+
 
     const relevantFieldsChanged =
       req.body.firstName !== undefined ||
@@ -795,9 +822,6 @@ if (req.body.employmentStatus) {
       req.body.phoneJobExtension !== undefined ||
       req.body.employmentStatus !== undefined;
 
-if (relevantFieldsChanged && userAux?.userIdSesame && updatedUser.employmentStatus !== "activo") {
-  await disableSesameEmployeeForUser(updatedUser._id);
-}
 
     if (req.body.personalHours || req.body.vacationHours) {
       const payload = {
@@ -812,7 +836,6 @@ if (relevantFieldsChanged && userAux?.userIdSesame && updatedUser.employmentStat
 
     return response(res, 200, updatedUser);
   } catch (error) {
-    console.log(error);
     if (error.code === 11000) {
       const [[, dupValue]] = Object.entries(error.keyValue);
       throw new ClientError(`'${dupValue}' ya existe. No se pudo actualizar el usuario porque debe ser único`, 400);
@@ -820,7 +843,6 @@ if (relevantFieldsChanged && userAux?.userIdSesame && updatedUser.employmentStat
     throw new ClientError("Error al actualizar el usuario", 500);
   }
 };
-
 // =========================
 // Payroll (igual)
 // =========================
