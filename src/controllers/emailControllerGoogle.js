@@ -1,9 +1,67 @@
 
 const { google }   = require('googleapis');
 const MailComposer = require('nodemailer/lib/mail-composer');
-const { User, Periods, UserChangeRequest, Dispositive , Program, UserCv } = require('../models/indexModels');
-const { buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail, buildEqualityLgtbiqSurveyPlainText, buildEqualityLgtbiqSurveyHtmlEmail, buildMiniTutorialsOpsPlainText, buildMiniTutorialsOpsHtmlEmail, buildSignatureUpdateHtmlEmail, buildSignatureUpdatePlainText } = require('../templates/emailTemplates');
+const { User, Periods, UserChangeRequest, Dispositive , Program, UserCv, Leaves } = require('../models/indexModels');
+const {   buildSesameInactiveByLeavePlainText, buildSesameInactiveByLeaveHtmlEmail, buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail, buildEqualityLgtbiqSurveyPlainText, buildEqualityLgtbiqSurveyHtmlEmail, buildMiniTutorialsOpsPlainText, buildMiniTutorialsOpsHtmlEmail, buildSignatureUpdateHtmlEmail, buildSignatureUpdatePlainText, buildLeaveExpectedEndReminderPlainText, buildLeaveExpectedEndReminderHtmlEmail } = require('../templates/emailTemplates');
 const { default: mongoose } = require('mongoose');
+
+
+
+
+/*OBETENER IDS DE LOS RESPONSABLES SINO COORDINADORES SINO RESPONSABLES DE PROGRAMA SINO COORDINADORES DE PROGRAMA SINO NINGUNO*/
+async function getLeaveNotificationResponsibleUserIds({
+  dispositives = [],
+  logger = console
+} = {}) {
+  const logWarn = logger?.warn || console.log;
+
+  if (!Array.isArray(dispositives) || !dispositives.length) return [];
+
+  const programIds = Array.from(new Set(dispositives.map(d => String(d.program || '')).filter(Boolean)));
+
+  const programs = programIds.length
+    ? await Program.find(
+        { _id: { $in: programIds.map(id => new mongoose.Types.ObjectId(id)) } },
+        { responsible: 1, coordinators: 1 }
+      ).lean()
+    : [];
+
+  const programsMap = new Map(programs.map(p => [String(p._id), p]));
+  const selectedUserIds = new Set();
+
+  for (const dispositive of dispositives) {
+    const dispositiveResponsible = (dispositive.responsible || []).map(String).filter(Boolean);
+    const dispositiveCoordinators = (dispositive.coordinators || []).map(String).filter(Boolean);
+
+    let chosenIds = [];
+
+    if (dispositiveResponsible.length) {
+      chosenIds = dispositiveResponsible;
+    } else if (dispositiveCoordinators.length) {
+      chosenIds = dispositiveCoordinators;
+    } else {
+      const program = programsMap.get(String(dispositive.program || ''));
+      const programResponsible = (program?.responsible || []).map(String).filter(Boolean);
+      const programCoordinators = (program?.coordinators || []).map(String).filter(Boolean);
+
+      if (programResponsible.length) {
+        chosenIds = programResponsible;
+      } else if (programCoordinators.length) {
+        chosenIds = programCoordinators;
+      }
+    }
+
+    for (const id of chosenIds) selectedUserIds.add(id);
+  }
+
+  const userIds = Array.from(selectedUserIds);
+
+  if (!userIds.length) {
+    logWarn('[getLeaveNotificationResponsibleUserIds] Sin responsables/coordinadores resolubles');
+  }
+
+  return userIds;
+}
 
 /* ────────────────────────────────────────────────────────────────────────────
    1. Autenticación: cliente Gmail “impersonando” al remitente
@@ -1004,13 +1062,7 @@ async function sendSignatureUpdateToActiveWorkers({
   return results;
 }
 
-const prueba=async()=>{
-  await sendSignatureUpdateToActiveWorkers({
-  previewOnly: true,
-  previewToList: ["comunicacion@engloba.org.es", "web@engloba.org.es"],
-});
-}
-// prueba()
+
 
 
 async function sendCenterContactReminderToActiveDeviceManagers({
@@ -1290,8 +1342,213 @@ const buildHtml = (name = 'equipo') => `<!DOCTYPE html>
 
 
 
+async function notifyCurrentResponsibleManagersOfLeave({
+  user,
+  leave,
+  supportEmail = 'web@engloba.org.es',
+  logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
+  testEmail = null,
+  logger = console
+} = {}) {
+  const logWarn = logger?.warn || console.warn;
+  const logError = logger?.error || console.error;
 
+  try {
+    if (!user?._id) throw new Error('user es obligatorio');
+    if (!leave?._id) throw new Error('leave es obligatoria');
 
+    const now = new Date();
+
+    const periods = await Periods.find({
+      idUser: user._id,
+      active: { $ne: false },
+      startDate: { $lte: now },
+      $or: [
+        { endDate: { $exists: false } },
+        { endDate: null },
+        { endDate: { $gte: now } }
+      ]
+    }, { dispositiveId: 1 }).lean();
+
+    const dispositiveIds = Array.from(
+      new Set(periods.map(p => String(p.dispositiveId || '')).filter(Boolean))
+    );
+
+    if (!dispositiveIds.length) {
+      logWarn('[notifyCurrentResponsibleManagersOfLeave] Sin dispositivos activos');
+      return { ok: false, reason: 'Sin dispositivos activos' };
+    }
+
+    const dispositives = await Dispositive.find(
+      { _id: { $in: dispositiveIds.map(id => new mongoose.Types.ObjectId(id)) } },
+      { name: 1, responsible: 1 }
+    ).lean();
+
+    const centers = Array.from(new Set(dispositives.map(d => d.name).filter(Boolean)));
+
+    let recipients = [];
+    if (testEmail) {
+      recipients = [String(testEmail).trim().toLowerCase()];
+    } else {
+      const responsibleIds = Array.from(
+        new Set(dispositives.flatMap(d => (d.responsible || []).map(String)))
+      );
+
+      if (responsibleIds.length) {
+        const responsibles = await User.find(
+          { _id: { $in: responsibleIds.map(id => new mongoose.Types.ObjectId(id)) } },
+          { email: 1 }
+        ).lean();
+
+        recipients = Array.from(
+          new Set(
+            responsibles
+              .map(u => String(u.email || '').trim().toLowerCase())
+              .filter(Boolean)
+          )
+        );
+      }
+    }
+
+    if (!recipients.length) {
+      logWarn('[notifyCurrentResponsibleManagersOfLeave] Sin destinatarios');
+      return { ok: false, reason: 'Sin destinatarios' };
+    }
+
+    const workerName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+    const leaveTypeName = leave.leaveType?.name || '';
+    const subject = `Trabajador/a inactivo/a en Sesame por ${leaveTypeName || 'baja/excedencia'} · ${workerName}`;
+
+    const payload = {
+      workerName,
+      workerDni: user.dni || '',
+      workerEmail: user.email || '',
+      leaveTypeName,
+      startLeaveDate: leave.startLeaveDate,
+      expectedEndLeaveDate: leave.expectedEndLeaveDate,
+      actualEndLeaveDate: leave.actualEndLeaveDate,
+      centers,
+      notes: '',
+      logoUrl,
+      supportEmail
+    };
+
+    const text = buildSesameInactiveByLeavePlainText('', payload);
+    const html = buildSesameInactiveByLeaveHtmlEmail('', payload);
+
+    await sendEmail(recipients, subject, text, html);
+
+    return { ok: true, recipients, subject, centers };
+  } catch (err) {
+    logError(`[notifyCurrentResponsibleManagersOfLeave] ${err.message}`);
+    return { ok: false, error: err.message };
+  }
+}
+
+async function notifyCurrentResponsibleManagersOfExpectedLeaveEnd({
+  user,
+  leave,
+  supportEmail = 'web@engloba.org.es',
+  logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
+  testEmail = 'comunicacion@engloba.org.es',
+  logger = console
+} = {}) {
+  const logWarn = logger?.warn || console.log;
+  const logError = logger?.error || console.log;
+
+  try {
+    if (!user?._id) throw new Error('user es obligatorio');
+    if (!leave?._id) throw new Error('leave es obligatoria');
+    if (leave.active === false) return { ok: false, reason: 'La baja/excedencia no está activa' };
+    if (leave.actualEndLeaveDate) return { ok: false, reason: 'La baja/excedencia ya tiene fecha de fin efectiva' };
+    if (!leave.expectedEndLeaveDate) return { ok: false, reason: 'La baja/excedencia no tiene fecha prevista de fin' };
+
+    const now = new Date();
+
+    const periods = await Periods.find({
+      idUser: user._id,
+      active: { $ne: false },
+      startDate: { $lte: now },
+      $or: [
+        { endDate: { $exists: false } },
+        { endDate: null },
+        { endDate: { $gte: now } }
+      ]
+    }, { dispositiveId: 1 }).lean();
+
+    const dispositiveIds = Array.from(new Set(periods.map(p => String(p.dispositiveId || '')).filter(Boolean)));
+
+    if (!dispositiveIds.length) {
+      logWarn('[notifyCurrentResponsibleManagersOfExpectedLeaveEnd] Sin dispositivos activos');
+      return { ok: false, reason: 'Sin dispositivos activos' };
+    }
+
+    const dispositives = await Dispositive.find(
+      { _id: { $in: dispositiveIds.map(id => new mongoose.Types.ObjectId(id)) } },
+      { name: 1, responsible: 1 }
+    ).lean();
+
+    const centers = Array.from(new Set(dispositives.map(d => d.name).filter(Boolean)));
+
+    let recipients = [];
+    if (testEmail) {
+      recipients = [String(testEmail).trim().toLowerCase()];
+    } else {
+  const userIds = await getLeaveNotificationResponsibleUserIds({
+    dispositives,
+    logger
+  });
+
+  if (userIds.length) {
+    const users = await User.find(
+      { _id: { $in: userIds.map(id => new mongoose.Types.ObjectId(id)) } },
+      { email: 1 }
+    ).lean();
+
+    recipients = Array.from(
+      new Set(
+        users
+          .map(u => String(u.email || '').trim().toLowerCase())
+          .filter(Boolean)
+      )
+    );
+  }
+}
+
+    if (!recipients.length) {
+      logWarn('[notifyCurrentResponsibleManagersOfExpectedLeaveEnd] Sin destinatarios');
+      return { ok: false, reason: 'Sin destinatarios' };
+    }
+
+    const workerName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+    const leaveTypeName = leave.leaveType?.name || '';
+    const subject = `Revisión de fin previsto de baja/excedencia · ${workerName}`;
+
+    const payload = {
+      workerName,
+      workerDni: user.dni || '',
+      workerEmail: user.email || '',
+      leaveTypeName,
+      startLeaveDate: leave.startLeaveDate,
+      expectedEndLeaveDate: leave.expectedEndLeaveDate,
+      actualEndLeaveDate: leave.actualEndLeaveDate,
+      centers,
+      notes: '',
+      logoUrl,
+      supportEmail
+    };
+
+    const text = buildLeaveExpectedEndReminderPlainText('', payload);
+    const html = buildLeaveExpectedEndReminderHtmlEmail('', payload);
+
+    await sendEmail(recipients, subject, text, html);
+
+    return { ok: true, recipients, subject, centers };
+  } catch (err) {
+    logError(`[notifyCurrentResponsibleManagersOfExpectedLeaveEnd] ${err.message}`);
+    return { ok: false, error: err.message };
+  }
+}
 
 
 module.exports = {
@@ -1299,4 +1556,6 @@ module.exports = {
   generateEmailHTML,
   sendWelcomeEmail,
   notifyDeviceManagersOfChangeRequest,
+  notifyCurrentResponsibleManagersOfLeave,
+  notifyCurrentResponsibleManagersOfExpectedLeaveEnd,
 };

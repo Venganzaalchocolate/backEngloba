@@ -26,6 +26,7 @@ const {
   userSignatureGet,
   userSignatureUpsert,
   userSignatureDelete,
+  
 } = require("./userController");
 
 // ----------------------------- LOGIN ----------------------------------------
@@ -303,6 +304,16 @@ const {
   syncUserNow,
 } = require("./permissionsUnifiedController");
 
+// ----------------------------- DOCUMENTATION AUDIT --------------------------
+const {
+  getDocumentationAuditByUserAndDocument,
+  getDocumentationAuditsByUser,
+  postRegisterDocumentationAuditDownload,
+  postRegisterDocumentationAuditSignRequest,
+  postRegisterDocumentationAuditSignComplete,
+  postCanUserSignDocumentationReceipt,
+} = require("./userDocumentationAuditController");
+
 // Pendiente de migrar (lo mantenemos aquí de momento para no romper):
 // - ResourceMembership CRUD
 // - list/get de ModuleGrants (read-only)
@@ -572,7 +583,14 @@ postSesameGetOfficeManagers,
   listScopedRoles,
   getUserScopedRoles,
   getUserScopedRolesData,
-  getOrganizationChart
+  getOrganizationChart,
 
+    // Documentation Audit
+  getDocumentationAuditByUserAndDocument,
+  getDocumentationAuditsByUser,
+  postRegisterDocumentationAuditDownload,
+  postRegisterDocumentationAuditSignRequest,
+  postRegisterDocumentationAuditSignComplete,
+  postCanUserSignDocumentationReceipt,
 };
 

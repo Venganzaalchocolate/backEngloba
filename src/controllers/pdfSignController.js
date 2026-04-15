@@ -1,5 +1,5 @@
 // controllers/pdfSignController.js
-const { User } = require("../models/indexModels");
+const { User, Documentation } = require("../models/indexModels");
 const fs = require("fs");
 const OneTimeCode = require("../models/OneTimeCode");
 const { ClientError, response, catchAsync } = require("../utils/indexUtils");
@@ -7,6 +7,8 @@ const { sendEmail, generateEmailHTML } = require("./emailControllerGoogle");
 const { rgb, PDFDocument, StandardFonts } = require("pdf-lib");
 const { uploadFileToDrive, getFileById, deleteFileById } = require("./googleController");
 const path = require("path");
+const { attachGeneratedOfficialFileToUser } = require("./fileController");
+const { registerDocumentationAuditSignRequest, registerDocumentationAuditSignComplete, canUserSignDocumentationReceipt, } = require("./userDocumentationAuditController");
 
 // 👇 para renderizar strokes a PNG en Node
 let createCanvas;
@@ -16,6 +18,21 @@ try {
   // si no está instalado, no rompemos: haremos fallback a cajetín texto
   createCanvas = null;
 }
+
+const sanitizeFileName = (text = "") =>
+  String(text)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "_");
+
+const buildRecibiFileName = ({ documentName, dni, date = new Date() }) => {
+  const safeName = sanitizeFileName(documentName || "documento");
+  const safeDni = sanitizeFileName(dni || "sin_dni");
+  const day = date.toISOString().slice(0, 10);
+  return `${safeName}_${safeDni}_${day}_recibi_signed.pdf`;
+};
 
 /* ============================================================================
  *  CAJETÍN BASE (logo + borde + texto)
@@ -381,7 +398,7 @@ const generarCodigoTemporal = () =>
 const requestSignature = async (req, res) => {
   const { userId, docType, docId, meta } = req.body;
 
-  if (!userId || !docType || (docType !== "recibi" && !docId)) {
+  if (!userId || !docType || !docId) {
     throw new ClientError("Parámetros insuficientes", 400);
   }
 
@@ -395,10 +412,20 @@ const requestSignature = async (req, res) => {
   const now = new Date();
 
   const otp = await OneTimeCode.findOneAndUpdate(
-    { userId },
+    { userId, docType, docId },
     { $set: { code, createdAt: now, attempts: 0, docType, docId, meta: meta || {} } },
     { upsert: true, new: true }
   );
+
+  if (docType === "recibi") {
+    await registerDocumentationAuditSignRequest({
+      userId,
+      documentationId: docId,
+      meta: {
+        otpId: otp._id,
+      },
+    });
+  }
 
   const textoPlano = `Tu código de verificación para firmar ${config.emailTitle} es: ${code}. Válido 5 minutos.`;
 
@@ -446,15 +473,159 @@ const confirmSignature = async (req, res) => {
     throw new ClientError("Código incorrecto", 403);
   }
 
+  const userAux = await User.findById(userId, {
+    dni: 1,
+    firstName: 1,
+    lastName: 1,
+    apafa: 1,
+    signature: 1,
+  });
+  if (!userAux) throw new ClientError("Usuario no encontrado", 404);
+
   // ── D. Obtener PDF original ─────────────────────────
   let originalBuffer;
   let mimeType = "application/pdf";
   let folderId = null;
-  let file; // metadata drive (payroll/contract)
+  let file;
+  let generatedFileName = null;
+  let documentationAux = null;
 
   if (otp.docType === "recibi") {
-    // aquí mantienes tu lógica si la usas, pero ahora mismo tu flujo real es payroll
-    throw new ClientError("Recibí no implementado en este controlador (según tu flujo actual)", 400);
+    documentationAux = await Documentation.findById(otp.docId, {
+      name: 1,
+      requiresSignature: 1,
+      modeloPDF: 1,
+      categoryFiles: 1,
+    });
+
+    if (!documentationAux) {
+      throw new ClientError("Documento de documentación no encontrado", 404);
+    }
+
+    if (!documentationAux?.requiresSignature) {
+      throw new ClientError("Este documento no requiere firma de recibí", 400);
+    }
+
+    const canSignResult = await canUserSignDocumentationReceipt({
+      userId,
+      documentationId: otp.docId,
+    });
+
+    if (!canSignResult?.canSign) {
+      throw new ClientError(
+        "No puedes firmar el recibí sin haber descargado antes el documento oficial.",
+        400
+      );
+    }
+    documentationAux = await Documentation.findById(otp.docId, {
+      name: 1,
+      requiresSignature: 1,
+      modeloPDF: 1,
+      categoryFiles: 1,
+    });
+
+    if (!documentationAux) {
+      throw new ClientError("Documento de documentación no encontrado", 404);
+    }
+
+    const fechaRecibi = new Date();
+    const documentName = documentationAux.name;
+    const description =
+      otp.meta?.description || `Conforme a recibido y leído ${documentName}.`;
+
+    const pdfDocRecibi = await PDFDocument.create();
+    const page = pdfDocRecibi.addPage();
+    const { width, height } = page.getSize();
+
+    const font = await pdfDocRecibi.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDocRecibi.embedFont(StandardFonts.HelveticaBold);
+
+    const marginLeft = 55;
+    const marginRight = 55;
+    const marginTop = 85;
+    const maxWidth = width - marginLeft - marginRight;
+
+    const fullName = [userAux.firstName, userAux.lastName].filter(Boolean).join(" ").trim();
+    const fecha = fechaRecibi.toLocaleDateString("es-ES");
+    const hora = fechaRecibi.toLocaleTimeString("es-ES");
+
+    const lines = [
+      { text: "RECIBÍ", bold: true, size: 18, centered: true },
+      { text: "", bold: false, size: 11 },
+      {
+        text: `D./Dña. ${fullName}, con DNI ${userAux.dni || ""}, manifiesta que ha recibido y leído el documento "${documentName}".`,
+        bold: false,
+        size: 11,
+      },
+      {
+        text: description,
+        bold: false,
+        size: 11,
+      },
+      { text: "", bold: false, size: 11 },
+      {
+        text: "Y para que así conste, firma digitalmente el presente recibí.",
+        bold: false,
+        size: 11,
+      },
+      { text: "", bold: false, size: 11 },
+      { text: `Fecha: ${fecha}`, bold: false, size: 11 },
+      { text: `Hora: ${hora}`, bold: false, size: 11 },
+    ];
+
+    const wrapText = (text, size, currentFont) => {
+      if (!text) return [""];
+      const words = String(text).split(/\s+/);
+      const result = [];
+      let line = "";
+
+      for (const word of words) {
+        const test = line ? `${line} ${word}` : word;
+        const textWidth = currentFont.widthOfTextAtSize(test, size);
+        if (textWidth <= maxWidth) line = test;
+        else {
+          if (line) result.push(line);
+          line = word;
+        }
+      }
+
+      if (line) result.push(line);
+      return result;
+    };
+
+    let y = height - marginTop;
+
+    for (const item of lines) {
+      const currentFont = item.bold ? fontBold : font;
+      const wrapped = item.centered ? [item.text] : wrapText(item.text, item.size, currentFont);
+
+      for (const line of wrapped) {
+        const x = item.centered
+          ? (width - currentFont.widthOfTextAtSize(line, item.size)) / 2
+          : marginLeft;
+
+        page.drawText(line, {
+          x,
+          y,
+          size: item.size,
+          font: currentFont,
+          color: rgb(0, 0, 0),
+        });
+
+        y -= item.size + 6;
+      }
+
+      y -= item.centered ? 12 : 4;
+    }
+
+    originalBuffer = Buffer.from(await pdfDocRecibi.save());
+    mimeType = "application/pdf";
+    folderId = process.env.GOOGLE_DRIVE_RECIBIS;
+    generatedFileName = buildRecibiFileName({
+      documentName,
+      dni: userAux.dni,
+      date: fechaRecibi,
+    });
   } else {
     const { file: driveFile, stream } = await getFileById(otp.docId);
     file = driveFile;
@@ -476,15 +647,10 @@ const confirmSignature = async (req, res) => {
     throw new ClientError("El PDF original no se pudo leer (posiblemente corrupto).", 400);
   }
 
-  // ── F. Pintar firma: si hay firma guardada => imagen, si no => cajetín texto ──
-  const userAux = await User.findById(userId, {
-    dni: 1,
-    firstName: 1,
-    lastName: 1,
-    apafa: 1,
-    signature: 1, // 👈 importante
-  });
-  if (!userAux) throw new ClientError("Usuario no encontrado", 404);
+
+
+
+
 
   try {
     await addSignatureToPdf(pdfDoc, userAux, {
@@ -508,7 +674,9 @@ const confirmSignature = async (req, res) => {
   const signedName =
     otp.docType === "payroll"
       ? `${userAux.dni}_${otp.meta.month}_${otp.meta.year}_signed.pdf`
-      : `${userAux.dni}_${fecha.toISOString().slice(0, 10)}_${otp.docType}_signed.pdf`;
+      : otp.docType === "recibi"
+        ? generatedFileName
+        : `${userAux.dni}_${fecha.toISOString().slice(0, 10)}_${otp.docType}_signed.pdf`;
 
   let uploaded;
   try {
@@ -544,6 +712,33 @@ const confirmSignature = async (req, res) => {
     }
 
     return response(res, 200, { data: updatedUser });
+  }
+
+  if (otp.docType === "recibi") {
+    const attachResult = await attachGeneratedOfficialFileToUser({
+      userId,
+      documentationId: otp.docId,
+      driveId: uploaded.id,
+      description: documentationAux?.name || "Recibí firmado",
+      date: dateInSpain,
+      category: documentationAux?.categoryFiles || "Oficial",
+    });
+
+    await registerDocumentationAuditSignComplete({
+      userId,
+      documentationId: otp.docId,
+      fileId: attachResult.newFile._id,
+      driveId: uploaded.id,
+      signedAt: dateInSpain,
+      meta: {
+        fileName: signedName,
+      },
+    });
+
+    return response(res, 200, {
+      message: "Recibí firmado correctamente",
+      data: attachResult.updatedUser,
+    });
   }
 
   if (otp.docType === "contract") {

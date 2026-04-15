@@ -1997,3 +1997,459 @@ export function buildSignatureUpdateHtmlEmail(
 </body>
 </html>`;
 }
+
+function formatDateEs(value) {
+  if (!value) return '';
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value || '');
+  return d.toLocaleDateString('es-ES');
+}
+
+function buildCentersListPlainText(centers = []) {
+  if (!Array.isArray(centers) || !centers.length) return 'No consta centro asociado.';
+  if (centers.length === 1) return `Centro afectado: ${centers[0]}`;
+  return `Centros afectados:\n${centers.map((c) => `• ${c}`).join('\n')}`;
+}
+
+function buildCentersListHtml(centers = []) {
+  if (!Array.isArray(centers) || !centers.length) {
+    return `<p style="margin:0;">No consta centro asociado.</p>`;
+  }
+
+  if (centers.length === 1) {
+    return `<p style="margin:0;"><strong>Centro afectado:</strong> ${centers[0]}</p>`;
+  }
+
+  return `
+    <p style="margin:0 0 8px 0;"><strong>Centros afectados:</strong></p>
+    <ul style="margin:0 0 0 18px;padding:0;">
+      ${centers.map((c) => `<li style="margin:6px 0;">${c}</li>`).join('')}
+    </ul>
+  `;
+}
+
+export function buildSesameInactiveByLeavePlainText(
+  approverName = '',
+  {
+    workerName = '',
+    workerDni = '',
+    workerEmail = '',
+    leaveTypeName = '',
+    startLeaveDate = '',
+    expectedEndLeaveDate = '',
+    actualEndLeaveDate = '',
+    centers = [],
+    notes = '',
+    supportEmail = 'web@engloba.org.es',
+  } = {}
+) {
+  const start = formatDateEs(startLeaveDate);
+  const expectedEnd = formatDateEs(expectedEndLeaveDate);
+  const actualEnd = formatDateEs(actualEndLeaveDate);
+  const tutorialUrl = 'https://drive.google.com/file/d/1vMfnWRBPknLo2QkHJUPkttrss7BcBJkr/view?usp=sharing';
+
+  return (
+`Hola ${approverName || 'equipo'},
+
+Te informamos de que el/la trabajador/a ${workerName}${workerDni ? ` (DNI ${workerDni})` : ''} ha sido puesto/a en estado inactivo en Sesame al haberse registrado una baja/excedencia activa en la app interna de Asociación Engloba.
+
+DATOS DEL TRABAJADOR/A
+• Nombre: ${workerName || '-'}
+• DNI: ${workerDni || '-'}
+• Correo corporativo: ${workerEmail || '-'}
+
+DATOS DE LA BAJA / EXCEDENCIA
+• Tipo: ${leaveTypeName || '-'}
+• Fecha de inicio: ${start || '-'}
+• Fecha prevista de fin: ${expectedEnd || '-'}
+• Fecha fin efectiva: ${actualEnd || '-'}
+
+${buildCentersListPlainText(centers)}
+
+${notes ? `OBSERVACIONES\n${notes}\n` : ''}
+
+MINITUTORIAL
+Hay disponible un minitutorial para saber cómo crear, editar y finalizar una baja o excedencia en la app:
+${tutorialUrl}
+
+Mientras esta baja/excedencia permanezca abierta en la app, el perfil del trabajador/a figurará como inactivo en Sesame.
+
+IMPORTANTE
+Cuando la persona deje de estar de baja/excedencia, será necesario registrar la finalización de la baja/excedencia en la app. Solo así podrá reactivarse automáticamente de nuevo en Sesame.
+
+Para cualquier duda o incidencia, puedes escribir a ${supportEmail}.
+
+Un saludo,
+Asociación Engloba`
+  );
+}
+
+export function buildSesameInactiveByLeaveHtmlEmail(
+  approverName = '',
+  {
+    workerName = '',
+    workerDni = '',
+    workerEmail = '',
+    leaveTypeName = '',
+    startLeaveDate = '',
+    expectedEndLeaveDate = '',
+    actualEndLeaveDate = '',
+    centers = [],
+    notes = '',
+    logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
+    supportEmail = 'web@engloba.org.es',
+  } = {}
+) {
+  const start = formatDateEs(startLeaveDate);
+  const expectedEnd = formatDateEs(expectedEndLeaveDate);
+  const actualEnd = formatDateEs(actualEndLeaveDate);
+  const tutorialUrl = 'https://drive.google.com/file/d/1vMfnWRBPknLo2QkHJUPkttrss7BcBJkr/view?usp=sharing';
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trabajador/a inactivo/a en Sesame por baja o excedencia</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#ededed;font-family:'Roboto',Arial,sans-serif;color:#333;line-height:1.55;-webkit-text-size-adjust:100%}
+  .card{max-width:680px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+  .header{background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);color:#fff;text-align:center;padding:28px 20px}
+  .header h1{font-size:22px;margin:6px 0 0;font-weight:800}
+  .logo{max-width:140px;height:auto;margin-bottom:8px}
+  .content{padding:30px 34px;font-size:16px}
+  .content p{margin:14px 0}
+  .block{background:#f8f9ff;border:1px solid #e7e9ff;border-radius:10px;padding:14px 16px;margin:12px 0 18px}
+  .tag{display:inline-block;background:#eef0ff;color:#4f529f;border:1px solid #dfe2ff;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.2px;margin-left:8px;vertical-align:middle}
+  .hint{font-size:14px;color:#555;margin-top:8px}
+  a.link{color:#4f529f;font-weight:800;text-decoration:none}
+  .footer{background:#bec3f4;text-align:center;padding:18px 16px;font-size:13px;color:#333}
+  .table{width:100%;border-collapse:collapse;margin-top:6px}
+  .table td{padding:8px 0;vertical-align:top;border-bottom:1px solid #eceef8}
+  .table td:first-child{width:210px;font-weight:700;color:#4f529f;padding-right:12px}
+  .noteBox{background:#fff8e8;border:1px solid #f3d38a;color:#6f4b00;border-radius:10px;padding:14px 16px;margin:14px 0 18px}
+  .importantBox{background:#fff3f3;border:1px solid #efb1b1;color:#7a1f1f;border-radius:10px;padding:14px 16px;margin:14px 0 18px}
+  .tutorialBox{background:#eef6ff;border:1px solid #bfdcff;color:#23466b;border-radius:10px;padding:14px 16px;margin:14px 0 18px}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      ${logoUrl ? `<img src="${logoUrl}" alt="Asociación Engloba" class="logo">` : ''}
+      <h1>Trabajador/a inactivo/a en Sesame <span class="tag">Baja / Excedencia</span></h1>
+      <div style="opacity:.9;font-size:14px;margin-top:6px">Notificación automática a responsables de centro</div>
+    </div>
+
+    <div class="content">
+      <p>Hola ${approverName || 'equipo'},</p>
+
+      <p>
+        Te informamos de que el/la trabajador/a <strong>${workerName || '-'}</strong>${workerDni ? ` (${workerDni})` : ''}
+        ha sido puesto/a en <strong>estado inactivo en Sesame</strong> al haberse registrado una baja/excedencia activa en la app interna de Asociación Engloba.
+      </p>
+
+      <div class="block">
+        <table class="table" role="presentation">
+          <tr>
+            <td>Nombre</td>
+            <td>${workerName || '-'}</td>
+          </tr>
+          <tr>
+            <td>DNI</td>
+            <td>${workerDni || '-'}</td>
+          </tr>
+          <tr>
+            <td>Correo corporativo</td>
+            <td>${workerEmail || '-'}</td>
+          </tr>
+          <tr>
+            <td>Tipo de baja/excedencia</td>
+            <td>${leaveTypeName || '-'}</td>
+          </tr>
+          <tr>
+            <td>Fecha de inicio</td>
+            <td>${start || '-'}</td>
+          </tr>
+          <tr>
+            <td>Fecha prevista de fin</td>
+            <td>${expectedEnd || '-'}</td>
+          </tr>
+          <tr>
+            <td>Fecha fin efectiva</td>
+            <td>${actualEnd || '-'}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="block">
+        ${buildCentersListHtml(centers)}
+      </div>
+
+      ${
+        notes
+          ? `<div class="noteBox">
+              <strong>Observaciones</strong>
+              <p style="margin:8px 0 0 0;">${notes}</p>
+            </div>`
+          : ''
+      }
+
+      <div class="tutorialBox">
+        <strong>Minitutorial</strong>
+        <p style="margin:8px 0 0 0;">
+          Hay disponible un minitutorial para saber cómo crear, editar y finalizar una baja o excedencia en la app.
+        </p>
+        <p style="margin:8px 0 0 0;">
+          <a class="link" href="${tutorialUrl}" target="_blank" rel="noopener noreferrer">Ver vídeo explicativo</a>
+        </p>
+      </div>
+
+      <p class="hint">
+        Mientras esta baja/excedencia permanezca abierta en la app, el perfil del trabajador/a figurará como inactivo en Sesame.
+      </p>
+
+      <div class="importantBox">
+        <strong>Importante</strong>
+        <p style="margin:8px 0 0 0;">
+          Cuando la persona deje de estar de baja/excedencia, será necesario registrar la finalización de la baja/excedencia en la app.
+          Solo así podrá reactivarse automáticamente de nuevo en Sesame.
+        </p>
+      </div>
+
+      <p>
+        Para cualquier duda o incidencia, puedes escribir a
+        <a class="link" href="mailto:${supportEmail}">${supportEmail}</a>.
+      </p>
+
+      <p>Un saludo,<br><strong>Asociación Engloba</strong></p>
+    </div>
+
+    <div class="footer">
+      Este mensaje se ha generado automáticamente desde la gestión interna de bajas y excedencias.
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+export function buildLeaveExpectedEndReminderPlainText(
+  approverName = '',
+  {
+    workerName = '',
+    workerDni = '',
+    workerEmail = '',
+    leaveTypeName = '',
+    startLeaveDate = '',
+    expectedEndLeaveDate = '',
+    actualEndLeaveDate = '',
+    centers = [],
+    notes = '',
+    supportEmail = 'web@engloba.org.es',
+  } = {}
+) {
+  const start = formatDateEs(startLeaveDate);
+  const expectedEnd = formatDateEs(expectedEndLeaveDate);
+  const actualEnd = formatDateEs(actualEndLeaveDate);
+  const tutorialUrl = 'https://drive.google.com/file/d/1vMfnWRBPknLo2QkHJUPkttrss7BcBJkr/view?usp=sharing';
+
+  return (
+`Hola ${approverName || 'equipo'},
+
+Te informamos de que la baja/excedencia del trabajador/a ${workerName}${workerDni ? ` (DNI ${workerDni})` : ''} tiene registrada como fecha prevista de finalización el día ${expectedEnd || '-'}.
+
+Como a día de hoy no consta una fecha de fin efectiva en la app, os pedimos que reviséis si esta situación sigue siendo correcta o si ya corresponde registrar la finalización de la baja/excedencia.
+
+DATOS DEL TRABAJADOR/A
+• Nombre: ${workerName || '-'}
+• DNI: ${workerDni || '-'}
+• Correo corporativo: ${workerEmail || '-'}
+
+DATOS DE LA BAJA / EXCEDENCIA
+• Tipo: ${leaveTypeName || '-'}
+• Fecha de inicio: ${start || '-'}
+• Fecha prevista de fin: ${expectedEnd || '-'}
+• Fecha fin efectiva registrada: ${actualEnd || 'No registrada'}
+
+${buildCentersListPlainText(centers)}
+
+${notes ? `OBSERVACIONES\n${notes}\n` : ''}
+
+MINITUTORIAL
+Hay disponible un minitutorial para saber cómo crear, editar y finalizar una baja o excedencia en la app:
+${tutorialUrl}
+
+IMPORTANTE
+Si la persona ya no se encuentra de baja/excedencia, será necesario registrar la finalización de la baja/excedencia en la app.
+Solo así podrá reactivarse automáticamente en Sesame cuando corresponda.
+
+Si la baja/excedencia continúa, no es necesario hacer ningún cambio en este momento, pero conviene revisar que la información siga siendo correcta.
+
+Para cualquier duda o incidencia, puedes escribir a ${supportEmail}.
+
+Un saludo,
+Asociación Engloba`
+  );
+}
+
+export function buildLeaveExpectedEndReminderHtmlEmail(
+  approverName = '',
+  {
+    workerName = '',
+    workerDni = '',
+    workerEmail = '',
+    leaveTypeName = '',
+    startLeaveDate = '',
+    expectedEndLeaveDate = '',
+    actualEndLeaveDate = '',
+    centers = [],
+    notes = '',
+    logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
+    supportEmail = 'web@engloba.org.es',
+  } = {}
+) {
+  const start = formatDateEs(startLeaveDate);
+  const expectedEnd = formatDateEs(expectedEndLeaveDate);
+  const actualEnd = formatDateEs(actualEndLeaveDate);
+  const tutorialUrl = 'https://drive.google.com/file/d/1vMfnWRBPknLo2QkHJUPkttrss7BcBJkr/view?usp=sharing';
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Revisión de fecha prevista de fin de baja o excedencia</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#ededed;font-family:'Roboto',Arial,sans-serif;color:#333;line-height:1.55;-webkit-text-size-adjust:100%}
+  .card{max-width:680px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+  .header{background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);color:#fff;text-align:center;padding:28px 20px}
+  .header h1{font-size:22px;margin:6px 0 0;font-weight:800}
+  .logo{max-width:140px;height:auto;margin-bottom:8px}
+  .content{padding:30px 34px;font-size:16px}
+  .content p{margin:14px 0}
+  .block{background:#f8f9ff;border:1px solid #e7e9ff;border-radius:10px;padding:14px 16px;margin:12px 0 18px}
+  .tag{display:inline-block;background:#eef0ff;color:#4f529f;border:1px solid #dfe2ff;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.2px;margin-left:8px;vertical-align:middle}
+  .hint{font-size:14px;color:#555;margin-top:8px}
+  a.link{color:#4f529f;font-weight:800;text-decoration:none}
+  .footer{background:#bec3f4;text-align:center;padding:18px 16px;font-size:13px;color:#333}
+  .table{width:100%;border-collapse:collapse;margin-top:6px}
+  .table td{padding:8px 0;vertical-align:top;border-bottom:1px solid #eceef8}
+  .table td:first-child{width:210px;font-weight:700;color:#4f529f;padding-right:12px}
+  .noteBox{background:#fff8e8;border:1px solid #f3d38a;color:#6f4b00;border-radius:10px;padding:14px 16px;margin:14px 0 18px}
+  .importantBox{background:#fff3f3;border:1px solid #efb1b1;color:#7a1f1f;border-radius:10px;padding:14px 16px;margin:14px 0 18px}
+  .softBox{background:#eef6ff;border:1px solid #bfdcff;color:#23466b;border-radius:10px;padding:14px 16px;margin:14px 0 18px}
+  .tutorialBox{background:#eef6ff;border:1px solid #bfdcff;color:#23466b;border-radius:10px;padding:14px 16px;margin:14px 0 18px}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      ${logoUrl ? `<img src="${logoUrl}" alt="Asociación Engloba" class="logo">` : ''}
+      <h1>Revisión de baja/excedencia <span class="tag">Fecha prevista de fin</span></h1>
+      <div style="opacity:.9;font-size:14px;margin-top:6px">Notificación automática a responsables de centro</div>
+    </div>
+
+    <div class="content">
+      <p>Hola ${approverName || 'equipo'},</p>
+
+      <p>
+        Te informamos de que la baja/excedencia del trabajador/a <strong>${workerName || '-'}</strong>${workerDni ? ` (${workerDni})` : ''}
+        tiene registrada como <strong>fecha prevista de finalización</strong> el día <strong>${expectedEnd || '-'}</strong>.
+      </p>
+
+      <p>
+        Como a día de hoy no consta una fecha de fin efectiva en la app, os pedimos que reviséis si esta situación sigue siendo correcta
+        o si ya corresponde registrar la finalización de la baja/excedencia.
+      </p>
+
+      <div class="block">
+        <table class="table" role="presentation">
+          <tr>
+            <td>Nombre</td>
+            <td>${workerName || '-'}</td>
+          </tr>
+          <tr>
+            <td>DNI</td>
+            <td>${workerDni || '-'}</td>
+          </tr>
+          <tr>
+            <td>Correo corporativo</td>
+            <td>${workerEmail || '-'}</td>
+          </tr>
+          <tr>
+            <td>Tipo de baja/excedencia</td>
+            <td>${leaveTypeName || '-'}</td>
+          </tr>
+          <tr>
+            <td>Fecha de inicio</td>
+            <td>${start || '-'}</td>
+          </tr>
+          <tr>
+            <td>Fecha prevista de fin</td>
+            <td>${expectedEnd || '-'}</td>
+          </tr>
+          <tr>
+            <td>Fecha fin efectiva registrada</td>
+            <td>${actualEnd || 'No registrada'}</td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="block">
+        ${buildCentersListHtml(centers)}
+      </div>
+
+      ${
+        notes
+          ? `<div class="noteBox">
+              <strong>Observaciones</strong>
+              <p style="margin:8px 0 0 0;">${notes}</p>
+            </div>`
+          : ''
+      }
+
+      <div class="tutorialBox">
+        <strong>Minitutorial</strong>
+        <p style="margin:8px 0 0 0;">
+          Hay disponible un minitutorial para saber cómo crear, editar y finalizar una baja o excedencia en la app.
+        </p>
+        <p style="margin:8px 0 0 0;">
+          <a class="link" href="${tutorialUrl}" target="_blank" rel="noopener noreferrer">Ver vídeo explicativo</a>
+        </p>
+      </div>
+
+      <div class="importantBox">
+        <strong>Importante</strong>
+        <p style="margin:8px 0 0 0;">
+          Si la persona ya no se encuentra de baja/excedencia, será necesario registrar la finalización de la baja/excedencia en la app.
+          Solo así podrá reactivarse automáticamente en Sesame cuando corresponda.
+        </p>
+      </div>
+
+      <div class="softBox">
+        <strong>Revisión recomendada</strong>
+        <p style="margin:8px 0 0 0;">
+          Si la baja/excedencia continúa, no es necesario hacer ningún cambio en este momento, pero conviene revisar que la información registrada siga siendo correcta.
+        </p>
+      </div>
+
+      <p>
+        Para cualquier duda o incidencia, puedes escribir a
+        <a class="link" href="mailto:${supportEmail}">${supportEmail}</a>.
+      </p>
+
+      <p>Un saludo,<br><strong>Asociación Engloba</strong></p>
+    </div>
+
+    <div class="footer">
+      Este mensaje se ha generado automáticamente desde la gestión interna de bajas y excedencias.
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+

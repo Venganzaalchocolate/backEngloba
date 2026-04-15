@@ -32,6 +32,15 @@ const dispositiveSchema = new Schema({
   lat: { type: Number, default: null },
   lng: { type: Number, default: null },
 },
+resolvedAddress: {
+  formatted: { type: String, default: null },
+  province: { type: String, default: null },
+  city: { type: String, default: null },
+  postcode: { type: String, default: null },
+  country: { type: String, default: null },
+  source: { type: String, default: null },
+  resolvedAt: { type: Date, default: null },
+},
 
 }, { timestamps: true });
 

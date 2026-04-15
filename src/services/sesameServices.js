@@ -234,6 +234,14 @@ const sesameService = {
   unassignRoleFromEmployee(data = {}) {
     return request("DELETE", "/core/v3/roles/assignation", { data });
   },
+    // =========================
+  // WORK ENTRIES
+  // =========================
+  listWorkEntries(params = {}) {
+    return request("GET", "/schedule/v1/work-entries", { params });
+  },
 };
+
+
 
 module.exports = sesameService;

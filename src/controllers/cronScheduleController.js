@@ -2,9 +2,14 @@
 const cron = require('node-cron');
 const { gestionAutomaticaNominas } = require('./googleController');
 const volunteerApplication = require('../models/volunteerApplication');
-const { syncSesameResponsibilities } = require('./sesameController');
+const {
+  processDailyLeaveStatusChanges,
+  processDailyExpectedLeaveEndReminders
+} = require('./leaveController');
 
 let isRunning = false;
+let isRunningDisableVolunteers = false;
+let isRunningLeaves = false;
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -17,8 +22,10 @@ if (isDev) {
       console.log('🕑 Aún sigue ejecutándose gestionAutomaticaNominas(), esperando siguiente turno.');
       return;
     }
+
     isRunning = true;
     console.log('▶️ Iniciando gestionAutomaticaNominas()...');
+
     try {
       await gestionAutomaticaNominas();
       console.log('✅ gestionAutomaticaNominas() finalizado.');
@@ -35,12 +42,12 @@ if (isDev) {
       console.log('🕑 Aún sigue ejecutándose disableExpired() de voluntariado, esperando siguiente turno.');
       return;
     }
+
     isRunningDisableVolunteers = true;
     console.log('▶️ Iniciando disableExpired() (VolunteerApplication)...');
 
     try {
       const res = await volunteerApplication.disableExpired();
-      // res suele tener matchedCount/modifiedCount en mongoose moderno
       console.log('✅ disableExpired() finalizado:', {
         matched: res?.matchedCount ?? res?.n ?? null,
         modified: res?.modifiedCount ?? res?.nModified ?? null,
@@ -51,50 +58,42 @@ if (isDev) {
       isRunningDisableVolunteers = false;
     }
   }, { timezone: 'Europe/Madrid' });
-}
 
-
-
-cron.schedule(
-  "30 3 * * *",
-  async () => {
-    try {
-      const batchSize = 20;
-      const delayMs = 800;
-      let startFrom = 0;
-      let totalProcessed = 0;
-      let totalSaved = 0;
-      let totalErrors = 0;
-
-      while (true) {
-        const result = await syncSesameResponsibilities({
-          startFrom,
-          limitUsers: batchSize,
-          delayMs,
-        });
-
-        console.log(`Lote desde ${startFrom}:`, result);
-
-        if (!result.processedUsers) break;
-
-        totalProcessed += result.processedUsers;
-        totalSaved += result.totalResponsibilitiesSaved || 0;
-        totalErrors += result.totalErrors || 0;
-
-        startFrom += batchSize;
-      }
-
-      console.log({
-        ok: true,
-        totalProcessed,
-        totalSaved,
-        totalErrors,
-      });
-    } catch (error) {
-      console.error("[CRON] Error syncing Sesame responsibilities:", error);
+  // 3) Cada día a las 00:01: revisar bajas/excedencias y avisos de fin previsto
+  cron.schedule('1 0 * * *', async () => {
+    if (isRunningLeaves) {
+      console.log('🕑 Aún sigue ejecutándose la revisión diaria de bajas/excedencias, esperando siguiente turno.');
+      return;
     }
-  },
-  {
-    timezone: "Europe/Madrid",
-  }
-);
+
+    isRunningLeaves = true;
+    console.log('▶️ Iniciando revisión diaria de bajas/excedencias...');
+
+    try {
+      const statusRes = await processDailyLeaveStatusChanges();
+      console.log('✅ processDailyLeaveStatusChanges() finalizado:', {
+        todayMadrid: statusRes?.todayMadrid ?? null,
+        startsToday: statusRes?.startsToday ?? 0,
+        endedYesterday: statusRes?.endedYesterday ?? 0,
+        affectedUsers: statusRes?.affectedUsers ?? 0,
+        synced: statusRes?.synced?.length ?? 0,
+        syncErrors: statusRes?.syncErrors?.length ?? 0,
+        emailed: statusRes?.emailed?.length ?? 0,
+        emailErrors: statusRes?.emailErrors?.length ?? 0,
+      });
+
+      const expectedEndRes = await processDailyExpectedLeaveEndReminders();
+      console.log('✅ processDailyExpectedLeaveEndReminders() finalizado:', {
+        todayMadrid: expectedEndRes?.todayMadrid ?? null,
+        tomorrowMadrid: expectedEndRes?.tomorrowMadrid ?? null,
+        reminders: expectedEndRes?.reminders ?? 0,
+        emailed: expectedEndRes?.emailed?.length ?? 0,
+        emailErrors: expectedEndRes?.emailErrors?.length ?? 0,
+      });
+    } catch (err) {
+      console.error('❌ Error en revisión diaria de bajas/excedencias:', err);
+    } finally {
+      isRunningLeaves = false;
+    }
+  }, { timezone: 'Europe/Madrid' });
+}

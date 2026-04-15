@@ -1,4 +1,4 @@
-const { User, Dispositive, SesameResponsibility } = require("../models/indexModels");
+const { User, Dispositive, SesameResponsibility, Leaves } = require("../models/indexModels");
 const sesameService = require("../services/sesameServices");
 const { catchAsync, response, ClientError } = require("../utils/indexUtils");
 
@@ -449,6 +449,7 @@ const getSesameEmployeeContext = async (employeeId) => {
   const managedDepartmentIds = [...new Set(managedDepartmentRoleAssignations.map((x) => x?.affectedEntityId).filter(Boolean))];
 
   const managedDepartmentResponsibilities = managedDepartmentIds.length ? await SesameResponsibility.find({ active: true, responsibilityType: "department_manager", entityType: "department", entityIdSesame: { $in: managedDepartmentIds } }).select("entityIdSesame entityName").lean() : [];
+  
   const departmentNameById = {};
   managedDepartmentResponsibilities.forEach((item) => { if (item?.entityIdSesame && item?.entityName) departmentNameById[String(item.entityIdSesame)] = item.entityName; });
 
@@ -721,100 +722,6 @@ const postSesameDeleteEmployeeOfficeRole = async (req, res) => {
   response(res, 200, result);
 };
 
-const syncSesameResponsibilities = async ({ startFrom = 0, limitUsers = 20, delayMs = 600 } = {}) => {
-  const syncedAt = new Date();
-
-  const users = await User.find({ userIdSesame: { $exists: true, $ne: null } }).select("_id userIdSesame firstName lastName email").sort({ _id: 1 }).skip(startFrom).limit(limitUsers).lean();
-  const dispositives = await Dispositive.find({ officeIdSesame: { $exists: true, $ne: null } }).select("_id name program officeIdSesame").lean();
-
-  const dispositiveByOfficeId = new Map();
-  for (const dispositive of dispositives) if (dispositive?.officeIdSesame) dispositiveByOfficeId.set(String(dispositive.officeIdSesame), dispositive);
-
-  const docs = [];
-  const errors = [];
-
-  for (const user of users) {
-    try {
-      const sesameEmployeeId = String(user.userIdSesame || "").trim();
-      if (!sesameEmployeeId) continue;
-
-      const employeeResponse = await sesameService.getEmployeeById(sesameEmployeeId);
-      await sleep(delayMs);
-
-      const roleAssignationsResponse = await sesameService.listEmployeeRoleAssignations(sesameEmployeeId, { limit: 200, page: 1 });
-      await sleep(delayMs);
-
-      const employee = employeeResponse?.data || null;
-      const roleAssignations = roleAssignationsResponse?.data || [];
-      if (!employee || !Array.isArray(roleAssignations) || !roleAssignations.length) continue;
-
-      for (const roleAssignation of roleAssignations) {
-        const roleId = String(roleAssignation?.role?.id || "");
-        const roleName = String(roleAssignation?.role?.name || "");
-        const affectedEntityType = String(roleAssignation?.affectedEntityType || "");
-        const affectedEntityId = String(roleAssignation?.affectedEntityId || "");
-        const roleAssignationId = String(roleAssignation?.id || "");
-        if (!roleId || !affectedEntityType || !affectedEntityId) continue;
-
-        let responsibilityType = null;
-        let entityType = null;
-        let entityName = "";
-        let dispositiveId = null;
-        let programId = null;
-        let departmentExternalKey = null;
-
-        if (roleId === String(SESAME_ROLE_IDS.ADMIN) || roleName.toLowerCase() === "owner") {
-          responsibilityType = "company_admin";
-          entityType = "company";
-          entityName = employee?.company?.name || "";
-        } else if (roleId === String(SESAME_ROLE_IDS.WORKPLACE_ADMIN) && affectedEntityType === "office") {
-          responsibilityType = "office_manager";
-          entityType = "office";
-          const dispositive = dispositiveByOfficeId.get(affectedEntityId) || null;
-          entityName = dispositive?.name || "";
-          dispositiveId = dispositive?._id || null;
-          programId = dispositive?.program || null;
-        } else if (roleId === String(SESAME_ROLE_IDS.DEPARTMENT_ADMIN) && affectedEntityType === "department") {
-          responsibilityType = "department_manager";
-          entityType = "department";
-          entityName = roleAssignation?.department?.name || "";
-          departmentExternalKey = affectedEntityId;
-        } else continue;
-
-        docs.push({
-          userId: user._id,
-          employeeIdSesame: sesameEmployeeId,
-          employeeCodeSesame: Number.isFinite(Number(employee?.code)) ? Number(employee.code) : null,
-          employeeName: [employee?.firstName, employee?.lastName].filter(Boolean).join(" ").trim() || `${user.firstName || ""} ${user.lastName || ""}`.trim(),
-          employeeEmail: String(employee?.email || user?.email || "").trim().toLowerCase(),
-          responsibilityType,
-          roleAssignationIdSesame: roleAssignationId || null,
-          roleIdSesame: roleId || null,
-          roleName,
-          entityType,
-          entityIdSesame: affectedEntityId,
-          entityName,
-          dispositiveId,
-          programId,
-          departmentExternalKey,
-          active: true,
-          syncedAt,
-          raw: roleAssignation,
-        });
-      }
-    } catch (error) {
-      errors.push({ userId: String(user?._id || ""), employeeIdSesame: String(user?.userIdSesame || ""), message: error?.message || "Error desconocido" });
-    }
-  }
-
-  const uniqueDocsMap = new Map();
-  for (const doc of docs) uniqueDocsMap.set([String(doc.userId), doc.responsibilityType, doc.entityIdSesame].join("::"), doc);
-
-  const finalDocs = [...uniqueDocsMap.values()];
-  for (const doc of finalDocs) await SesameResponsibility.updateOne({ userId: doc.userId, responsibilityType: doc.responsibilityType, entityIdSesame: doc.entityIdSesame }, { $set: doc }, { upsert: true });
-
-  return { ok: true, startFrom, processedUsers: users.length, totalResponsibilitiesBuilt: docs.length, totalResponsibilitiesSaved: finalDocs.length, totalErrors: errors.length, errors };
-};
 
 const postSesameUpdateEmployeeManagersByEmployee = async (req, res) => {
   const body = req.body || {};
@@ -1358,5 +1265,4 @@ module.exports = {
   deleteSesameOfficeForDispositive,
   syncSesameOfficeForDispositive,
 
-  syncSesameResponsibilities,
 };

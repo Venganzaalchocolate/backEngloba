@@ -167,28 +167,62 @@ const deleteIdFile = async (req, res) => {
 // FileDriveService.js
 
 const getFileDrive = async (req, res, next) => {
- try {
-  const fileId = req.body.idFile;
-  const { file, stream } = await getFileById(fileId);
+  try {
+    const { idFile, userId } = req.body || {};
+    if (!idFile) throw new ClientError('Falta idFile', 400);
 
-  if (!stream) {
-    throw new ClientError('Archivo no encontrado en Google Drive', 404);
+    let driveId = null;
+    let fileDoc = null;
+
+    // 1) Intentamos tratarlo como Filedrive._id
+    if (mongoose.Types.ObjectId.isValid(idFile)) {
+      fileDoc = await Filedrive.findById(idFile)
+        .select('_id idDrive originModel idModel originDocumentation')
+        .lean();
+
+      if (fileDoc?.idDrive) {
+        driveId = fileDoc.idDrive;
+      }
+    }
+
+    // 2) Si no existe Filedrive, asumimos que nos han pasado un idDrive directo
+    if (!driveId) {
+      driveId = idFile;
+    }
+
+    const { file, stream } = await getFileById(driveId);
+
+    if (!stream) {
+      throw new ClientError('Archivo no encontrado en Google Drive', 404);
+    }
+
+    // 3) Solo auditamos si realmente era un Filedrive oficial de usuario
+    if (
+      fileDoc &&
+      userId &&
+      fileDoc.originModel === 'User' &&
+      fileDoc.originDocumentation &&
+      String(fileDoc.idModel) === String(userId)
+    ) {
+      await registerDocumentationAuditDownload({
+        userId,
+        documentationId: fileDoc.originDocumentation,
+        fileId: fileDoc._id,
+        driveId: fileDoc.idDrive,
+      });
+    }
+
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${file.name}"`
+    );
+    res.setHeader('Content-Type', file.mimeType);
+
+    stream.pipe(res);
+  } catch (error) {
+    next(error);
   }
-
-  // Cabeceras
-  res.setHeader(
-    'Content-Disposition',
-    `attachment; filename="${file.name}"`
-  );
-  res.setHeader('Content-Type', file.mimeType);
-
-  // Envías el contenido "en streaming"
-  stream.pipe(res);
-
- } catch (error) {
-  console.log(error)
- }
-}
+};
 
 
 const createFileDrive = async (req, res, next) => {
@@ -485,7 +519,46 @@ const listFile = async (req, res) => {
 };
 
 
+const attachGeneratedOfficialFileToUser = async ({
+  userId,
+  documentationId,
+  driveId,
+  description,
+  date,
+  category,
+}) => {
+  const session = await mongoose.startSession();
+  let updatedUser = null;
+  let newFile = null;
 
+  try {
+    await session.withTransaction(async () => {
+      newFile = await new Filedrive({
+        originModel: "User",
+        idModel: new mongoose.Types.ObjectId(userId),
+        originDocumentation: new mongoose.Types.ObjectId(documentationId),
+        description: description || "",
+        date: date ? new Date(date) : undefined,
+        category: category || "Oficial",
+        idDrive: driveId,
+      }).save({ session });
+
+      updatedUser = await User.findByIdAndUpdate(
+        userId,
+        { $push: { files: { filesId: newFile._id } } },
+        { new: true, session }
+      ).populate("files.filesId");
+    });
+  } catch (error) {
+    console.log(error)
+    if (driveId) await deleteFileById(driveId).catch(() => {});
+    throw error;
+  } finally {
+    session.endSession();
+  }
+
+  return { updatedUser, newFile };
+};
 
 module.exports = {
   postUploadFile: catchAsync(postUploadFile),
@@ -499,6 +572,7 @@ module.exports = {
   getCvPresignGet: catchAsync(getCvPresignGet),
   zipMultipleFiles: catchAsync(zipMultipleFiles),
   zipPayrolls:catchAsync(zipPayrolls),
-  listFile:catchAsync(listFile)
+  listFile:catchAsync(listFile),
+  attachGeneratedOfficialFileToUser
 
 };

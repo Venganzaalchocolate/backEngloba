@@ -14,6 +14,8 @@ const isValidId = (v) => mongoose.Types.ObjectId.isValid(v);
 const isDetach = (v) => v === null || v === '' || v === false;
 const isDupKey = (err) => err && err.code === 11000; // índice único { program, name }
 
+
+
 /**
  * Crear Dispositive (program opcional):
  * - Si "program" (o "programId") viene, se vincula y se añade su _id a Program.devicesId
@@ -412,11 +414,10 @@ const deleteDispositive = async (req, res) => {
 };
 
 
-
-
 module.exports = {
   createDispositive: catchAsync(createDispositive),
   updateDispositive: catchAsync(updateDispositive),
   deleteDispositive: catchAsync(deleteDispositive),
-  getDispositiveId: catchAsync(getDispositiveId)
+  getDispositiveId: catchAsync(getDispositiveId),
+
 };
