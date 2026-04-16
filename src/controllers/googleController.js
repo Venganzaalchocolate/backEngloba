@@ -358,7 +358,6 @@ async function getOrCreateFolderCached(name, parentId) {
 
 /* ========================================
  *   LISTAR ARCHIVOS — NO RECURSIVO
- *   (MUCHO MÁS RÁPIDO)
  * ======================================== */
 async function listarArchivosDirecto(folderId) {
   const archivos = [];
@@ -425,6 +424,7 @@ async function gestionAutomaticaNominas() {
   console.log("🎉 Proceso completado.");
   return true;
 }
+
 
 /* ========================================
  *    PROCESAR CADA ARCHIVO
@@ -1334,13 +1334,7 @@ async function chatSyncAddManagersFromProgramsAndDispositives(
 }
 
 
-const prueba=async()=>{
 
-// await chatPostMessage(spaceName, textDocs);
-// await chatPostMessage(spaceName, textGroups);
-}
-
-//prueba()
 
 module.exports = {
   uploadFileToDrive,

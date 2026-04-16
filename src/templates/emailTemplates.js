@@ -214,7 +214,7 @@ CÓMO FICHAR
   2) Haz clic en el círculo verde «Fichar» arriba a la derecha.
   3) Verás el registro y tu saldo actualizado.
 
-Dudas → comunicaicon@engloba.org.es
+Dudas → comunicacion@engloba.org.es
 
 Departamento de Comunicación — Gustavo Lorca & Elisabeth D'Acosta`
   );
@@ -338,7 +338,7 @@ Tu cuenta ya forma parte del grupo de tu dispositivo. Revísalo en https://group
 2) Cambia tu contraseña
 3) Activa la verificación en dos pasos: https://myaccount.google.com/security
 
-Cualquier duda → comunicaicon@engloba.org.es
+Cualquier duda → comunicacion@engloba.org.es
 
 Departamento de Comunicación — Gustavo Lorca & Elisabeth D'Acosta`
   );
@@ -457,7 +457,7 @@ export function buildHtmlEmail(name = '', corpEmail = '', logoUrl = '') {
       </p>
 
       <p>¿Necesitas ayuda? Escribe a 
-        <a href="mailto:comunicaicon@engloba.org.es" style="color:#4f529f;font-weight:bold">comunicaicon@engloba.org.es</a>.
+        <a href="mailto:comunicacion@engloba.org.es" style="color:#4f529f;font-weight:bold">comunicacion@engloba.org.es</a>.
       </p>
 
       <p>¡Nos alegra tenerte en el equipo!</p>
@@ -2451,5 +2451,4 @@ export function buildLeaveExpectedEndReminderHtmlEmail(
 </body>
 </html>`;
 }
-
 

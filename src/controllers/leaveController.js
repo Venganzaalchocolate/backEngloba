@@ -563,7 +563,7 @@ async function getLeaveById(req, res) {
  * - o ya debería haber terminado según la fecha prevista,
  * siempre que siga sin fecha de fin efectiva registrada.
  */
-async function processDailyExpectedLeaveEndReminders({ logger = console, testEmail = 'comunicacion@engloba.org.es' } = {}) {
+async function processDailyExpectedLeaveEndReminders({ logger = console, testEmail = false } = {}) {
   const log = logger?.log || console.log;
   const warn = logger?.warn || console.log;
   const error = logger?.error || console.log;

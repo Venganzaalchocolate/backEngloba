@@ -2,7 +2,7 @@
 const { google }   = require('googleapis');
 const MailComposer = require('nodemailer/lib/mail-composer');
 const { User, Periods, UserChangeRequest, Dispositive , Program, UserCv, Leaves } = require('../models/indexModels');
-const {   buildSesameInactiveByLeavePlainText, buildSesameInactiveByLeaveHtmlEmail, buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail, buildEqualityLgtbiqSurveyPlainText, buildEqualityLgtbiqSurveyHtmlEmail, buildMiniTutorialsOpsPlainText, buildMiniTutorialsOpsHtmlEmail, buildSignatureUpdateHtmlEmail, buildSignatureUpdatePlainText, buildLeaveExpectedEndReminderPlainText, buildLeaveExpectedEndReminderHtmlEmail } = require('../templates/emailTemplates');
+const {   buildSesameInactiveByLeavePlainText, buildSesameInactiveByLeaveHtmlEmail, buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail, buildEqualityLgtbiqSurveyPlainText, buildEqualityLgtbiqSurveyHtmlEmail, buildMiniTutorialsOpsPlainText, buildMiniTutorialsOpsHtmlEmail, buildSignatureUpdateHtmlEmail, buildSignatureUpdatePlainText, buildLeaveExpectedEndReminderPlainText, buildLeaveExpectedEndReminderHtmlEmail, buildLeaveSyncInfoPlainText, buildLeaveSyncInfoHtmlEmail } = require('../templates/emailTemplates');
 const { default: mongoose } = require('mongoose');
 
 
@@ -1450,7 +1450,7 @@ async function notifyCurrentResponsibleManagersOfExpectedLeaveEnd({
   leave,
   supportEmail = 'web@engloba.org.es',
   logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
-  testEmail = 'comunicacion@engloba.org.es',
+  testEmail = false,
   logger = console
 } = {}) {
   const logWarn = logger?.warn || console.log;
