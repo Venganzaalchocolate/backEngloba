@@ -182,7 +182,7 @@ const getEnumEmployers = async (req, res) => {
     Documentation.find({}).lean(),
     Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1, officeIdSesame:1 }).lean(),
     Documentation.distinct("categoryFiles").catch(() => []),
-    Filedrive.distinct("category").catch(() => []),
+    Filedrive.schema.path("category").enumValues,
     Entity.find({}, { name: 1 }).lean(),
   ]);
 
@@ -192,11 +192,12 @@ const getEnumEmployers = async (req, res) => {
   const programsIndex = createProgramIndex(programs);
   const dispositiveIndex = createDispositiveIndex(dispositives);
   const studiesIndex = createCategoryAndSubcategoryIndex(studies);
-    const entityIndex=createCategoryAndSubcategoryIndex(entity);
+  const entityIndex=createCategoryAndSubcategoryIndex(entity);
 
   const categoryFiles = Array.from(
     new Set([...(docCats || []), ...(fileCats || [])].filter(Boolean))
   ).sort();
+
 
   response(res, 200, {
     status,
