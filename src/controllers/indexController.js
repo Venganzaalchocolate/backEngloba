@@ -270,39 +270,13 @@ const {
   getUserScopedRoles,
   getUserScopedRolesData,
   getOrganizationChart,
+  createScopedRoleRule,
+  listScopedRoleRules,
+  updateScopedRoleRule,
+  deleteScopedRoleRule,
 } = require("./scopedRolesController");
 
-// ----------------------------- PERMISSIONS (admin | unified) -----------------
-const {
-  // PROFILES
-  listProfiles,
-  getProfileById,
-  createProfile,
-  updateProfile,
-  toggleProfile,
-  deleteProfileHard,
 
-  // ASSIGNMENTS
-  listAssignments,
-  upsertAssignment,
-  updateAssignment,
-  deleteAssignmentHard,
-
-  // USER SCOPES
-  listUserScopes,
-  upsertUserScope,
-  updateUserScope,
-  deleteUserScopeHard,
-
-  // LINKS (scope -> profile)
-  listScopeProfileLinks,
-  upsertScopeProfileLink,
-  updateScopeProfileLink,
-  deleteScopeProfileLinkHard,
-
-  // SYNC
-  syncUserNow,
-} = require("./permissionsUnifiedController");
 
 // ----------------------------- DOCUMENTATION AUDIT --------------------------
 const {
@@ -524,33 +498,6 @@ module.exports = {
   volunteerChronologyDelete,
 
 
-
-  // PROFILES
-  listProfiles,
-  getProfileById,
-  createProfile,
-  updateProfile,
-  toggleProfile,
-  deleteProfileHard,
-
-  // ASSIGNMENTS
-  listAssignments,
-  upsertAssignment,
-  updateAssignment,
-  deleteAssignmentHard,
-
-  // USER SCOPES
-  listUserScopes,
-  upsertUserScope,
-  updateUserScope,
-  deleteUserScopeHard,
-
-  // LINKS (scope -> profile)
-  listScopeProfileLinks,
-  upsertScopeProfileLink,
-  updateScopeProfileLink,
-  deleteScopeProfileLinkHard,
-
     // Sesame
   postSesameListEmployees,
   postSesameGetEmployee,
@@ -575,8 +522,7 @@ postSesameInviteEmployeeForUser,
 postSesameGetOfficeManagers,
 
 
-  // SYNC
-  syncUserNow,
+
 
     // Scoped roles
   handleScopedRole,
@@ -584,6 +530,10 @@ postSesameGetOfficeManagers,
   getUserScopedRoles,
   getUserScopedRolesData,
   getOrganizationChart,
+  createScopedRoleRule,
+  listScopedRoleRules,
+  updateScopedRoleRule,
+  deleteScopedRoleRule,
 
     // Documentation Audit
   getDocumentationAuditByUserAndDocument,

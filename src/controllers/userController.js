@@ -720,18 +720,7 @@ const userPut = async (req, res) => {
       updateFields.employmentStatus = "ya no trabaja con nosotros";
       updateFields.email = "";
 
-     
-
-      const dispositiveResult = await Dispositive.updateMany(
-        { $or: [{ responsible: userId }, { coordinators: userId }] },
-        { $pull: { responsible: userId, coordinators: userId } }
-      );
-     
-
-      const programResult = await Program.updateMany(
-        { responsible: userId },
-        { $pull: { responsible: userId } }
-      );
+ 
       
     } else {
   
@@ -1337,6 +1326,10 @@ const getUsers = async (req, res) => {
   if (body.lastName) {
     const rx = createAccentInsensitiveRegex(body.lastName);
     filters.lastName = { $regex: rx };
+  }
+
+  if(body.role){
+    filters.role=body.role
   }
 
   if (body.email) {

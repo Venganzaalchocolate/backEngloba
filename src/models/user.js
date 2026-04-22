@@ -95,7 +95,7 @@ const UserSchema = new Schema({
     role: {
         type: String,
         default: 'user',
-        enum: ['global', 'root', 'auditor', 'employee', 'responsable'],
+        enum: ['global', 'root', 'rrhh', 'employee', 'auditor'],
         require: true,
     },
     // DNI del empleado

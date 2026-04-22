@@ -65,7 +65,7 @@ const postCreateProgram = async (req, res) => {
 // Recoger todos los programas con paginación y filtros
 // Recoger todos los programas
 const getPrograms = async (req, res) => {
-  const programs = await Program.find().populate('funding').populate('devices.responsible');
+  const programs = await Program.find().populate('funding')
   response(res, 200, programs);
 };
 

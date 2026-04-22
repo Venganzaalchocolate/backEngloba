@@ -20,9 +20,9 @@ const hiringRoutes=require('./routes/hiringRoutes')
 const leaveRoutes=require('./routes/leaveRoutes')
 const userChangeRequest=require('./routes/userChangeRoutes')
 const volunteerApplicationRoutes=require('./routes/volunteerApplicationRoutes')
-const permissionsRoutes=require('./routes/permissionsRoutes')
 const sesameRoutes=require('./routes/sesameRoutes')
 const userDocumentationAudit=require('./routes/userAuditDocumentationRoutes')
+const scopedRoleRoutes=require('./routes/scopedRolesRoutes')
 
 const { connectToDatabase } = require('./database/connect');
 require('./controllers/cronScheduleController');
@@ -77,8 +77,8 @@ app.use('/api', leaveRoutes);
 app.use('/api', userChangeRequest);
 app.use('/api', volunteerApplicationRoutes);
 app.use('/api', sesameRoutes)
-app.use('/api/permissions', permissionsRoutes);
 app.use('/api', userDocumentationAudit)
+app.use('/api', scopedRoleRoutes)
 
 
 

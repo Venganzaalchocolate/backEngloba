@@ -17,15 +17,10 @@ const Leaves=require('./leave');
 const UserChangeRequest = require('./UserChangeRequest');
 const Dispositive=require('./dispositive');
 const VolunteerApplication = require('./volunteerApplication');
-
-const UserScope = require('./permissions/userScope');
-const ScopeProfileLink = require('./permissions/scopeProfileLink');
-const UserProfileAssignment = require('./permissions/userProfileAssignment');
-const ModuleGrant = require('./permissions/moduleGrant');
-const PermissionProfile = require('./permissions/permissionProfile');
 const SesameResponsibility=require('./sesameResponsability')
 const Entity=require('./entity');
 const UserDocumentationAudit=require('./userDocumentationAudit')
+const ScopedRoleRule=require('./scopedRoleRuleSchema')
 
 module.exports = {
     User,
@@ -46,12 +41,8 @@ module.exports = {
     UserChangeRequest,
     Dispositive,
     VolunteerApplication,
-    PermissionProfile,
-    ModuleGrant,
-    UserProfileAssignment,
-    ScopeProfileLink,
-    UserScope,
     Entity,
     SesameResponsibility,
-    UserDocumentationAudit
+    UserDocumentationAudit,
+    ScopedRoleRule
 }

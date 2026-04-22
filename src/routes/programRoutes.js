@@ -38,13 +38,8 @@ router.put('/updatedevice', tokenValid, updateDispositive); // Actualizar un dis
 router.delete('/deletedispositive', tokenValid, deleteDispositive); // Eliminar un dispositivo específico dentro de un programa
 // router.post("/fileProgram", tokenValid, upload.single('pdf'), filesProgram)
 
-// Scoped roles
-router.post('/scopedrole', tokenValid, handleScopedRole);
-router.post('/listscopedroles', tokenValid, listScopedRoles);
-router.post('/userscopedroles', tokenValid, getUserScopedRoles);
 
 //organigrama
-// organigrama
-router.post('/organizationchart', tokenValid, getOrganizationChart);
+
 
 module.exports = router;
