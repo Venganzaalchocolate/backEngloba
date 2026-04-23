@@ -132,7 +132,7 @@ const {
 } = require("./auditorController");
 
 // ----------------------------- STATS ----------------------------------------
-const { getCurrentHeadcountStats, getUserCvStats } = require("./statisticsController");
+const { getCurrentHeadcountStats, getUserCvStats, getLeavesStats } = require("./statisticsController");
 
 // ----------------------------- WORKSPACE ------------------------------------
 const {
@@ -427,6 +427,7 @@ module.exports = {
   // Stats
   getCurrentHeadcountStats,
   getUserCvStats,
+  getLeavesStats,
 
   // Workspace
   addGroupAliasWS,

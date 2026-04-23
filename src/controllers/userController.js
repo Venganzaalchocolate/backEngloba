@@ -1264,50 +1264,55 @@ const getBasicUserSearch = async (req, res) => {
 };
 
 
-async function getUserIdsWithOpenPeriodsForFilters(body) {
-  const periodQuery = {
+const getUserIdsWithOpenPeriodsForFilters = async (body = {}) => {
+  const periodFilters = {
     active: { $ne: false },
-    $or: [{ endDate: null }, { endDate: { $exists: false } }],
+    $or: [
+      { endDate: null },
+      { endDate: { $exists: false } }
+    ]
   };
 
-  // 1) Filtro por dispositiveId directo
-  const dispositiveId = toId(body.dispositive);
-  if (dispositiveId) {
-    periodQuery.dispositiveId = dispositiveId;
-  } else if (body.programId || body.provinces) {
-    // 2) Filtro por programa y/o provincia => Dispositive -> _id
-    const dspQuery = {};
-    const programId = toId(body.programId);
-    const provinceId = toId(body.provinces);
-
-    if (programId) dspQuery.program = programId;
-    if (provinceId) dspQuery.province = provinceId;
-
-    // Si solo has filtrado por provincias/programa, resolvemos
-    // primero cuáles son los dispositivos válidos
-    const dispositiveIds = await Dispositive.distinct("_id", dspQuery);
-    if (!dispositiveIds.length) {
-      return []; // no hay dispositivos = no hay periodos abiertos
-    }
-
-    periodQuery.dispositiveId = { $in: dispositiveIds };
+  if (body.position && mongoose.Types.ObjectId.isValid(body.position)) {
+    periodFilters.position = new mongoose.Types.ObjectId(body.position);
   }
 
-  // 3) Filtro por posición (opcional)
-  const positionId = toId(body.position);
-  if (positionId) {
-    periodQuery.position = positionId;
+  if (body.dispositive && mongoose.Types.ObjectId.isValid(body.dispositive)) {
+    periodFilters.dispositiveId = new mongoose.Types.ObjectId(body.dispositive);
+  } else if (Array.isArray(body.allowedDispositiveIds) && body.allowedDispositiveIds.length) {
+    const allowedIds = body.allowedDispositiveIds
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+
+    if (!allowedIds.length) return [];
+    periodFilters.dispositiveId = { $in: allowedIds };
+  } else if (body.programId && mongoose.Types.ObjectId.isValid(body.programId)) {
+    const dispositives = await Dispositive.find(
+      { program: new mongoose.Types.ObjectId(body.programId) },
+      { _id: 1 }
+    ).lean();
+
+    const ids = dispositives.map((d) => d._id);
+    if (!ids.length) return [];
+    periodFilters.dispositiveId = { $in: ids };
+  } else if (body.provinces && mongoose.Types.ObjectId.isValid(body.provinces)) {
+    const dispositives = await Dispositive.find(
+      { province: new mongoose.Types.ObjectId(body.provinces) },
+      { _id: 1 }
+    ).lean();
+
+    const ids = dispositives.map((d) => d._id);
+    if (!ids.length) return [];
+    periodFilters.dispositiveId = { $in: ids };
   }
 
-  // 4) Distinct sobre Periods (idUser) con los filtros anteriores
-  const userIds = await Periods.distinct("idUser", periodQuery);
-  return userIds;
-}
+  const periods = await Periods.find(periodFilters, { idUser: 1 }).lean();
+  return [...new Set(periods.map((p) => String(p.idUser)))];
+};
 
 
 const getUsers = async (req, res) => {
   const { page, limit } = req.body || {};
-
   if (!page || !limit) {
     throw new ClientError("Faltan datos no son correctos", 400);
   }
@@ -1372,8 +1377,12 @@ const getUsers = async (req, res) => {
   }
 
   // ---------------- Filtros por Periods abiertos (programa/dispositivo/provincia/posición) ----------------
-  const mustFilterByPeriods =
-    body.dispositive || body.programId || body.provinces || body.position;
+const mustFilterByPeriods =
+  body.dispositive ||
+  body.programId ||
+  body.provinces ||
+  body.position ||
+  (Array.isArray(body.allowedDispositiveIds) && body.allowedDispositiveIds.length);
 
   if (mustFilterByPeriods) {
     const userIdsFromPeriods = await getUserIdsWithOpenPeriodsForFilters(body);

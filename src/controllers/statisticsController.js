@@ -1,4 +1,4 @@
-const { UserCv, Program, Offer, User, Periods, Dispositive } = require('../models/indexModels');
+const { UserCv, Program, Offer, User, Periods, Dispositive, Leaves } = require('../models/indexModels');
 const mongoose = require('mongoose');
 const { catchAsync, response, ClientError, toId } = require('../utils/indexUtils');
 
@@ -1053,7 +1053,7 @@ const getCurrentHeadcountStats = async (req, res) => {
 
 const getUserCvStats = async (req, res) => {
   const { year, apafa } = req.body || {};
-  
+
   // ---------- MATCH BASE PARA TODOS LOS CV ----------
   const matchCv = {};
   let yearNum = null;
@@ -1296,9 +1296,369 @@ const getUserCvStats = async (req, res) => {
   response(res, 200, result);
 };
 
+const getLeavesStats = async (req, res) => {
+  const { year, month, apafa, activeOnly, leaveTypeId, programId, deviceId } = req.body || {};
 
+  if (month && !year) throw new ClientError('Si envías month debes enviar también year', 400);
+  if (month && (+month < 1 || +month > 12)) throw new ClientError('month debe estar entre 1 y 12', 400);
+  if (leaveTypeId && !mongoose.Types.ObjectId.isValid(leaveTypeId)) throw new ClientError('leaveTypeId inválido', 400);
+  if (programId && !mongoose.Types.ObjectId.isValid(programId)) throw new ClientError('programId inválido', 400);
+  if (deviceId && !mongoose.Types.ObjectId.isValid(deviceId)) throw new ClientError('deviceId inválido', 400);
 
+  let rangeStart = null;
+  let rangeEnd = null;
+  const now = new Date();
+  let refDate = now;
+
+  if (year && month) {
+    rangeStart = new Date(Date.UTC(+year, +month - 1, 1, 0, 0, 0, 0));
+    rangeEnd = new Date(Date.UTC(+year, +month, 0, 23, 59, 59, 999));
+    refDate = now < rangeEnd ? now : rangeEnd;
+  } else if (year) {
+    rangeStart = new Date(Date.UTC(+year, 0, 1, 0, 0, 0, 0));
+    rangeEnd = new Date(Date.UTC(+year, 11, 31, 23, 59, 59, 999));
+    refDate = now < rangeEnd ? now : rangeEnd;
+  }
+
+  const match = {};
+  if (leaveTypeId) match.leaveType = toId(leaveTypeId);
+  if (activeOnly === 'true') match.active = true;
+  else if (activeOnly === 'false') match.active = false;
+
+  if (rangeStart && rangeEnd) {
+    match.startLeaveDate = { $lte: rangeEnd };
+    match.$or = [
+      { actualEndLeaveDate: null },
+      { actualEndLeaveDate: { $gte: rangeStart } }
+    ];
+  }
+
+  const pipeline = [
+    { $match: match },
+
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'idUser',
+        foreignField: '_id',
+        as: 'user'
+      }
+    },
+    { $unwind: '$user' },
+
+    ...(apafa === 'true' ? [{ $match: { 'user.apafa': true } }] : []),
+    ...(apafa === 'false' ? [{ $match: { 'user.apafa': false } }] : []),
+
+    {
+      $lookup: {
+        from: 'periods',
+        localField: 'idPeriod',
+        foreignField: '_id',
+        as: 'period'
+      }
+    },
+    { $unwind: { path: '$period', preserveNullAndEmptyArrays: true } },
+
+    {
+      $lookup: {
+        from: 'dispositives',
+        localField: 'period.dispositiveId',
+        foreignField: '_id',
+        as: 'dispositive'
+      }
+    },
+    { $unwind: { path: '$dispositive', preserveNullAndEmptyArrays: true } },
+
+    {
+      $lookup: {
+        from: 'programs',
+        localField: 'dispositive.program',
+        foreignField: '_id',
+        as: 'program'
+      }
+    },
+    { $unwind: { path: '$program', preserveNullAndEmptyArrays: true } },
+
+    {
+      $lookup: {
+        from: 'leavetypes',
+        localField: 'leaveType',
+        foreignField: '_id',
+        as: 'leaveTypeDoc'
+      }
+    },
+    { $unwind: { path: '$leaveTypeDoc', preserveNullAndEmptyArrays: true } },
+
+    ...(programId ? [{ $match: { 'program._id': toId(programId) } }] : []),
+    ...(deviceId ? [{ $match: { 'dispositive._id': toId(deviceId) } }] : []),
+
+    {
+      $addFields: {
+        realEndDate: { $ifNull: ['$actualEndLeaveDate', refDate] }
+      }
+    },
+
+    {
+      $addFields: {
+        overlapStartDate: rangeStart
+          ? { $cond: [{ $lt: ['$startLeaveDate', rangeStart] }, rangeStart, '$startLeaveDate'] }
+          : '$startLeaveDate',
+        overlapEndDate: rangeEnd
+          ? { $cond: [{ $gt: ['$realEndDate', rangeEnd] }, rangeEnd, '$realEndDate'] }
+          : '$realEndDate'
+      }
+    },
+
+    {
+      $addFields: {
+        durationDays: {
+          $add: [
+            1,
+            {
+              $max: [
+                0,
+                {
+                  $dateDiff: {
+                    startDate: '$startLeaveDate',
+                    endDate: '$realEndDate',
+                    unit: 'day'
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        overlapDays: {
+          $add: [
+            1,
+            {
+              $max: [
+                0,
+                {
+                  $dateDiff: {
+                    startDate: '$overlapStartDate',
+                    endDate: '$overlapEndDate',
+                    unit: 'day'
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        fullName: {
+          $trim: {
+            input: {
+              $concat: [
+                { $ifNull: ['$user.firstName', ''] },
+                ' ',
+                { $ifNull: ['$user.lastName', ''] }
+              ]
+            }
+          }
+        }
+      }
+    },
+
+    {
+      $facet: {
+        totals: [
+          {
+            $group: {
+              _id: null,
+              totalCases: { $sum: 1 },
+              activeCases: { $sum: { $cond: ['$active', 1, 0] } },
+              uniqueUsersArr: { $addToSet: '$idUser' },
+              totalDays: { $sum: '$overlapDays' }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              totalCases: 1,
+              activeCases: 1,
+              uniqueUsers: { $size: '$uniqueUsersArr' },
+              totalDays: 1,
+              averageDays: {
+                $cond: [
+                  { $eq: ['$totalCases', 0] },
+                  0,
+                  { $divide: ['$totalDays', '$totalCases'] }
+                ]
+              }
+            }
+          }
+        ],
+
+        byType: [
+          {
+            $group: {
+              _id: {
+                leaveTypeId: '$leaveTypeDoc._id',
+                leaveTypeName: '$leaveTypeDoc.name'
+              },
+              totalCases: { $sum: 1 },
+              activeCases: { $sum: { $cond: ['$active', 1, 0] } },
+              uniqueUsersArr: { $addToSet: '$idUser' },
+              totalDays: { $sum: '$overlapDays' }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              leaveTypeId: '$_id.leaveTypeId',
+              leaveTypeName: { $ifNull: ['$_id.leaveTypeName', 'Sin tipo'] },
+              totalCases: 1,
+              activeCases: 1,
+              uniqueUsers: { $size: '$uniqueUsersArr' },
+              totalDays: 1,
+              averageDays: {
+                $cond: [
+                  { $eq: ['$totalCases', 0] },
+                  0,
+                  { $divide: ['$totalDays', '$totalCases'] }
+                ]
+              }
+            }
+          },
+          { $sort: { totalCases: -1, leaveTypeName: 1 } }
+        ],
+
+        byProgram: [
+          {
+            $group: {
+              _id: {
+                programId: '$program._id',
+                programName: '$program.name',
+                area: '$program.area'
+              },
+              totalCases: { $sum: 1 },
+              activeCases: { $sum: { $cond: ['$active', 1, 0] } },
+              uniqueUsersArr: { $addToSet: '$idUser' },
+              totalDays: { $sum: '$overlapDays' }
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              programId: '$_id.programId',
+              programName: { $ifNull: ['$_id.programName', 'Sin programa'] },
+              area: '$_id.area',
+              totalCases: 1,
+              activeCases: 1,
+              uniqueUsers: { $size: '$uniqueUsersArr' },
+              totalDays: 1,
+              averageDays: {
+                $cond: [
+                  { $eq: ['$totalCases', 0] },
+                  0,
+                  { $divide: ['$totalDays', '$totalCases'] }
+                ]
+              }
+            }
+          },
+          { $sort: { totalCases: -1, programName: 1 } }
+        ],
+
+        byDispositive: [
+          {
+            $group: {
+              _id: {
+                dispositiveId: '$dispositive._id',
+                dispositiveName: '$dispositive.name',
+                programId: '$program._id',
+                programName: '$program.name',
+                provinceId: '$dispositive.province'
+              },
+              totalCases: { $sum: 1 },
+              activeCases: { $sum: { $cond: ['$active', 1, 0] } },
+              uniqueUsersArr: { $addToSet: '$idUser' },
+              totalDays: { $sum: '$overlapDays' }
+            }
+          },
+                    {
+            $project: {
+              _id: 0,
+              dispositiveId: '$_id.dispositiveId',
+              dispositiveName: { $ifNull: ['$_id.dispositiveName', 'Sin dispositivo'] },
+              programId: '$_id.programId',
+              programName: { $ifNull: ['$_id.programName', 'Sin programa'] },
+              provinceId: '$_id.provinceId',
+              totalCases: 1,
+              activeCases: 1,
+              uniqueUsers: { $size: '$uniqueUsersArr' },
+              totalDays: 1,
+              averageDays: {
+                $cond: [
+                  { $eq: ['$totalCases', 0] },
+                  0,
+                  { $divide: ['$totalDays', '$totalCases'] }
+                ]
+              }
+            }
+          },
+          { $sort: { totalCases: -1, programName: 1, dispositiveName: 1 } }
+        ],
+
+        detail: [
+          {
+            $project: {
+              _id: 0,
+              leaveId: '$_id',
+              userId: '$user._id',
+              fullName: 1,
+              dni: '$user.dni',
+              active: 1,
+              startLeaveDate: 1,
+              expectedEndLeaveDate: 1,
+              actualEndLeaveDate: 1,
+              durationDays: 1,
+              overlapDays: 1,
+              leaveTypeId: '$leaveTypeDoc._id',
+              leaveTypeName: { $ifNull: ['$leaveTypeDoc.name', 'Sin tipo'] },
+              programId: '$program._id',
+              programName: '$program.name',
+              dispositiveId: '$dispositive._id',
+              dispositiveName: '$dispositive.name',
+              provinceId: '$dispositive.province',
+              position: '$period.position'
+            }
+          },
+          { $sort: { active: -1, startLeaveDate: -1, fullName: 1 } },
+          { $limit: 300 }
+        ]
+      }
+    }
+  ];
+
+  const [agg] = await Leaves.aggregate(pipeline);
+  const data = agg || {};
+
+  response(res, 200, {
+    generatedAt: new Date(),
+    filters: {
+      year: year || null,
+      month: month || null,
+      apafa: apafa ?? null,
+      activeOnly: activeOnly ?? null,
+      leaveTypeId: leaveTypeId || null,
+      programId: programId || null,
+      deviceId: deviceId || null
+    },
+    totals: data.totals?.[0] || {
+      totalCases: 0,
+      activeCases: 0,
+      uniqueUsers: 0,
+      totalDays: 0,
+      averageDays: 0
+    },
+    byType: data.byType || [],
+    byProgram: data.byProgram || [],
+    byDispositive: data.byDispositive || [],
+    detail: data.detail || []
+  });
+};
 module.exports = {
   getCurrentHeadcountStats: catchAsync(getCurrentHeadcountStats),
-  getUserCvStats:catchAsync(getUserCvStats)
+  getUserCvStats: catchAsync(getUserCvStats),
+  getLeavesStats: catchAsync(getLeavesStats)
 };
