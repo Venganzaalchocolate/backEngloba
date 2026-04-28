@@ -232,13 +232,30 @@ const findSesameEmployeeByUser = async (user) => {
   if (!user) return null;
 
   const dni = normalizeDniSesame(user?.dni);
+if (dni) {
+  const activeRes = await sesameService.listEmployees({ dni, status: "active", limit: 10 });
+  const inactiveRes = await sesameService.listEmployees({ dni, status: "inactive", limit: 10 });
 
-  if (dni) {
-    const byDni = await sesameService.listEmployees({ dni, limit: 10 });
-    const itemsByDni = byDni?.data || [];
-    if (itemsByDni.length === 1) return itemsByDni[0];
-    if (itemsByDni.length > 1) throw new ClientError(`Hay más de un empleado en Sesame con el DNI ${dni}`, 409);
+  const itemsByDni = [
+    ...(activeRes?.data || []),
+    ...(inactiveRes?.data || []),
+  ];
+
+  const uniqueById = [];
+  const seen = new Set();
+
+  for (const item of itemsByDni) {
+    const id = item?.id;
+    if (!id || seen.has(String(id))) continue;
+    seen.add(String(id));
+    uniqueById.push(item);
   }
+
+  if (uniqueById.length === 1) return uniqueById[0];
+  if (uniqueById.length > 1) {
+    throw new ClientError(`Hay más de un empleado en Sesame con el DNI ${dni}`, 409);
+  }
+}
 
   if (user?.email) {
     const email = String(user.email).trim().toLowerCase();
@@ -263,8 +280,9 @@ const ensureSesameEmployeeForUser = async (userId, options = {}) => {
   let existingSesame = null;
 
   if (user.userIdSesame) existingSesame = await sesameService.getEmployeeById(user.userIdSesame).catch(() => null);
-  if (!existingSesame) existingSesame = await findSesameEmployeeByUser(user);
 
+  if (!existingSesame) existingSesame = await findSesameEmployeeByUser(user);
+  
   const payload = { ...buildSesameEmployeeFromUser(user), ...(status ? { status } : {}) };
 
   if (existingSesame) {

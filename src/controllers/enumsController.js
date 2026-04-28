@@ -79,7 +79,8 @@ function createProgramIndex(programs = []) {
       acronym: p.acronym || "",
       type: "program",
       active: p.active,
-      entity: p.entity
+      entity: p.entity,
+      area:p.area
     });
   }
 
@@ -176,7 +177,7 @@ const getEnumEmployers = async (req, res) => {
     Jobs.find({}, { name: 1, subcategories: 1 }).lean(),
     Provinces.find({}, { name: 1, subcategories: 1 }).lean(),
     Leavetype.find({}, { name: 1 }).lean(),
-    Program.find({}, { name: 1, acronym: 1, active: 1, entity:1 }).lean(),
+    Program.find({}, { name: 1, acronym: 1, active: 1, entity:1, area:1 }).lean(),
     Studies.find({}, { name: 1, subcategories: 1 }).lean(),
     Finantial.find({}).lean(),
     Documentation.find({}).lean(),

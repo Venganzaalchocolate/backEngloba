@@ -414,6 +414,21 @@ const deleteDispositive = async (req, res) => {
 };
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 module.exports = {
   createDispositive: catchAsync(createDispositive),
   updateDispositive: catchAsync(updateDispositive),
