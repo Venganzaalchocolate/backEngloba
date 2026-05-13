@@ -11,7 +11,6 @@ const {
   ensureSesameEmployeeForUser,
   disableSesameEmployeeForUser,
   deleteSesameEmployeeForUser,
-  syncSesameEmployeeForUser,
 } = require('./sesameController');
 
 const WEEKLY_HOURS = 38.5;
@@ -692,49 +691,58 @@ const userPut = async (req, res) => {
   const userAux = await User.findById(userId).select("email employmentStatus userIdSesame");
   if (!userAux) throw new ClientError("Usuario no encontrado", 404);
 
-  const prevEmploymentStatus = userAux.employmentStatus;
-  const nextEmploymentStatus =
-    req.body.employmentStatus !== undefined ? req.body.employmentStatus : userAux.employmentStatus;
-  const employmentStatusChanged =
-    req.body.employmentStatus !== undefined && req.body.employmentStatus !== userAux.employmentStatus;
+ if (req.body.employmentStatus) {
+  const nextStatus = req.body.employmentStatus;
 
-  if (req.body.employmentStatus) {
-    const nextStatus = req.body.employmentStatus;
+  if (nextStatus === "ya no trabaja con nosotros") {
+    const open = await hasOpenHiring(userId);
 
-    if (nextStatus === "ya no trabaja con nosotros") {
-
-      const open = await hasOpenHiring(userId);
-  
-
-      if (open) throw new ClientError(`Para cambiar el estado laboral a "Ya no trabaja con nosotros" debes cerrar todos los periodos abiertos`, 400);
-
-      if (userAux?.userIdSesame) {
-        await disableSesameEmployeeForUser(userId);
-      }
-
-      if (userAux.email) {
-        await deleteUserByEmailWS(userAux.email);
-     
-      }
-
-      updateFields.employmentStatus = "ya no trabaja con nosotros";
-      updateFields.email = "";
-
- 
-      
-    } else {
-  
-
-      updateFields.employmentStatus = nextStatus;
-
-      if (!userAux.email) {
-        
-        const ws = await createUserWS(userId);
-    
-        updateFields.email = ws.email;
-      }
+    if (open) {
+      throw new ClientError(
+        `Para cambiar el estado laboral a "Ya no trabaja con nosotros" debes cerrar todos los periodos abiertos`,
+        400
+      );
     }
+
+    if (userAux?.userIdSesame) {
+      await disableSesameEmployeeForUser(userId);
+    }
+
+    if (userAux.email) {
+      await deleteUserByEmailWS(userAux.email);
+    }
+
+    updateFields.employmentStatus = "ya no trabaja con nosotros";
+    updateFields.email = "";
+  } else if (nextStatus === "en proceso de contratación") {
+    if (userAux?.userIdSesame) {
+      await disableSesameEmployeeForUser(userId);
+    }
+
+    updateFields.employmentStatus = "en proceso de contratación";
+
+    if (!userAux.email) {
+      const ws = await createUserWS(userId);
+      updateFields.email = ws.email;
+    }
+  } else if (nextStatus === "activo") {
+    updateFields.employmentStatus = "activo";
+
+    if (!userAux.email) {
+      const ws = await createUserWS(userId);
+      updateFields.email = ws.email;
+    }
+
+    /**
+     * No activamos Sesame aquí.
+     * La activación Sesame se hace desde el flujo del front:
+     * postSesameAssignEmployeeToDispositiveScopes
+     * porque necesita seleccionar dispositivo y, a veces, workplace.
+     */
+  } else {
+    updateFields.employmentStatus = nextStatus;
   }
+}
 
   if (req.body.firstName) updateFields.firstName = toTitleCase(req.body.firstName);
   if (req.body.lastName) updateFields.lastName = toTitleCase(req.body.lastName);

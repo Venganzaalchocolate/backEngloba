@@ -27,10 +27,6 @@ const postCreateProgram = async (req, res) => {
     }
   });
 
-  //j
-
-
-
   const savedProgram = await newProgram.save();
   //crear grupos de workspace no critico y no espera
   void ensureWorkspaceGroupsForModel({

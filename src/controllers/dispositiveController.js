@@ -4,11 +4,12 @@ const { catchAsync, response, ClientError, toId } = require('../utils/indexUtils
 const mongoose = require('mongoose');
 const { generateEmailHTML, sendEmail } = require('./emailControllerGoogle');
 const { deleteDeviceGroupsWS, ensureWorkspaceGroupsForModel } = require('./workspaceController');
-const {
-  syncSesameOfficeForDispositive,
-  deleteSesameOfficeForDispositive,
-} = require('./sesameController');
 
+const {
+  createSesameDepartmentForDispositive,
+  updateSesameDepartmentForDispositive,
+  deleteSesameDepartmentForDispositive,
+} = require("./sesameController");
 
 const isValidId = (v) => mongoose.Types.ObjectId.isValid(v);
 const isDetach = (v) => v === null || v === '' || v === false;
@@ -34,29 +35,12 @@ const createDispositive = async (req, res) => {
       program,
       programId,
       coordinates,
-      createSesameOffice,
     } = req.body;
 
     if (!name) {
       throw new ClientError("Falta el nombre del dispositivo", 400);
     }
 
-    const wantsSesameOffice =
-      createSesameOffice === true || createSesameOffice === "true";
-
-    if (wantsSesameOffice) {
-      if (!address || !String(address).trim()) {
-        throw new ClientError("La dirección es obligatoria para crear el centro en Sesame", 400);
-      }
-
-      if (
-        !coordinates ||
-        !Number.isFinite(Number(coordinates.lat)) ||
-        !Number.isFinite(Number(coordinates.lng))
-      ) {
-        throw new ClientError("Latitud y longitud válidas son obligatorias para crear el centro en Sesame", 400);
-      }
-    }
 
     const programRef = program ?? programId ?? null;
     let programDoc = null;
@@ -99,9 +83,14 @@ const createDispositive = async (req, res) => {
 
     const created = await Dispositive.create(payload);
 
-    if (wantsSesameOffice) {
-      await syncSesameOfficeForDispositive(created._id);
+    try {
+      await createSesameDepartmentForDispositive(created._id);
+    } catch (err) {
+      await Dispositive.deleteOne({ _id: created._id }).catch(() => { });
+      throw err;
     }
+
+    const createdUpdated = await Dispositive.findById(created._id);
 
     if (programDoc) {
       await Program.updateOne(
@@ -166,12 +155,14 @@ Creador: ${req.body?.userCreate || "—"}`;
       );
     } catch (_) { }
 
+
+
     return response(res, 200, {
-      dispositive: created,
-      programId: created.program || null,
+      dispositive: createdUpdated,
+      programId: createdUpdated.program || null,
     });
   } catch (error) {
-    
+
     if (error.code === 11000) {
       const [[, dupValue]] = Object.entries(error.keyValue || {});
       throw new ClientError(
@@ -221,6 +212,14 @@ const getDispositiveId = async (req, res) => {
       {
         path: "supervisors",
         select: "firstName lastName email phoneJob",
+      },
+      {
+        path: "workplaces",
+        select: "name address phone province coordinates resolvedAddress officeIdSesame active",
+        populate: {
+          path: "province",
+          select: "name",
+        },
       },
     ])
     .lean();
@@ -332,41 +331,24 @@ const updateDispositive = async (req, res) => {
     Object.assign(updateObj, { $unset: unset });
   }
 
-  let updated;
+let updated;
+
+if (Object.keys(updateObj).length) {
   try {
     updated = await Dispositive.findOneAndUpdate(query, updateObj, {
       new: true,
       runValidators: true,
-    }).populate([
-      {
-        path: "responsible",
-        select: "firstName lastName email phoneJob",
-      },
-      {
-        path: "coordinators",
-        select: "firstName lastName email phoneJob",
-      },
-      {
-        path: "program",
-        select: "name acronym area _id",
-      },
-      {
-        path: "supervisors",
-        select: "firstName lastName email phoneJob",
-      },
-    ]);
+    });
   } catch (err) {
     if (isDupKey(err)) {
       throw new ClientError('Ya existe un dispositivo con ese nombre en el programa', 409);
     }
     throw err;
   }
-
-  const shouldSyncSesameOffice = !!current.officeIdSesame || ( !!(update.address ?? current.address) && Number.isFinite(Number(update.coordinates?.lat ?? current.coordinates?.lat)) && Number.isFinite(Number(update.coordinates?.lng ?? current.coordinates?.lng)));
-
-if (!!shouldSyncSesameOffice) {
-  await syncSesameOfficeForDispositive(updated._id);
+} else {
+  updated = await Dispositive.findById(dispositiveId);
 }
+
 
   if (newProgramId && newProgramId !== oldProgramId) {
     if (oldProgramId) {
@@ -377,7 +359,41 @@ if (!!shouldSyncSesameOffice) {
     await Program.updateOne({ _id: oldProgramId }, { $pull: { devicesId: updated._id } });
   }
 
-  response(res, 200, updated);
+if (name !== undefined || !updated.departamentSesame) {
+  await updateSesameDepartmentForDispositive(updated._id);
+}
+
+updated = await Dispositive.findById(dispositiveId)
+  .populate([
+    {
+      path: "responsible",
+      select: "firstName lastName email phoneJob",
+    },
+    {
+      path: "coordinators",
+      select: "firstName lastName email phoneJob",
+    },
+    {
+      path: "program",
+      select: "name acronym area _id",
+    },
+    {
+      path: "supervisors",
+      select: "firstName lastName email phoneJob",
+    },
+    {
+      path: "workplaces",
+      select: "name address phone province coordinates resolvedAddress officeIdSesame active",
+      populate: {
+        path: "province",
+        select: "name",
+      },
+    },
+  ]);
+
+response(res, 200, updated);
+
+
 };
 
 /** Eliminar Dispositive (sin programId). Limpia devicesId en su Program si estaba vinculado. */
@@ -398,9 +414,10 @@ const deleteDispositive = async (req, res) => {
       `⚠️ Error al intentar borrar grupos de Workspace del dispositivo ${dispositiveId}:`,
       err.message || err
     );
-    // NO lanzamos el error: el dispositivo se sigue borrando en Mongo
   }
-  await deleteSesameOfficeForDispositive(dispositiveId);
+
+  await deleteSesameDepartmentForDispositive(dispositiveId);
+
   await Dispositive.deleteOne({ _id: dispositiveId });
 
   if (oldProgramId) {
@@ -412,20 +429,6 @@ const deleteDispositive = async (req, res) => {
 
   response(res, 200, { ok: true, dispositiveId, programId: oldProgramId });
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

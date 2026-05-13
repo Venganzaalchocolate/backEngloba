@@ -42,6 +42,13 @@ resolvedAddress: {
   resolvedAt: { type: Date, default: null },
 },
 
+departamentSesame:{
+  type: String,
+  index: true,
+},
+
+workplaces: [{ type: Schema.Types.ObjectId, ref: 'Workplace', default: [] }],
+
 }, { timestamps: true });
 
 dispositiveSchema.index(

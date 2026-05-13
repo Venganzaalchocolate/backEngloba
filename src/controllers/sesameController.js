@@ -1,4 +1,4 @@
-const { User, Dispositive, SesameResponsibility, Leaves } = require("../models/indexModels");
+const { User, Dispositive, Workplace, SesameResponsibility, Leaves, Periods } = require("../models/indexModels");
 const sesameService = require("../services/sesameServices");
 const { catchAsync, response, ClientError } = require("../utils/indexUtils");
 
@@ -12,15 +12,77 @@ const SESAME_ROLE_IDS = {
   ADMIN: "d4e27835-80e2-4967-89b0-eceab254915c",
 };
 
-const sleep = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
+const isValidSesameCoordinateValue = (value) => {
+  if (value === null || value === undefined || value === "") return false;
+  return Number.isFinite(Number(value));
+};
+
+const isValidSesameCoordinatePair = (coordinates) => {
+  if (!coordinates) return false;
+
+  if (!isValidSesameCoordinateValue(coordinates.lat)) return false;
+  if (!isValidSesameCoordinateValue(coordinates.lng)) return false;
+
+  const lat = Number(coordinates.lat);
+  const lng = Number(coordinates.lng);
+
+  if (lat === 0 || lng === 0) return false;
+  if (lat < -90 || lat > 90) return false;
+  if (lng < -180 || lng > 180) return false;
+
+  return true;
+};
+
+const buildSesameOfficeFromWorkplace = (workplace, linkedDispositives = []) => {
+  const payload = {
+    companyId: SESAME_COMPANY_ID,
+    radio: 100,
+  };
+
+  if (workplace.name !== undefined) payload.name = workplace.name;
+  if (workplace.address !== undefined) payload.address = workplace.address;
+
+  if (isValidSesameCoordinatePair(workplace.coordinates)) {
+    payload.coordinates = {
+      latitude: Number(workplace.coordinates.lat),
+      longitude: Number(workplace.coordinates.lng),
+    };
+  }
+
+  const parts = [];
+
+  if (workplace.phone) parts.push(`Teléfono oficina: ${workplace.phone}`);
+
+  if (linkedDispositives.length) {
+    const deviceNames = linkedDispositives
+      .map((d) => {
+        const programName = d.program?.acronym || d.program?.name || "";
+        return `${d.name}${programName ? ` (${programName})` : ""}`;
+      })
+      .join(", ");
+
+    parts.push(`Dispositivos vinculados: ${deviceNames}`);
+  }
+
+  if (workplace.resolvedAddress?.formatted) {
+    parts.push(`Dirección resuelta: ${workplace.resolvedAddress.formatted}`);
+  }
+
+  if (parts.length) payload.description = parts.join(" | ");
+
+  payload.defaultEmployeesDateTimeZone = "Europe/Madrid";
+
+  return payload;
+};
+
 
 const mapUserGenderToSesame = (gender) => gender === "male" || gender === "female" ? gender : undefined;
 const mapEmploymentStatusToSesame = (employmentStatus) =>
   employmentStatus === "activo"
     ? "active"
     : employmentStatus === "ya no trabaja con nosotros" || employmentStatus === "en proceso de contratación"
-    ? "inactive"
-    : undefined;
+      ? "inactive"
+      : undefined;
 const normalizeDniSesame = (value = "") => String(value || "").trim().toUpperCase().replace(/\s+/g, "").replace(/-/g, "");
 
 const getSesameEmployeeIdFromLocalUser = async (userId, errorLabel = "Usuario") => {
@@ -48,7 +110,7 @@ const assignEmployeeToScope = async ({ scopeType, scopeId, userId, isMainOffice 
   if (scopeType === "office") {
     const currentAssignationsRes = await sesameService.getEmployeeOfficeAssignations({
       employeeId: employeeIdSesame,
-      limit: 50,
+      limit: 200,
       page: 1,
     });
 
@@ -59,8 +121,8 @@ const assignEmployeeToScope = async ({ scopeType, scopeId, userId, isMainOffice 
         (item) => String(item?.office?.id || item?.officeId || "") === String(scopeId)
       ) || null;
 
-
     let assignation = existingAssignation;
+    let action = "already-assigned";
 
     if (!assignation) {
       assignation = await sesameService.assignEmployeeOffice({
@@ -68,6 +130,7 @@ const assignEmployeeToScope = async ({ scopeType, scopeId, userId, isMainOffice 
         officeId: scopeId,
       });
 
+      action = "assigned";
     }
 
     if (isMainOffice !== null) {
@@ -86,17 +149,56 @@ const assignEmployeeToScope = async ({ scopeType, scopeId, userId, isMainOffice 
         isMainOffice: !!isMainOffice,
       });
 
-      return updatedAssignation;
+      return {
+        action: action === "assigned" ? "assigned-and-updated" : "already-assigned-and-updated",
+        employeeId: employeeIdSesame,
+        officeId: String(scopeId),
+        data: updatedAssignation,
+      };
     }
 
-    return assignation;
+    return {
+      action,
+      employeeId: employeeIdSesame,
+      officeId: String(scopeId),
+      data: assignation,
+    };
   }
 
   if (scopeType === "department") {
-    return sesameService.assignEmployeeDepartment({
+    const currentAssignationsRes = await sesameService.getDepartmentEmployees({
+      employeeId: employeeIdSesame,
+      limit: 200,
+      page: 1,
+    });
+
+    const currentAssignations = currentAssignationsRes?.data || [];
+
+    const existingAssignation =
+      currentAssignations.find(
+        (item) => String(item?.department?.id || item?.departmentId || "") === String(scopeId)
+      ) || null;
+
+    if (existingAssignation) {
+      return {
+        action: "already-assigned",
+        employeeId: employeeIdSesame,
+        departmentId: String(scopeId),
+        data: existingAssignation,
+      };
+    }
+
+    const createdAssignation = await sesameService.assignEmployeeDepartment({
       employeeId: employeeIdSesame,
       departmentId: scopeId,
     });
+
+    return {
+      action: "assigned",
+      employeeId: employeeIdSesame,
+      departmentId: String(scopeId),
+      data: createdAssignation,
+    };
   }
 
   throw new ClientError("scopeType no válido", 400);
@@ -191,71 +293,37 @@ const buildSesameEmployeeFromUser = (user) => {
   return payload;
 };
 
-const buildSesameOfficeFromDispositive = (dispositive) => {
-  const payload = { companyId: SESAME_COMPANY_ID };
 
-  if (dispositive.name !== undefined) payload.name = dispositive.name;
-  if (dispositive.address !== undefined) payload.address = dispositive.address;
 
-  if (
-    dispositive.coordinates &&
-    Number.isFinite(Number(dispositive.coordinates.lat)) &&
-    Number.isFinite(Number(dispositive.coordinates.lng))
-  ) {
-    payload.coordinates = {
-      latitude: Number(dispositive.coordinates.lat),
-      longitude: Number(dispositive.coordinates.lng),
-    };
-  }
-
-  const parts = [];
-  if (dispositive.program?.name) parts.push(`Programa: ${dispositive.program.name}`);
-  if (dispositive.email) parts.push(`Email: ${dispositive.email}`);
-  if (dispositive.phone) parts.push(`Teléfono: ${dispositive.phone}`);
-  if (parts.length) payload.description = parts.join(" | ");
-
-  payload.defaultEmployeesDateTimeZone = "Europe/Madrid";
-
-  return payload;
-};
-
-const getDispositiveForSesame = async (dispositiveId) => {
-  if (!dispositiveId) throw new ClientError("Falta dispositiveId", 400);
-
-  const dispositive = await Dispositive.findById(dispositiveId).populate("program", "name").populate("province", "name");
-  if (!dispositive) throw new ClientError("Dispositivo no encontrado", 404);
-
-  return dispositive;
-};
 
 const findSesameEmployeeByUser = async (user) => {
   if (!user) return null;
 
   const dni = normalizeDniSesame(user?.dni);
-if (dni) {
-  const activeRes = await sesameService.listEmployees({ dni, status: "active", limit: 10 });
-  const inactiveRes = await sesameService.listEmployees({ dni, status: "inactive", limit: 10 });
+  if (dni) {
+    const activeRes = await sesameService.listEmployees({ dni, status: "active", limit: 10 });
+    const inactiveRes = await sesameService.listEmployees({ dni, status: "inactive", limit: 10 });
 
-  const itemsByDni = [
-    ...(activeRes?.data || []),
-    ...(inactiveRes?.data || []),
-  ];
+    const itemsByDni = [
+      ...(activeRes?.data || []),
+      ...(inactiveRes?.data || []),
+    ];
 
-  const uniqueById = [];
-  const seen = new Set();
+    const uniqueById = [];
+    const seen = new Set();
 
-  for (const item of itemsByDni) {
-    const id = item?.id;
-    if (!id || seen.has(String(id))) continue;
-    seen.add(String(id));
-    uniqueById.push(item);
+    for (const item of itemsByDni) {
+      const id = item?.id;
+      if (!id || seen.has(String(id))) continue;
+      seen.add(String(id));
+      uniqueById.push(item);
+    }
+
+    if (uniqueById.length === 1) return uniqueById[0];
+    if (uniqueById.length > 1) {
+      throw new ClientError(`Hay más de un empleado en Sesame con el DNI ${dni}`, 409);
+    }
   }
-
-  if (uniqueById.length === 1) return uniqueById[0];
-  if (uniqueById.length > 1) {
-    throw new ClientError(`Hay más de un empleado en Sesame con el DNI ${dni}`, 409);
-  }
-}
 
   if (user?.email) {
     const email = String(user.email).trim().toLowerCase();
@@ -282,7 +350,7 @@ const ensureSesameEmployeeForUser = async (userId, options = {}) => {
   if (user.userIdSesame) existingSesame = await sesameService.getEmployeeById(user.userIdSesame).catch(() => null);
 
   if (!existingSesame) existingSesame = await findSesameEmployeeByUser(user);
-  
+
   const payload = { ...buildSesameEmployeeFromUser(user), ...(status ? { status } : {}) };
 
   if (existingSesame) {
@@ -375,66 +443,6 @@ const syncSesameEmployeeForUser = async (userId, options = {}) => {
   return { action: "skip-status", status: user.employmentStatus };
 };
 
-const createSesameOfficeFromDispositive = async (dispositiveId) => {
-  const dispositive = await getDispositiveForSesame(dispositiveId);
-  if (!dispositive.name) throw new ClientError("El dispositivo no tiene nombre", 400);
-  return sesameService.createOffice(buildSesameOfficeFromDispositive(dispositive));
-};
-
-const createSesameOfficeFromDispositiveAndSave = async (dispositiveId) => {
-  const dispositive = await getDispositiveForSesame(dispositiveId);
-  if (dispositive.officeIdSesame) throw new ClientError("El dispositivo ya tiene una oficina enlazada en Sesame", 409);
-  if (!dispositive.name) throw new ClientError("El dispositivo no tiene nombre", 400);
-
-  const createdOffice = await sesameService.createOffice(buildSesameOfficeFromDispositive(dispositive));
-  const officeId = createdOffice?.data?.id;
-  if (!officeId) throw new ClientError("Sesame creó la oficina pero no devolvió un identificador reconocible", 500);
-
-  await Dispositive.findByIdAndUpdate(dispositiveId, { $set: { officeIdSesame: String(officeId) } });
-  return createdOffice;
-};
-
-const updateSesameOfficeFromDispositiveSaved = async (dispositiveId) => {
-  const dispositive = await getDispositiveForSesame(dispositiveId);
-  if (!dispositive.officeIdSesame) throw new ClientError("El dispositivo no tiene officeIdSesame", 400);
-  if (!dispositive.name) throw new ClientError("El dispositivo no tiene nombre", 400);
-
-  return sesameService.updateOffice(dispositive.officeIdSesame, buildSesameOfficeFromDispositive(dispositive));
-};
-
-const syncSesameOfficeFromDispositive = async (dispositiveId) => {
-  if (!dispositiveId) throw new ClientError("Falta dispositiveId", 400);
-
-  const dispositive = await Dispositive.findById(dispositiveId).lean();
-  if (!dispositive) throw new ClientError("Dispositivo no encontrado", 404);
-
-  if (dispositive.officeIdSesame) return updateSesameOfficeFromDispositiveSaved(dispositiveId);
-  return createSesameOfficeFromDispositiveAndSave(dispositiveId);
-};
-
-const deleteSesameOfficeForDispositive = async (dispositiveId, { clearField = true } = {}) => {
-  if (!dispositiveId) throw new ClientError("Falta dispositiveId", 400);
-
-  const dispositive = await Dispositive.findById(dispositiveId).lean();
-  if (!dispositive) throw new ClientError("Dispositivo no encontrado", 404);
-  if (!dispositive.officeIdSesame) return { action: "not-found" };
-
-  const deleted = await sesameService.deleteOffice(dispositive.officeIdSesame);
-  if (clearField) await Dispositive.updateOne({ _id: dispositiveId }, { $set: { officeIdSesame: null } });
-
-  return { action: "deleted", officeIdSesame: String(dispositive.officeIdSesame), data: deleted };
-};
-
-const syncSesameOfficeForDispositive = async (dispositiveId) => {
-  if (!dispositiveId) throw new ClientError("Falta dispositiveId", 400);
-
-  const dispositive = await Dispositive.findById(dispositiveId).lean();
-  if (!dispositive) throw new ClientError("Dispositivo no encontrado", 404);
-
-  if (dispositive.active === false) return deleteSesameOfficeForDispositive(dispositiveId);
-  return syncSesameOfficeFromDispositive(dispositiveId);
-};
-
 const getSesameEmployeeContext = async (employeeId) => {
   if (!employeeId) return null;
 
@@ -442,7 +450,13 @@ const getSesameEmployeeContext = async (employeeId) => {
   const employee = employeeResponse?.data || null;
   if (!employee) return null;
 
-  const [officeAssignationsResponse, departmentAssignationsResponse, absencesManagersResponse, checksManagersResponse, roleAssignationsResponse] = await Promise.all([
+  const [
+    officeAssignationsResponse,
+    departmentAssignationsResponse,
+    absencesManagersResponse,
+    checksManagersResponse,
+    roleAssignationsResponse,
+  ] = await Promise.all([
     sesameService.getEmployeeOfficeAssignations({ employeeId, limit: 20, page: 1 }),
     sesameService.getDepartmentEmployees({ employeeId, limit: 50, page: 1 }),
     sesameService.getEmployeeManagers({ employeeId, permission: "absencesManagement", limit: 20, page: 1 }),
@@ -460,20 +474,82 @@ const getSesameEmployeeContext = async (employeeId) => {
 
   const officeRoleAssignations = roleAssignations.filter((x) => x?.affectedEntityType === "office");
   const departmentRoleAssignations = roleAssignations.filter((x) => x?.affectedEntityType === "department");
-  const managedOfficeRoleAssignations = officeRoleAssignations.filter((x) => x?.role?.name === "Workplace administrator");
-  const managedDepartmentRoleAssignations = departmentRoleAssignations.filter((x) => String(x?.role?.name || "").toLowerCase().includes("department"));
 
-  const managedOfficeIds = [...new Set(managedOfficeRoleAssignations.map((x) => x?.affectedEntityId).filter(Boolean))];
-  const managedDepartmentIds = [...new Set(managedDepartmentRoleAssignations.map((x) => x?.affectedEntityId).filter(Boolean))];
+  const managedOfficeRoleAssignations = officeRoleAssignations.filter(
+    (x) => x?.role?.name === "Workplace administrator"
+  );
 
-  const managedDepartmentResponsibilities = managedDepartmentIds.length ? await SesameResponsibility.find({ active: true, responsibilityType: "department_manager", entityType: "department", entityIdSesame: { $in: managedDepartmentIds } }).select("entityIdSesame entityName").lean() : [];
-  
+  const managedDepartmentRoleAssignations = departmentRoleAssignations.filter((x) =>
+    String(x?.role?.name || "").toLowerCase().includes("department")
+  );
+
+  const managedOfficeIds = [
+    ...new Set(managedOfficeRoleAssignations.map((x) => x?.affectedEntityId).filter(Boolean)),
+  ];
+
+  const managedDepartmentIds = [
+    ...new Set(managedDepartmentRoleAssignations.map((x) => x?.affectedEntityId).filter(Boolean)),
+  ];
+
+  const managedWorkplaces = managedOfficeIds.length
+    ? await Workplace.find({ officeIdSesame: { $in: managedOfficeIds.map(String) } })
+      .select("_id name address phone province officeIdSesame resolvedAddress")
+      .populate("province", "name")
+      .lean()
+    : [];
+
+  const workplaceByOfficeId = {};
+
+  managedWorkplaces.forEach((workplace) => {
+    if (workplace?.officeIdSesame) {
+      workplaceByOfficeId[String(workplace.officeIdSesame)] = workplace;
+    }
+  });
+
+  const workplaceIds = managedWorkplaces.map((x) => x._id).filter(Boolean);
+
+  const linkedDispositives = workplaceIds.length
+    ? await Dispositive.find({ workplaces: { $in: workplaceIds } })
+      .select("_id name program province workplaces active")
+      .populate("program", "name acronym")
+      .populate("province", "name")
+      .sort({ name: 1 })
+      .lean()
+    : [];
+
+  const dispositivesByWorkplaceId = {};
+
+  linkedDispositives.forEach((device) => {
+    (device.workplaces || []).forEach((workplaceId) => {
+      const key = String(workplaceId);
+      if (!dispositivesByWorkplaceId[key]) dispositivesByWorkplaceId[key] = [];
+      dispositivesByWorkplaceId[key].push(device);
+    });
+  });
+
+  const managedDepartmentResponsibilities = managedDepartmentIds.length
+    ? await SesameResponsibility.find({
+      active: true,
+      responsibilityType: "department_manager",
+      entityType: "department",
+      entityIdSesame: { $in: managedDepartmentIds },
+    })
+      .select("entityIdSesame entityName")
+      .lean()
+    : [];
+
   const departmentNameById = {};
-  managedDepartmentResponsibilities.forEach((item) => { if (item?.entityIdSesame && item?.entityName) departmentNameById[String(item.entityIdSesame)] = item.entityName; });
+
+  managedDepartmentResponsibilities.forEach((item) => {
+    if (item?.entityIdSesame && item?.entityName) {
+      departmentNameById[String(item.entityIdSesame)] = item.entityName;
+    }
+  });
 
   const mapOffice = (assignation) => {
     const office = assignation?.office || null;
     if (!office) return null;
+
     return {
       id: office.id || null,
       name: office.name || "",
@@ -492,6 +568,7 @@ const getSesameEmployeeContext = async (employeeId) => {
   const mapDepartment = (assignation) => {
     const department = assignation?.department || null;
     if (!department) return null;
+
     return {
       id: department.id || assignation?.departmentId || null,
       name: department.name || "",
@@ -505,6 +582,7 @@ const getSesameEmployeeContext = async (employeeId) => {
   const mapManager = (item) => {
     const manager = item?.manager || null;
     if (!manager) return null;
+
     return {
       id: manager.id || null,
       firstName: manager.firstName || "",
@@ -519,22 +597,63 @@ const getSesameEmployeeContext = async (employeeId) => {
     };
   };
 
-  const mapRole = (item) => item ? {
-    id: item.id || null,
-    affectedEntityId: item.affectedEntityId || null,
-    affectedEntityType: item.affectedEntityType || "",
-    role: { id: item?.role?.id || null, name: item?.role?.name || "" },
-    raw: item,
-  } : null;
+  const mapRole = (item) =>
+    item
+      ? {
+        id: item.id || null,
+        affectedEntityId: item.affectedEntityId || null,
+        affectedEntityType: item.affectedEntityType || "",
+        role: {
+          id: item?.role?.id || null,
+          name: item?.role?.name || "",
+        },
+        raw: item,
+      }
+      : null;
 
-  const mapDepartmentRole = (item) => item ? {
-    id: item.id || null,
-    affectedEntityId: item.affectedEntityId || null,
-    affectedEntityType: item.affectedEntityType || "",
-    entityName: item?.entityName || item?.department?.name || "",
-    role: { id: item?.role?.id || null, name: item?.role?.name || "" },
-    raw: item,
-  } : null;
+  const mapOfficeRole = (item) => {
+    const base = mapRole(item);
+    if (!base) return null;
+
+    const officeId = String(item?.affectedEntityId || "");
+    const workplace = workplaceByOfficeId[officeId] || null;
+    const linked = workplace?._id
+      ? dispositivesByWorkplaceId[String(workplace._id)] || []
+      : [];
+
+    return {
+      ...base,
+      entityName: workplace?.name || item?.entityName || item?.office?.name || officeId,
+      workplaceId: workplace?._id || null,
+      workplaceName: workplace?.name || "",
+      workplaceAddress: workplace?.address || "",
+      workplacePhone: workplace?.phone || "",
+      workplaceProvince: workplace?.province || null,
+      workplaceResolvedAddress: workplace?.resolvedAddress || null,
+      linkedDispositives: linked.map((device) => ({
+        _id: device._id,
+        name: device.name || "",
+        active: device.active !== false,
+        program: device.program || null,
+        province: device.province || null,
+      })),
+    };
+  };
+
+  const mapDepartmentRole = (item) =>
+    item
+      ? {
+        id: item.id || null,
+        affectedEntityId: item.affectedEntityId || null,
+        affectedEntityType: item.affectedEntityType || "",
+        entityName: item?.entityName || item?.department?.name || "",
+        role: {
+          id: item?.role?.id || null,
+          name: item?.role?.name || "",
+        },
+        raw: item,
+      }
+      : null;
 
   return {
     employee: {
@@ -562,12 +681,17 @@ const getSesameEmployeeContext = async (employeeId) => {
       }),
       offices: officeRoleAssignations.map(mapRole).filter(Boolean),
       departments: departmentRoleAssignations.map(mapDepartmentRole).filter(Boolean),
-      managedOffices: managedOfficeRoleAssignations.map(mapRole).filter(Boolean),
+      managedOffices: managedOfficeRoleAssignations.map(mapOfficeRole).filter(Boolean),
       managedOfficeIds,
-      managedDepartments: managedDepartmentRoleAssignations.map((item) => ({
-        ...mapDepartmentRole(item),
-        entityName: departmentNameById[String(item?.affectedEntityId)] || item?.department?.name || "",
-      })).filter(Boolean),
+      managedDepartments: managedDepartmentRoleAssignations
+        .map((item) => ({
+          ...mapDepartmentRole(item),
+          entityName:
+            departmentNameById[String(item?.affectedEntityId)] ||
+            item?.department?.name ||
+            "",
+        }))
+        .filter(Boolean),
       managedDepartmentIds,
     },
   };
@@ -632,7 +756,7 @@ const postSesameAssignEmployeeOffice = async (req, res) => {
   const { employeeId, officeId, isMainOffice } = req.body;
   if (!employeeId || !officeId) throw new ClientError("employeeId y officeId son obligatorios", 400);
 
-  
+
   response(res, 200, await assignEmployeeToScope({ scopeType: "office", scopeId: officeId, userId: employeeId, isMainOffice }));
 };
 
@@ -641,7 +765,110 @@ const postSesameDeleteEmployeeOfficeAssignation = async (req, res) => {
   if (!employeeId || !officeId) throw new ClientError("employeeId y officeId son obligatorios", 400);
 
   const { employeeIdSesame } = await getSesameEmployeeIdFromLocalUser(employeeId, "Usuario");
-  response(res, 200, await sesameService.deleteEmployeeOfficeAssignation({ employeeId: employeeIdSesame, officeId }));
+
+  const workplace = await Workplace.findOne({ officeIdSesame: String(officeId) })
+    .select("_id name officeIdSesame")
+    .lean();
+
+  const relatedDispositives = workplace?._id
+    ? await Dispositive.find({
+      workplaces: workplace._id,
+      departamentSesame: { $exists: true, $nin: [null, ""] },
+    })
+      .select("_id name departamentSesame workplaces")
+      .populate({
+        path: "workplaces",
+        select: "_id name active officeIdSesame",
+      })
+      .lean()
+    : [];
+
+  const currentOfficeAssignationsRes = await sesameService.getEmployeeOfficeAssignations({
+    employeeId: employeeIdSesame,
+    limit: 200,
+    page: 1,
+  });
+
+  const currentOfficeAssignations = currentOfficeAssignationsRes?.data || [];
+
+  const remainingOfficeIds = new Set(
+    currentOfficeAssignations
+      .map((item) => item?.office?.id || item?.officeId || null)
+      .filter(Boolean)
+      .map(String)
+      .filter((id) => id !== String(officeId))
+  );
+
+  const officeResult = await sesameService.deleteEmployeeOfficeAssignation({
+    employeeId: employeeIdSesame,
+    officeId,
+  });
+
+  const removedDepartments = [];
+  const keptDepartments = [];
+
+  for (const dispositive of relatedDispositives) {
+    const departmentId = String(dispositive.departamentSesame || "");
+    if (!departmentId) continue;
+
+    const dispositiveOfficeIds = (dispositive.workplaces || [])
+      .filter((workplace) => workplace?.active !== false)
+      .map((workplace) => workplace?.officeIdSesame)
+      .filter(Boolean)
+      .map(String);
+
+    const stillHasOfficeForThisDispositive = dispositiveOfficeIds.some((id) =>
+      remainingOfficeIds.has(id)
+    );
+
+    if (stillHasOfficeForThisDispositive) {
+      keptDepartments.push({
+        dispositiveId: String(dispositive._id),
+        dispositiveName: dispositive.name || "",
+        departmentId,
+        reason: "El empleado conserva otra oficina vinculada al mismo dispositivo",
+      });
+      continue;
+    }
+
+    const currentDepartmentAssignationsRes = await sesameService.getDepartmentEmployees({
+      employeeId: employeeIdSesame,
+      departmentId,
+      limit: 50,
+      page: 1,
+    });
+
+    const currentDepartmentAssignations = currentDepartmentAssignationsRes?.data || [];
+    if (!currentDepartmentAssignations.length) continue;
+
+    await sesameService.deleteEmployeeDepartmentAssignation({
+      employeeId: employeeIdSesame,
+      departmentId,
+    });
+
+    removedDepartments.push({
+      dispositiveId: String(dispositive._id),
+      dispositiveName: dispositive.name || "",
+      departmentId,
+    });
+  }
+
+  response(res, 200, {
+    ok: true,
+    employeeId,
+    employeeIdSesame,
+    officeId,
+    workplace: workplace
+      ? {
+        workplaceId: String(workplace._id),
+        workplaceName: workplace.name || "",
+        officeIdSesame: workplace.officeIdSesame || null,
+      }
+      : null,
+    officeResult,
+    removedDepartments,
+    keptDepartments,
+  });
 };
 
 const postSesameAssignOfficeEmployee = async (req, res) => {
@@ -698,6 +925,7 @@ const removeAllEmployeesFromDepartment = async ({ departmentId }) => {
 
 const postSesameDeleteDepartmentEmployee = async (req, res) => {
   const { departmentId, userId } = req.body || {};
+
   response(res, 200, await deleteEmployeeFromScope({ scopeType: "department", scopeId: departmentId, userId }));
 };
 
@@ -813,31 +1041,6 @@ const postSesameEligibleManagersByEmployee = async (req, res) => {
   response(res, 200, { users });
 };
 
-const ensureSesameDepartmentForUser = async (userId) => {
-  const user = await User.findById(userId);
-  if (!user) throw new ClientError("Usuario no encontrado", 404);
-  if (!user.userIdSesame) throw new ClientError("El usuario no está dado de alta en Sesame", 400);
-
-  const name = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
-  if (!name) throw new ClientError("El usuario no tiene nombre suficiente para crear el departamento", 400);
-
-  const res = await sesameService.listDepartments({ name, limit: 100, page: 1 });
-  const items = res?.data || [];
-  const existingDepartment = items.find((item) => String(item?.name || "").trim().toLowerCase() === name.toLowerCase()) || null;
-
-  if (existingDepartment) {
-    const departmentId = existingDepartment?.id;
-    if (!departmentId) throw new ClientError("Se encontró un departamento existente pero sin id reconocible", 500);
-    return { user, departmentId: String(departmentId), created: existingDepartment, reused: true };
-  }
-
-  const created = await sesameService.createDepartment({ companyId: SESAME_COMPANY_ID, name });
-  const departmentId = created?.id;
-  if (!departmentId) throw new ClientError("Sesame creó el departamento pero no devolvió id", 500);
-
-  return { user, departmentId: String(departmentId), created, reused: false };
-};
-
 const findDepartmentAdminRoleAssignation = async ({ userId, departmentId }) => {
   if (!userId) throw new ClientError("Falta userId", 400);
   if (!departmentId) throw new ClientError("Falta departmentId", 400);
@@ -857,65 +1060,55 @@ const assignDepartmentAdminRoleToUser = async ({ userId, departmentId }) => {
   return sesameService.assignRoleToEmployee({ roleId: SESAME_ROLE_IDS.DEPARTMENT_ADMIN, employeeId: employeeIdSesame, entityAffectedId: departmentId });
 };
 
-const ensureDepartmentAdminRoleToUser = async ({ userId, departmentId }) => {
-  const existingRoleAssignation = await findDepartmentAdminRoleAssignation({ userId, departmentId });
-  if (existingRoleAssignation?.id) return { reused: true, roleAssignation: existingRoleAssignation };
-
-  const createdRoleAssignation = await assignDepartmentAdminRoleToUser({ userId, departmentId });
-  return { reused: false, roleAssignation: createdRoleAssignation };
-};
 
 const createSesameDepartmentForUser = async (userId) => {
   const user = await User.findById(userId);
   if (!user) throw new ClientError("Usuario no encontrado", 404);
   if (!user.userIdSesame) throw new ClientError("El usuario no está dado de alta en Sesame", 400);
 
-  const name = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
-  if (!name) throw new ClientError("El usuario no tiene nombre suficiente para crear el departamento", 400);
+  const departmentName = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
+  if (!departmentName) throw new ClientError("El usuario no tiene nombre suficiente para crear el departamento", 400);
 
-  const created = await sesameService.createDepartment({ companyId: SESAME_COMPANY_ID, name });
-  const departmentId = created?.data?.id;
+  const created = await sesameService.createDepartment({
+    companyId: SESAME_COMPANY_ID,
+    name: departmentName,
+  });
+
+  const departmentId = created?.data?.id || created?.id;
   if (!departmentId) throw new ClientError("Sesame creó el departamento pero no devolvió id", 500);
 
-  return { user, departmentId: String(departmentId), created };
+  return {
+    user,
+    departmentId: String(departmentId),
+    departmentName,
+    created,
+  };
 };
 
-const moveAllEmployeesBetweenDepartments = async ({ fromDepartmentId, toDepartmentId }) => {
-  if (!fromDepartmentId) throw new ClientError("Falta fromDepartmentId", 400);
-  if (!toDepartmentId) throw new ClientError("Falta toDepartmentId", 400);
 
-  const currentEmployees = await listEmployeesByScope({ scopeType: "department", scopeId: fromDepartmentId, limit: 500, page: 1 });
-  const moved = [];
-  const errors = [];
-
-  for (const employee of currentEmployees) {
-    try {
-      if (!employee?.employeeId) continue;
-      await sesameService.assignEmployeeDepartment({ employeeId: employee.employeeId, departmentId: toDepartmentId });
-      await sesameService.deleteEmployeeDepartmentAssignation({ employeeId: employee.employeeId, departmentId: fromDepartmentId });
-      moved.push({ employeeIdSesame: employee.employeeId, fullName: employee.fullName || "", email: employee.email || "" });
-    } catch (error) {
-      errors.push({ employeeIdSesame: employee?.employeeId || null, fullName: employee?.fullName || "", message: error.message || "Error moviendo empleado" });
-    }
-  }
-
-  return { moved, errors, totalMoved: moved.length, totalErrors: errors.length };
-};
 
 const postSesameCreateDepartmentForUser = async (req, res) => {
   const { userId } = req.body || {};
   if (!userId) throw new ClientError("Falta userId", 400);
 
-  const { user, departmentId, created } = await createSesameDepartmentForUser(userId);
+  const { departmentId, departmentName, created } = await createSesameDepartmentForUser(userId);
 
-  const roleAssignation = await assignDepartmentAdminRoleToUser({ userId, departmentId });
+  const roleAssignation = await assignDepartmentAdminRoleToUser({
+    userId,
+    departmentId,
+  });
 
-  await upsertDepartmentManagerResponsibility({ userId, departmentIdSesame: departmentId, roleAssignation });
+  await upsertDepartmentManagerResponsibility({
+    userId,
+    departmentIdSesame: departmentId,
+    departmentName,
+    roleAssignation,
+  });
 
   response(res, 200, {
     ok: true,
     departmentId,
-    departmentName: [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim(),
+    departmentName,
     department: created,
     roleAssignation,
   });
@@ -941,57 +1134,6 @@ const postSesameDeleteDepartment = async (req, res) => {
   response(res, 200, { ok: true, departmentId, cleanupResult, deleted });
 };
 
-const postSesameTransferDepartment = async (req, res) => {
-  const { fromDepartmentId, fromUserId = null, toUserId, deleteOldDepartment = false } = req.body || {};
-  if (!fromDepartmentId) throw new ClientError("Falta fromDepartmentId", 400);
-  if (!toUserId) throw new ClientError("Falta toUserId", 400);
-
-  const { user: newUser, departmentId: newDepartmentId, created, reused } = await ensureSesameDepartmentForUser(toUserId);
-  if (String(newDepartmentId) === String(fromDepartmentId)) throw new ClientError("El departamento de destino coincide con el de origen", 409);
-
-  const { reused: reusedRoleAssignation, roleAssignation: newRoleAssignation } = await ensureDepartmentAdminRoleToUser({ userId: toUserId, departmentId: newDepartmentId });
-
-  await upsertDepartmentManagerResponsibility({ userId: toUserId, departmentIdSesame: newDepartmentId, roleAssignation: newRoleAssignation });
-
-  const moveResult = await moveAllEmployeesBetweenDepartments({ fromDepartmentId, toDepartmentId: newDepartmentId });
-
-  let oldRoleRemoved = false;
-  if (fromUserId) {
-    const oldRoleAssignation = await findDepartmentAdminRoleAssignation({ userId: fromUserId, departmentId: fromDepartmentId });
-
-    if (oldRoleAssignation?.id) {
-      await sesameService.unassignRoleFromEmployee({ assignationId: oldRoleAssignation.id });
-      await removeDepartmentManagerResponsibility({ assignationId: oldRoleAssignation.id, userId: fromUserId, departmentIdSesame: fromDepartmentId });
-      oldRoleRemoved = true;
-    }
-  }
-
-  let oldDepartmentDeleted = false;
-  let oldDepartmentCleanup = null;
-
-  if (deleteOldDepartment) {
-    oldDepartmentCleanup = await removeAllEmployeesFromDepartment({ departmentId: fromDepartmentId });
-    if (oldDepartmentCleanup.totalErrors > 0) throw new ClientError("No se pudo vaciar completamente el departamento antiguo antes de eliminarlo", 409);
-
-    await sesameService.deleteDepartment(fromDepartmentId);
-    oldDepartmentDeleted = true;
-  }
-
-  response(res, 200, {
-    ok: true,
-    fromDepartmentId,
-    newDepartmentId,
-    newDepartmentName: [newUser?.firstName, newUser?.lastName].filter(Boolean).join(" ").trim(),
-    newDepartment: created,
-    reusedDepartment: reused,
-    reusedRoleAssignation,
-    newRoleAssignation,
-    oldRoleRemoved,
-    oldDepartmentDeleted,
-    oldDepartmentCleanup,
-    moveResult,
-  });
-};
 const postSesameToggleEmployeeForUser = async (req, res) => {
   const { userId } = req.body || {};
   if (!userId) throw new ClientError("Falta userId", 400);
@@ -1008,17 +1150,17 @@ const postSesameToggleEmployeeForUser = async (req, res) => {
 
   if (!existingSesame) existingSesame = await findSesameEmployeeByUser(user);
 
-if (!existingSesame) {
-  const created = await ensureSesameEmployeeForUser(userId, { status: "active" });
+  if (!existingSesame) {
+    const created = await ensureSesameEmployeeForUser(userId, { status: "active" });
 
-  if (!created?.sesameId) {
-    response(res, 200, { ok: false, action: created?.action || "not-created", sesameId: null, data: created });
+    if (!created?.sesameId) {
+      response(res, 200, { ok: false, action: created?.action || "not-created", sesameId: null, data: created });
+      return;
+    }
+
+    response(res, 200, { ok: true, action: created?.action || "created", sesameId: created.sesameId, data: created });
     return;
   }
-
-  response(res, 200, { ok: true, action: created?.action || "created", sesameId: created.sesameId, data: created });
-  return;
-}
 
   const sesameId = existingSesame?.id;
   if (!sesameId) throw new ClientError("No se encontró el id del empleado en Sesame", 500);
@@ -1062,10 +1204,18 @@ const upsertOfficeManagerResponsibility = async ({ userId, officeIdSesame, roleA
   if (!user) throw new ClientError("Usuario no encontrado", 404);
   if (!user.userIdSesame) throw new ClientError("Usuario sin userIdSesame", 400);
 
-  const [employeeResponse, dispositive] = await Promise.all([
+  const [employeeResponse, workplace] = await Promise.all([
     sesameService.getEmployeeById(String(user.userIdSesame)),
-    Dispositive.findOne({ officeIdSesame: String(officeIdSesame) }).select("_id name program officeIdSesame").lean(),
+    Workplace.findOne({ officeIdSesame: String(officeIdSesame) })
+      .select("_id name officeIdSesame")
+      .lean(),
   ]);
+
+  const dispositive = workplace?._id
+    ? await Dispositive.findOne({ workplaces: workplace._id })
+      .select("_id name program")
+      .lean()
+    : null;
 
   const employee = employeeResponse?.data || null;
   const roleIdSesame = roleAssignation?.role?.id || SESAME_ROLE_IDS.WORKPLACE_ADMIN;
@@ -1087,7 +1237,8 @@ const upsertOfficeManagerResponsibility = async ({ userId, officeIdSesame, roleA
         roleName: String(roleName || ""),
         entityType: "office",
         entityIdSesame: String(officeIdSesame),
-        entityName: dispositive?.name || "",
+        entityName: workplace?.name || "",
+        workplaceId: workplace?._id || null,
         dispositiveId: dispositive?._id || null,
         programId: dispositive?.program || null,
         departmentExternalKey: null,
@@ -1110,9 +1261,17 @@ const removeOfficeManagerResponsibility = async ({ assignationId = null, userId 
   await SesameResponsibility.deleteMany(query);
 };
 
-const upsertDepartmentManagerResponsibility = async ({ userId, departmentIdSesame, roleAssignation = null }) => {
+const upsertDepartmentManagerResponsibility = async ({
+  userId,
+  departmentIdSesame,
+  departmentName,
+  roleAssignation = null,
+}) => {
   if (!userId) throw new ClientError("Falta userId", 400);
   if (!departmentIdSesame) throw new ClientError("Falta departmentIdSesame", 400);
+
+  const entityName = String(departmentName || "").trim();
+  if (!entityName) throw new ClientError("Falta el nombre del departamento para guardar la responsabilidad", 400);
 
   const user = await User.findById(userId).select("_id userIdSesame email firstName lastName").lean();
   if (!user) throw new ClientError("Usuario no encontrado", 404);
@@ -1125,17 +1284,12 @@ const upsertDepartmentManagerResponsibility = async ({ userId, departmentIdSesam
   const roleName = roleAssignation?.role?.name || "Department administrator";
   const roleAssignationIdSesame = roleAssignation?.id || null;
 
-  let entityName = String(roleAssignation?.department?.name || "").trim();
-
-  if (!entityName) {
-    const departmentsRes = await sesameService.listDepartments({ limit: 100, page: 1 });
-    const departments = departmentsRes?.data || [];
-    const department = departments.find((item) => String(item?.id || "") === String(departmentIdSesame));
-    entityName = String(department?.name || "").trim();
-  }
-
   await SesameResponsibility.updateOne(
-    { userId: user._id, responsibilityType: "department_manager", entityIdSesame: String(departmentIdSesame) },
+    {
+      userId: user._id,
+      responsibilityType: "department_manager",
+      entityIdSesame: String(departmentIdSesame),
+    },
     {
       $set: {
         userId: user._id,
@@ -1143,16 +1297,21 @@ const upsertDepartmentManagerResponsibility = async ({ userId, departmentIdSesam
         employeeCodeSesame: Number.isFinite(Number(employee?.code)) ? Number(employee.code) : null,
         employeeName: [employee?.firstName, employee?.lastName].filter(Boolean).join(" ").trim() || `${user.firstName || ""} ${user.lastName || ""}`.trim(),
         employeeEmail: String(employee?.email || user?.email || "").trim().toLowerCase(),
+
         responsibilityType: "department_manager",
+
         roleAssignationIdSesame,
         roleIdSesame: String(roleIdSesame || ""),
         roleName: String(roleName || ""),
+
         entityType: "department",
         entityIdSesame: String(departmentIdSesame),
         entityName,
+
         dispositiveId: null,
         programId: null,
         departmentExternalKey: String(departmentIdSesame),
+
         active: true,
         syncedAt: new Date(),
         raw: roleAssignation || null,
@@ -1233,6 +1392,651 @@ const postSesameGetOfficeManagers = async (req, res) => {
   response(res, 200, normalizedManagers);
 };
 
+// ===================== SESAME OFFICES / WORKPLACES =====================
+
+
+/**
+ * Obtiene un centro de trabajo y sus dispositivos vinculados para sincronizar con Sesame.
+ */
+const getWorkplaceForSesame = async (workplaceId) => {
+  if (!workplaceId) throw new ClientError("Falta workplaceId", 400);
+
+  const workplace = await Workplace.findById(workplaceId).populate("province", "name");
+  if (!workplace) throw new ClientError("Centro de trabajo no encontrado", 404);
+
+  const linkedDispositives = await Dispositive.find({ workplaces: workplace._id })
+    .select("_id name email phone program")
+    .populate("program", "name acronym")
+    .lean();
+
+  return { workplace, linkedDispositives };
+};
+
+/**
+ * Crea una oficina en Sesame desde un centro de trabajo, sin guardar el id.
+ */
+const createSesameOfficeFromWorkplace = async (workplaceId) => {
+  const { workplace, linkedDispositives } = await getWorkplaceForSesame(workplaceId);
+
+  if (!workplace.name) throw new ClientError("El centro de trabajo no tiene nombre", 400);
+  if (!workplace.address) throw new ClientError("El centro de trabajo no tiene dirección", 400);
+
+  return sesameService.createOffice(buildSesameOfficeFromWorkplace(workplace, linkedDispositives));
+};
+
+/**
+ * Crea una oficina en Sesame desde un centro de trabajo y guarda officeIdSesame.
+ */
+const createSesameOfficeFromWorkplaceAndSave = async (workplaceId) => {
+  const { workplace, linkedDispositives } = await getWorkplaceForSesame(workplaceId);
+
+  if (workplace.officeIdSesame) throw new ClientError("El centro de trabajo ya tiene una oficina enlazada en Sesame", 409);
+  if (!workplace.name) throw new ClientError("El centro de trabajo no tiene nombre", 400);
+  if (!workplace.address) throw new ClientError("El centro de trabajo no tiene dirección", 400);
+
+  const createdOffice = await sesameService.createOffice(buildSesameOfficeFromWorkplace(workplace, linkedDispositives));
+  const officeId = createdOffice?.data?.id || createdOffice?.id;
+
+  if (!officeId) throw new ClientError("Sesame creó la oficina pero no devolvió un identificador reconocible", 500);
+
+  await Workplace.findByIdAndUpdate(workplaceId, { $set: { officeIdSesame: String(officeId) } });
+
+  return createdOffice;
+};
+
+/**
+ * Actualiza en Sesame una oficina ya enlazada a un centro de trabajo.
+ */
+const updateSesameOfficeFromWorkplaceSaved = async (workplaceId) => {
+  const { workplace, linkedDispositives } = await getWorkplaceForSesame(workplaceId);
+
+  if (!workplace.officeIdSesame) throw new ClientError("El centro de trabajo no tiene officeIdSesame", 400);
+  if (!workplace.name) throw new ClientError("El centro de trabajo no tiene nombre", 400);
+
+  const payload = buildSesameOfficeFromWorkplace(workplace, linkedDispositives);
+
+
+  const updated = await sesameService.updateOffice(workplace.officeIdSesame, payload);
+
+  const checked = await sesameService.getOfficeById(workplace.officeIdSesame);
+
+
+
+  return updated;
+};
+
+/**
+ * Crea o actualiza la oficina Sesame de un centro de trabajo.
+ */
+const syncSesameOfficeFromWorkplace = async (workplaceId) => {
+  if (!workplaceId) throw new ClientError("Falta workplaceId", 400);
+
+  const workplace = await Workplace.findById(workplaceId).lean();
+  if (!workplace) throw new ClientError("Centro de trabajo no encontrado", 404);
+
+  if (workplace.officeIdSesame) return updateSesameOfficeFromWorkplaceSaved(workplaceId);
+  return createSesameOfficeFromWorkplaceAndSave(workplaceId);
+};
+
+/**
+ * Elimina en Sesame la oficina enlazada a un centro de trabajo.
+ */
+const deleteSesameOfficeForWorkplace = async (workplaceId, { clearField = true } = {}) => {
+  if (!workplaceId) throw new ClientError("Falta workplaceId", 400);
+
+  const workplace = await Workplace.findById(workplaceId).lean();
+  if (!workplace) throw new ClientError("Centro de trabajo no encontrado", 404);
+  if (!workplace.officeIdSesame) return { action: "not-found" };
+
+  const deleted = await sesameService.deleteOffice(workplace.officeIdSesame);
+
+  if (clearField) {
+    await Workplace.updateOne(
+      { _id: workplaceId },
+      { $set: { officeIdSesame: null } }
+    );
+  }
+
+  return {
+    action: "deleted",
+    officeIdSesame: String(workplace.officeIdSesame),
+    data: deleted,
+  };
+};
+
+/**
+ * Sincroniza la oficina Sesame de un centro según su estado activo.
+ */
+const syncSesameOfficeForWorkplace = async (workplaceId) => {
+  if (!workplaceId) throw new ClientError("Falta workplaceId", 400);
+
+  const workplace = await Workplace.findById(workplaceId).lean();
+  if (!workplace) throw new ClientError("Centro de trabajo no encontrado", 404);
+
+  if (workplace.active === false) return deleteSesameOfficeForWorkplace(workplaceId);
+  return syncSesameOfficeFromWorkplace(workplaceId);
+};
+
+
+
+
+const assignDispositiveDepartmentAdminToUser = async ({ userId, dispositiveId }) => {
+  if (!userId) throw new ClientError("Falta userId", 400);
+  if (!dispositiveId) throw new ClientError("Falta dispositiveId", 400);
+
+  const dispositive = await Dispositive.findById(dispositiveId)
+    .select("_id name departamentSesame program")
+    .lean();
+
+  if (!dispositive) throw new ClientError("Dispositivo no encontrado", 404);
+  if (!dispositive.departamentSesame) throw new ClientError("El dispositivo no tiene departamento Sesame asociado", 400);
+
+  const departmentId = String(dispositive.departamentSesame);
+  const departmentName = String(dispositive.name || "").trim();
+
+  if (!departmentName) throw new ClientError("El dispositivo no tiene nombre", 400);
+
+  const existingRoleAssignation = await findDepartmentAdminRoleAssignation({
+    userId,
+    departmentId,
+  });
+
+  const roleAssignation = existingRoleAssignation?.id
+    ? existingRoleAssignation
+    : await assignDepartmentAdminRoleToUser({ userId, departmentId });
+
+  await upsertDepartmentManagerResponsibility({
+    userId,
+    departmentIdSesame: departmentId,
+    departmentName,
+    roleAssignation,
+  });
+
+  await SesameResponsibility.updateOne(
+    {
+      userId,
+      responsibilityType: "department_manager",
+      entityIdSesame: departmentId,
+    },
+    {
+      $set: {
+        dispositiveId: dispositive._id,
+        programId: dispositive.program || null,
+      },
+    }
+  );
+
+  return {
+    action: existingRoleAssignation?.id ? "reused" : "assigned",
+    departmentId,
+    departmentName,
+    dispositiveId: String(dispositive._id),
+    roleAssignation,
+  };
+};
+
+
+const postSesameAssignDispositiveDepartmentAdminToUser = async (req, res) => {
+  const { userId, dispositiveId } = req.body || {};
+
+  const data = await assignDispositiveDepartmentAdminToUser({
+    userId,
+    dispositiveId,
+  });
+
+  response(res, 200, data);
+};
+
+const removeDepartmentAdminRoleFromUser = async ({ userId, departmentId }) => {
+  if (!userId) throw new ClientError("Falta userId", 400);
+  if (!departmentId) throw new ClientError("Falta departmentId", 400);
+
+  const roleAssignation = await findDepartmentAdminRoleAssignation({ userId, departmentId });
+
+  if (roleAssignation?.id) {
+    const data = await sesameService.unassignRoleFromEmployee({
+      assignationId: roleAssignation.id,
+    });
+
+    await removeDepartmentManagerResponsibility({
+      assignationId: roleAssignation.id,
+      userId,
+      departmentIdSesame: departmentId,
+    });
+
+    return data;
+  }
+
+  await removeDepartmentManagerResponsibility({
+    userId,
+    departmentIdSesame: departmentId,
+  });
+
+  return {
+    removedFromSesame: false,
+    cleanedLocal: true,
+    departmentId,
+  };
+};
+
+const postSesameRemoveDepartmentAdminRoleFromUser = async (req, res) => {
+  const { userId, departmentId } = req.body || {};
+
+  const data = await removeDepartmentAdminRoleFromUser({
+    userId,
+    departmentId,
+  });
+
+  response(res, 200, data);
+};
+
+const createSesameDepartmentForDispositive = async (dispositiveId) => {
+  if (!dispositiveId) throw new ClientError("Falta dispositiveId", 400);
+
+  const dispositive = await Dispositive.findById(dispositiveId)
+    .select("_id name departamentSesame program")
+    .lean();
+
+  if (!dispositive) throw new ClientError("Dispositivo no encontrado", 404);
+  if (!dispositive.name) throw new ClientError("El dispositivo no tiene nombre", 400);
+  if (dispositive.departamentSesame) return { departmentId: String(dispositive.departamentSesame), reused: true };
+
+  const created = await sesameService.createDepartment({
+    companyId: SESAME_COMPANY_ID,
+    name: dispositive.name,
+  });
+
+  const departmentId = created?.data?.id || created?.id;
+  if (!departmentId) throw new ClientError("Sesame creó el departamento pero no devolvió id", 500);
+
+  await Dispositive.updateOne(
+    { _id: dispositive._id },
+    { $set: { departamentSesame: String(departmentId) } }
+  );
+
+  return {
+    departmentId: String(departmentId),
+    reused: false,
+    data: created,
+  };
+};
+
+const updateSesameDepartmentForDispositive = async (dispositiveId) => {
+  if (!dispositiveId) throw new ClientError("Falta dispositiveId", 400);
+
+  const dispositive = await Dispositive.findById(dispositiveId)
+    .select("_id name departamentSesame program")
+    .lean();
+
+  if (!dispositive) throw new ClientError("Dispositivo no encontrado", 404);
+  if (!dispositive.name) throw new ClientError("El dispositivo no tiene nombre", 400);
+
+  if (!dispositive.departamentSesame) {
+    return createSesameDepartmentForDispositive(dispositiveId);
+  }
+
+  const departmentId = String(dispositive.departamentSesame);
+
+  const updated = await sesameService.updateDepartment(departmentId, {
+    companyId: SESAME_COMPANY_ID,
+    name: dispositive.name,
+  });
+
+  await SesameResponsibility.updateMany(
+    {
+      responsibilityType: "department_manager",
+      entityType: "department",
+      entityIdSesame: departmentId,
+    },
+    {
+      $set: {
+        entityName: dispositive.name,
+        dispositiveId: dispositive._id,
+        programId: dispositive.program || null,
+        departmentExternalKey: departmentId,
+        syncedAt: new Date(),
+      },
+    }
+  );
+
+  return {
+    departmentId,
+    data: updated,
+  };
+};
+
+const deleteSesameDepartmentForDispositive = async (dispositiveId) => {
+  if (!dispositiveId) throw new ClientError("Falta dispositiveId", 400);
+
+  const dispositive = await Dispositive.findById(dispositiveId)
+    .select("_id departamentSesame")
+    .lean();
+
+  if (!dispositive) throw new ClientError("Dispositivo no encontrado", 404);
+  if (!dispositive.departamentSesame) return null;
+
+  const departmentId = String(dispositive.departamentSesame);
+
+  const cleanupResult = await removeAllEmployeesFromDepartment({ departmentId });
+
+  if (cleanupResult.totalErrors > 0) {
+    throw new ClientError("No se pudo vaciar completamente el departamento antes de eliminarlo", 409);
+  }
+
+  const deleted = await sesameService.deleteDepartment(departmentId);
+
+  await SesameResponsibility.deleteMany({
+    responsibilityType: "department_manager",
+    entityType: "department",
+    entityIdSesame: departmentId,
+  });
+
+  await Dispositive.updateOne(
+    { _id: dispositive._id },
+    { $set: { departamentSesame: null } }
+  );
+
+  return {
+    departmentId,
+    cleanupResult,
+    data: deleted,
+  };
+};
+
+const assignEmployeeToDispositiveSesameScopes = async ({
+  userId,
+  dispositiveId,
+  workplaceId = null,
+  isMainOffice = true,
+}) => {
+  if (!userId) throw new ClientError("Falta userId", 400);
+  if (!dispositiveId) throw new ClientError("Falta dispositiveId", 400);
+
+  const employeeSync = await ensureSesameEmployeeForUser(userId, { status: "active" });
+
+  if (!employeeSync?.sesameId) {
+    throw new ClientError("No se pudo crear o activar el usuario en Sesame", 400);
+  }
+
+  const dispositive = await Dispositive.findById(dispositiveId)
+    .select("_id name departamentSesame workplaces")
+    .populate({
+      path: "workplaces",
+      select: "_id name officeIdSesame active",
+    })
+    .lean();
+
+  if (!dispositive) throw new ClientError("Dispositivo no encontrado", 404);
+
+  if (!dispositive.departamentSesame) {
+    const departmentCreated = await createSesameDepartmentForDispositive(dispositiveId);
+    dispositive.departamentSesame = departmentCreated.departmentId;
+  }
+
+  const workplacesWithOffice = (dispositive.workplaces || [])
+    .filter((item) => item?.active !== false)
+    .filter((item) => !!item?.officeIdSesame);
+
+  if (!workplacesWithOffice.length) {
+    throw new ClientError("El dispositivo no tiene ningún centro de trabajo con oficina Sesame asociada", 400);
+  }
+
+  let workplace = null;
+
+  if (workplaceId) {
+    workplace = workplacesWithOffice.find((item) => String(item._id) === String(workplaceId)) || null;
+
+    if (!workplace) {
+      throw new ClientError("El centro de trabajo seleccionado no pertenece al dispositivo o no tiene oficina Sesame", 400);
+    }
+  } else {
+    if (workplacesWithOffice.length > 1) {
+      throw new ClientError("El dispositivo tiene varias oficinas Sesame. Debes indicar workplaceId", 400);
+    }
+
+    workplace = workplacesWithOffice[0];
+  }
+
+  const officeResult = await assignEmployeeToScope({
+    scopeType: "office",
+    scopeId: String(workplace.officeIdSesame),
+    userId,
+    isMainOffice,
+  });
+
+  const departmentResult = await assignEmployeeToScope({
+    scopeType: "department",
+    scopeId: String(dispositive.departamentSesame),
+    userId,
+  });
+
+  return {
+    userId,
+    sesameId: employeeSync.sesameId,
+    employeeAction: employeeSync.action,
+    dispositiveId: String(dispositive._id),
+    dispositiveName: dispositive.name || "",
+    departmentId: String(dispositive.departamentSesame),
+    workplaceId: String(workplace._id),
+    workplaceName: workplace.name || "",
+    officeId: String(workplace.officeIdSesame),
+    departmentResult,
+    officeResult,
+  };
+};
+
+const postSesameAssignEmployeeToDispositiveScopes = async (req, res) => {
+  const { userId, dispositiveId, workplaceId = null, isMainOffice = true } = req.body || {};
+
+  const data = await assignEmployeeToDispositiveSesameScopes({
+    userId,
+    dispositiveId,
+    workplaceId,
+    isMainOffice,
+  });
+
+  response(res, 200, data);
+};
+
+const getAllSesameEmployeesLocal = async () => {
+  const employees = [];
+  const seen = new Set();
+
+  const statuses = ["active", "inactive"];
+
+  for (const status of statuses) {
+    let page = 1;
+    let lastPage = 1;
+
+    do {
+      const res = await sesameService.listEmployees({
+        status,
+        limit: 200,
+        page,
+      });
+
+      const items = res?.data || [];
+      lastPage = Number(res?.meta?.lastPage || 1);
+
+      for (const employee of items) {
+        if (!employee?.id) continue;
+
+        if (seen.has(String(employee.id))) continue;
+        seen.add(String(employee.id));
+
+        employees.push({
+          ...employee,
+          checkedStatus: status,
+        });
+      }
+
+      page++;
+    } while (page <= lastPage);
+  }
+
+  return employees;
+};
+
+const getActiveSesameEmployeesLocal = async () => {
+  const employees = [];
+  const seen = new Set();
+
+  let page = 1;
+  let lastPage = 1;
+
+  do {
+    const res = await sesameService.listEmployees({
+      status: "active",
+      limit: 200,
+      page,
+    });
+
+    const items = res?.data || [];
+    lastPage = Number(res?.meta?.lastPage || 1);
+
+    for (const employee of items) {
+      if (!employee?.id) continue;
+      if (seen.has(String(employee.id))) continue;
+
+      seen.add(String(employee.id));
+      employees.push(employee);
+    }
+
+    page++;
+  } while (page <= lastPage);
+
+  return employees;
+};
+
+
+
+const normalizeSesameName = (value = "") =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+
+const getAllSesameOfficesLocal = async () => {
+  const offices = [];
+  const seen = new Set();
+
+  let page = 1;
+  let lastPage = 1;
+
+  do {
+    const res = await sesameService.listOffices({
+      limit: 200,
+      page,
+    });
+
+    const items = res?.data || [];
+    lastPage = Number(res?.meta?.lastPage || 1);
+
+    for (const office of items) {
+      if (!office?.id) continue;
+      if (seen.has(String(office.id))) continue;
+
+      seen.add(String(office.id));
+      offices.push(office);
+    }
+
+    page++;
+  } while (page <= lastPage);
+
+  return offices;
+};
+
+
+
+
+const getAllOfficeEmployeesLocal = async (officeId) => {
+  const employees = [];
+  const seen = new Set();
+
+  let page = 1;
+  let lastPage = 1;
+
+  do {
+    const res = await sesameService.listOfficeEmployees({
+      officeId,
+      limit: 200,
+      page,
+    });
+
+    const items = res?.data || [];
+    lastPage = Number(res?.meta?.lastPage || 1);
+
+    for (const item of items) {
+      const employeeId = item?.employee?.id || null;
+      if (!employeeId) continue;
+      if (seen.has(String(employeeId))) continue;
+
+      seen.add(String(employeeId));
+      employees.push(item);
+    }
+
+    page++;
+  } while (page <= lastPage);
+
+  return employees;
+};
+
+const assignEmployeeDepartmentIfNeededLocal = async ({ employeeIdSesame, departmentId }) => {
+  const currentRes = await sesameService.getDepartmentEmployees({
+    employeeId: employeeIdSesame,
+    limit: 200,
+    page: 1,
+  });
+
+  const current = currentRes?.data || [];
+
+  const alreadyAssigned = current.some((item) => {
+    const currentDepartmentId = item?.department?.id || item?.departmentId || null;
+    return String(currentDepartmentId) === String(departmentId);
+  });
+
+  if (alreadyAssigned) {
+    return { action: "already-assigned" };
+  }
+
+  const data = await sesameService.assignEmployeeDepartment({
+    employeeId: employeeIdSesame,
+    departmentId,
+  });
+
+  return { action: "assigned", data };
+};
+
+const assignEmployeeOfficeIfNeededLocal = async ({ employeeIdSesame, officeId, isMainOffice = false }) => {
+  const currentRes = await sesameService.getEmployeeOfficeAssignations({
+    employeeId: employeeIdSesame,
+    limit: 200,
+    page: 1,
+  });
+
+  const current = currentRes?.data || [];
+
+  const existing = current.find((item) => {
+    const currentOfficeId = item?.office?.id || item?.officeId || null;
+    return String(currentOfficeId) === String(officeId);
+  });
+
+  if (existing) {
+    return { action: "already-assigned" };
+  }
+
+  const data = await sesameService.assignEmployeeOffice({
+    employeeId: employeeIdSesame,
+    officeId,
+    isMainOffice,
+  });
+
+  return { action: "assigned", data };
+};
+
+
 
 
 
@@ -1263,12 +2067,13 @@ module.exports = {
 
   postSesameCreateDepartmentForUser: catchAsync(postSesameCreateDepartmentForUser),
   postSesameDeleteDepartment: catchAsync(postSesameDeleteDepartment),
-  postSesameTransferDepartment: catchAsync(postSesameTransferDepartment),
+
 
   postSesameToggleEmployeeForUser: catchAsync(postSesameToggleEmployeeForUser),
   postSesameInviteEmployeeForUser: catchAsync(postSesameInviteEmployeeForUser),
 
   postSesameGetOfficeManagers: catchAsync(postSesameGetOfficeManagers),
+  postSesameAssignEmployeeToDispositiveScopes: catchAsync(postSesameAssignEmployeeToDispositiveScopes),
 
   ensureSesameEmployeeForUser,
   disableSesameEmployeeForUser,
@@ -1276,11 +2081,17 @@ module.exports = {
   syncSesameEmployeeForUser,
   findSesameEmployeeByUser,
 
-  createSesameOfficeFromDispositive,
-  createSesameOfficeFromDispositiveAndSave,
-  updateSesameOfficeFromDispositiveSaved,
-  syncSesameOfficeFromDispositive,
-  deleteSesameOfficeForDispositive,
-  syncSesameOfficeForDispositive,
+  createSesameOfficeFromWorkplace,
+  createSesameOfficeFromWorkplaceAndSave,
+  updateSesameOfficeFromWorkplaceSaved,
+  syncSesameOfficeFromWorkplace,
+  deleteSesameOfficeForWorkplace,
+  syncSesameOfficeForWorkplace,
 
+  createSesameDepartmentForDispositive,
+  updateSesameDepartmentForDispositive,
+  deleteSesameDepartmentForDispositive,
+
+  postSesameAssignDispositiveDepartmentAdminToUser: catchAsync(postSesameAssignDispositiveDepartmentAdminToUser),
+  postSesameRemoveDepartmentAdminRoleFromUser: catchAsync(postSesameRemoveDepartmentAdminRoleFromUser),
 };

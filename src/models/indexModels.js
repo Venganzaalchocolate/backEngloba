@@ -21,6 +21,7 @@ const SesameResponsibility=require('./sesameResponsability')
 const Entity=require('./entity');
 const UserDocumentationAudit=require('./userDocumentationAudit')
 const ScopedRoleRule=require('./scopedRoleRuleSchema')
+const Workplace = require('./workplace');
 
 module.exports = {
     User,
@@ -44,5 +45,6 @@ module.exports = {
     Entity,
     SesameResponsibility,
     UserDocumentationAudit,
-    ScopedRoleRule
+    ScopedRoleRule,
+    Workplace
 }

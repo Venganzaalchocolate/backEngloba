@@ -121,6 +121,7 @@ const sesameResponsibilitySchema = new Schema(
       type: Schema.Types.Mixed,
       default: null,
     },
+    workplaceId: { type: Schema.Types.ObjectId, ref: 'Workplace', default: null },
   },
   {
     timestamps: true,

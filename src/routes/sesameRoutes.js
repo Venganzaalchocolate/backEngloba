@@ -9,10 +9,6 @@ const {
   postSesameAssignEmployeeOffice,
   postSesameDeleteEmployeeOfficeAssignation,
   postSesameAssignEmployeeOfficeRole,
-  postSesameListEmployeeManagers,
-  postSesameAssignEmployeeManager,
-  postSesameUpdateEmployeeManager,
-  postSesameDeleteEmployeeManager,
   postSesameAssignOfficeEmployee,
   postSesameDeleteOfficeEmployee,
   postSesameAssignDepartmentEmployee,
@@ -21,10 +17,12 @@ const {
   postSesameEligibleManagersByEmployee,
   postSesameCreateDepartmentForUser,
   postSesameDeleteDepartment,
-  postSesameTransferDepartment,
   postSesameToggleEmployeeForUser,
   postSesameInviteEmployeeForUser,
   postSesameGetOfficeManagers,
+  postSesameAssignDispositiveDepartmentAdminToUser,
+  postSesameRemoveDepartmentAdminRoleFromUser,
+  postSesameAssignEmployeeToDispositiveScopes
 } = require("../controllers/indexController");
 
 const express = require("express");
@@ -61,13 +59,15 @@ router.post( "/sesameeligiblemanagersbyemployee", tokenValid, postSesameEligible
 
 router.post("/sesamedepartmentcreateforuser", tokenValid, postSesameCreateDepartmentForUser);
 router.post("/sesamedepartmentdelete", tokenValid, postSesameDeleteDepartment);
-router.post("/sesamedepartmenttransfer", tokenValid, postSesameTransferDepartment);
+
 
 router.post("/sesameemployeetoggleforuser", tokenValid, postSesameToggleEmployeeForUser);
 router.post("/sesameemployeeinviteforuser", tokenValid, postSesameInviteEmployeeForUser);
 
 router.post("/sesamegetofficemanagers", tokenValid, postSesameGetOfficeManagers);
 
-
+router.post("/assigndispositivedepartmentadmintouser", tokenValid, postSesameAssignDispositiveDepartmentAdminToUser)
+router.post("/postsesameremovedepartmentadminrolefromuser", tokenValid, postSesameRemoveDepartmentAdminRoleFromUser)
+router.post("/assignemployeetodispositivescopes", tokenValid, postSesameAssignEmployeeToDispositiveScopes);
 
 module.exports = router;

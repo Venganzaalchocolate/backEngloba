@@ -102,6 +102,7 @@ const {
   getEnumEmployers,
   deleteFileEnums,
   postSubcategory,
+  getProgramsAndDispositiveEnums
 } = require("./enumsController");
 
 // ----------------------------- EMAIL ----------------------------------------
@@ -218,6 +219,18 @@ const {
   deleteDispositive,
 } = require("./dispositiveController");
 
+// ----------------------------- WORKPLACES -----------------------------------
+const {
+  createWorkplace,
+  listWorkplaces,
+  getWorkplaceId,
+  updateWorkplace,
+  deleteWorkplace,
+  addWorkplaceToDispositive,
+  removeWorkplaceFromDispositive,
+  listDispositivesByWorkplace,
+} = require("./workplaceController");
+
 // ----------------------------- VOLUNTEER APPLICATIONS -----------------------
 const {
   volunteerGetNotLimit,
@@ -237,8 +250,8 @@ const {
 } = require("./volunteerApplicationController");
 
 // ----------------------------- SESAME ---------------------------------------
+// ----------------------------- SESAME ---------------------------------------
 const {
-
   postSesameListEmployees,
   postSesameGetEmployee,
   postSesameGetEmployeeContext,
@@ -256,11 +269,12 @@ const {
   postSesameEligibleManagersByEmployee,
   postSesameCreateDepartmentForUser,
   postSesameDeleteDepartment,
-  postSesameTransferDepartment,
+postSesameAssignDispositiveDepartmentAdminToUser,
+postSesameRemoveDepartmentAdminRoleFromUser,
   postSesameToggleEmployeeForUser,
   postSesameInviteEmployeeForUser,
   postSesameGetOfficeManagers,
-
+  postSesameAssignEmployeeToDispositiveScopes
 } = require("./sesameController");
 
 // ----------------------------- SCOPED ROLES ---------------------------------
@@ -397,6 +411,7 @@ module.exports = {
   getEnumEmployers,
   deleteFileEnums,
   postSubcategory,
+  getProgramsAndDispositiveEnums,
 
   // Email
   sendEmail,
@@ -517,10 +532,13 @@ module.exports = {
   postSesameEligibleManagersByEmployee,
   postSesameCreateDepartmentForUser,
   postSesameDeleteDepartment,
-  postSesameTransferDepartment,
+postSesameAssignDispositiveDepartmentAdminToUser,
+postSesameRemoveDepartmentAdminRoleFromUser,
+postSesameAssignEmployeeToDispositiveScopes,
   postSesameToggleEmployeeForUser,
 postSesameInviteEmployeeForUser,
 postSesameGetOfficeManagers,
+
 
 
 
@@ -543,5 +561,15 @@ postSesameGetOfficeManagers,
   postRegisterDocumentationAuditSignRequest,
   postRegisterDocumentationAuditSignComplete,
   postCanUserSignDocumentationReceipt,
+
+  // Workplaces
+  createWorkplace,
+  listWorkplaces,
+  getWorkplaceId,
+  updateWorkplace,
+  deleteWorkplace,
+  addWorkplaceToDispositive,
+  removeWorkplaceFromDispositive,
+  listDispositivesByWorkplace,
 };
 

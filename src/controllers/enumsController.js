@@ -91,6 +91,7 @@ function createProgramIndex(programs = []) {
 
 function createDispositiveIndex(dispositives = []) {
   const out = {};
+
   for (const d of dispositives) {
     out[String(d._id)] = {
       _id: d._id,
@@ -99,10 +100,19 @@ function createDispositiveIndex(dispositives = []) {
       province: d.province ? String(d.province) : null,
       type: "dispositive",
       active: d.active,
-      officeIdSesame:d.officeIdSesame?String(d.officeIdSesame):null
-      
+      officeIdSesame: d.officeIdSesame ? String(d.officeIdSesame) : null,
+      departamentSesame: d.departamentSesame ? String(d.departamentSesame) : null,
+      workplaces: Array.isArray(d.workplaces)
+        ? d.workplaces.map((workplace) => ({
+            _id: workplace?._id ? String(workplace._id) : null,
+            name: workplace?.name || "",
+            active: workplace?.active !== false,
+            officeIdSesame: workplace?.officeIdSesame ? String(workplace.officeIdSesame) : null,
+          }))
+        : [],
     };
   }
+
   return out;
 }
 
@@ -118,7 +128,9 @@ const [jobs, provinces, work_schedule, studies, finantial, programs, dispositive
     Studies.find().lean(),
     Finantial.find().lean(),
     Program.find({ active: true }, { name: 1, acronym: 1, entity:1 }).lean(),
-    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1,  officeIdSesame:1 }).lean(),
+    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1, departamentSesame: 1, workplaces: 1 })
+  .populate("workplaces", "_id name active officeIdSesame address")
+  .lean(),
     Entity.find().lean(),
   ]);
 
@@ -181,7 +193,9 @@ const getEnumEmployers = async (req, res) => {
     Studies.find({}, { name: 1, subcategories: 1 }).lean(),
     Finantial.find({}).lean(),
     Documentation.find({}).lean(),
-    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1, officeIdSesame:1 }).lean(),
+    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1, departamentSesame: 1, workplaces: 1 })
+  .populate("workplaces", "_id name active officeIdSesame address")
+  .lean(),
     Documentation.distinct("categoryFiles").catch(() => []),
     Filedrive.schema.path("category").enumValues,
     Entity.find({}, { name: 1 }).lean(),
@@ -489,6 +503,24 @@ const deleteFileEnums = async (req, res) => {
   }
 };
 
+const getProgramsAndDispositiveEnums = async (req, res) => {
+  const [programs, dispositives, provinces] = await Promise.all([
+    Program.find({}, { name: 1, acronym: 1, active: 1, entity: 1, area: 1 }).lean(),
+    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1, departamentSesame: 1, workplaces: 1 })
+  .populate("workplaces", "_id name active officeIdSesame address")
+  .lean(),
+    Provinces.find({}, { name: 1, subcategories: 1 }).lean(),
+  ]);
+
+  response(res, 200, {
+    programsIndex: createProgramIndex(programs),
+    dispositiveIndex: createDispositiveIndex(dispositives),
+    provincesIndex: createCategoryAndSubcategoryIndex(provinces),
+  });
+};
+
+
+
 module.exports = {
   getEnums: catchAsync(getEnums),
   putEnums: catchAsync(putEnums),
@@ -498,4 +530,5 @@ module.exports = {
   deleteSubcategory: catchAsync(deleteSubcategory),
   getEnumEmployers: catchAsync(getEnumEmployers),
   deleteFileEnums: catchAsync(deleteFileEnums),
+  getProgramsAndDispositiveEnums:catchAsync(getProgramsAndDispositiveEnums)
 };
