@@ -95,7 +95,7 @@ const postCreateUser = async (req, res) => {
     'role',
     'gender',
     'birthday',
-    'hiringPeriods'
+    'hiringPeriods',
   ];
   validateRequiredFields(req.body, requiredFields);
 
@@ -117,7 +117,8 @@ const postCreateUser = async (req, res) => {
     phoneJobNumber,
     phoneJobExtension,
     hiringPeriods,
-    officeIdSesame
+    officeIdSesame,
+    drivingLicenceIssueDate
   } = req.body;
 
   // 1) User payload
@@ -138,6 +139,15 @@ const postCreateUser = async (req, res) => {
     throw new ClientError('Fecha de nacimiento no válida', 400);
   }
   userData.birthday = bday;
+
+  if(drivingLicenceIssueDate){
+    const dday=new Date(drivingLicenceIssueDate);
+     if (Number.isNaN(dday.getTime())) {
+    throw new ClientError('Fecha de expedición no válida', 400);
+  }
+  userData.drivingLicenceIssueDate = dday;
+  }
+  
 
 
 
@@ -760,6 +770,20 @@ const userPut = async (req, res) => {
     updateFields.birthday = parsed;
   }
 
+  if (req.body.drivingLicenceIssueDate !== undefined) {
+  if (!req.body.drivingLicenceIssueDate) {
+    updateFields.drivingLicenceIssueDate = null;
+  } else {
+    const dday = new Date(req.body.drivingLicenceIssueDate);
+
+    if (Number.isNaN(dday.getTime())) {
+      throw new ClientError('Fecha de expedición no válida', 400);
+    }
+
+    updateFields.drivingLicenceIssueDate = dday;
+  }
+}
+
   if (req.body.disPercentage !== undefined || req.body.disNotes !== undefined) {
     updateFields.disability = {};
     if (req.body.disPercentage !== undefined) updateFields.disability.percentage = req.body.disPercentage;
@@ -801,24 +825,6 @@ const userPut = async (req, res) => {
       { $set: updateFields },
       { new: true, runValidators: true }
     );
-
-
-
-    const relevantFieldsChanged =
-      req.body.firstName !== undefined ||
-      req.body.lastName !== undefined ||
-      req.body.email_personal !== undefined ||
-      req.body.phone !== undefined ||
-      req.body.dni !== undefined ||
-      req.body.socialSecurityNumber !== undefined ||
-      req.body.bankAccountNumber !== undefined ||
-      req.body.birthday !== undefined ||
-      req.body.gender !== undefined ||
-      req.body.notes !== undefined ||
-      req.body.phoneJobNumber !== undefined ||
-      req.body.phoneJobExtension !== undefined ||
-      req.body.employmentStatus !== undefined;
-
 
     if (req.body.personalHours || req.body.vacationHours) {
       const payload = {
@@ -1423,7 +1429,8 @@ const mustFilterByPeriods =
     socialSecurityNumber: 1,
     phoneJob: 1,
     photoProfile: 1,
-    userIdSesame: 1
+    userIdSesame: 1,
+    drivingLicenceIssueDate:1,
   };
 
   // ---------------- Paginación sobre Users ya filtrados ----------------

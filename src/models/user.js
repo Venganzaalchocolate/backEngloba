@@ -69,6 +69,9 @@ const UserSchema = new Schema({
     birthday: {
         type: Date,
     },
+    drivingLicenceIssueDate:{
+        type:Date,
+    },
     disability: {
         percentage: {
             type: Number,

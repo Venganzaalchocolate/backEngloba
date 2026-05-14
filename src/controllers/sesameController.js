@@ -2039,7 +2039,6 @@ const assignEmployeeOfficeIfNeededLocal = async ({ employeeIdSesame, officeId, i
 
 
 
-
 module.exports = {
   postSesameListEmployees: catchAsync(postSesameListEmployees),
   postSesameGetEmployee: catchAsync(postSesameGetEmployee),
