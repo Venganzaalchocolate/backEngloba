@@ -1447,6 +1447,139 @@ async function recreateCorporateEmailByUserId(userIdRaw, {
 }
 
 
+async function getGroupIdByEmail(groupEmail) {
+  if (!groupEmail || typeof groupEmail !== 'string') {
+    throw new ClientError('Email de grupo requerido', 400);
+  }
+
+  const cleanEmail = groupEmail.trim().toLowerCase();
+
+  try {
+    const { data } = await directory.groups.get({
+      groupKey: cleanEmail, // puede ser email o id del grupo
+    });
+
+    return {
+      id: data.id,
+      email: data.email,
+      name: data.name,
+      description: data.description || '',
+      directMembersCount: data.directMembersCount || '0',
+    };
+  } catch (err) {
+    const { code, reason, message } = parseGoogleError(err);
+
+    if (code === 404 || reason === 'notFound') {
+      throw new ClientError(`No existe ningún grupo con el email ${cleanEmail}`, 404);
+    }
+
+    if (code === 403 || reason === 'forbidden') {
+      throw new ClientError(
+        `No tienes permisos para consultar el grupo ${cleanEmail}`,
+        403
+      );
+    }
+
+    throw new ClientError(
+      `No se pudo obtener el grupo ${cleanEmail}: ${message || 'error desconocido'}`,
+      500
+    );
+  }
+}
+
+async function testGetGroupId() {
+  const group = await getGroupIdByEmail('pimenorescasadelmartecnico@engloba.org.es');
+
+  console.log('Grupo encontrado:', group);
+  console.log('ID:', group.id);
+
+  return group;
+}
+
+async function attachExistingGroupToDispositiveSubgroupsByName({
+  dispositiveName,
+  groupEmail,
+  logger = console,
+} = {}) {
+  if (!dispositiveName || typeof dispositiveName !== 'string') {
+    throw new ClientError('dispositiveName requerido', 400);
+  }
+
+  if (!groupEmail || typeof groupEmail !== 'string') {
+    throw new ClientError('groupEmail requerido', 400);
+  }
+
+  const dispositive = await Dispositive.findOne({
+    name: { $regex: new RegExp(dispositiveName.trim(), 'i') },
+  }).lean();
+
+  if (!dispositive) {
+    throw new ClientError(`No se encontró ningún dispositivo con nombre parecido a "${dispositiveName}"`, 404);
+  }
+
+  return attachExistingGroupToDispositiveSubgroups({
+    dispositiveId: dispositive._id,
+    groupEmail,
+    logger,
+  });
+}
+
+async function attachExistingGroupToDispositiveSubgroups({
+  dispositiveId,
+  groupEmail,
+  logger = console,
+} = {}) {
+  if (!dispositiveId || !mongoose.Types.ObjectId.isValid(dispositiveId)) {
+    throw new ClientError('dispositiveId no válido', 400);
+  }
+
+  if (!groupEmail || typeof groupEmail !== 'string') {
+    throw new ClientError('groupEmail requerido', 400);
+  }
+
+  const cleanEmail = groupEmail.trim().toLowerCase();
+
+  const group = await getGroupIdByEmail(cleanEmail);
+
+  const updated = await Dispositive.findByIdAndUpdate(
+    dispositiveId,
+    {
+      $addToSet: {
+        subGroupWorkspace: group.id,
+      },
+    },
+    { new: true }
+  );
+
+  if (!updated) {
+    throw new ClientError('Dispositivo no encontrado', 404);
+  }
+
+  logger.log?.('[attachExistingGroupToDispositiveSubgroups] Grupo añadido al dispositivo:', {
+    dispositiveId: String(updated._id),
+    dispositiveName: updated.name,
+    groupEmail: group.email,
+    groupId: group.id,
+  });
+
+  return {
+    dispositiveId: String(updated._id),
+    dispositiveName: updated.name,
+    groupId: group.id,
+    groupEmail: group.email,
+    subGroupWorkspace: updated.subGroupWorkspace || [],
+  };
+}
+async function testAttachGroupToDispositiveByName() {
+  const result = await attachExistingGroupToDispositiveSubgroupsByName({
+    dispositiveName: 'Casa del Mar',
+    groupEmail: 'pimenorescasadelmartecnico@engloba.org.es',
+  });
+
+  console.log('Resultado:', result);
+}
+
+
 module.exports = {
   addUserToGroup,
   deleteMemeberAllGroups,

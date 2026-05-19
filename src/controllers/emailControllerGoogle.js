@@ -5,9 +5,6 @@ const { User, Periods, UserChangeRequest, Dispositive , Program, UserCv, Leaves 
 const {   buildSesameInactiveByLeavePlainText, buildSesameInactiveByLeaveHtmlEmail, buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail, buildEqualityLgtbiqSurveyPlainText, buildEqualityLgtbiqSurveyHtmlEmail, buildMiniTutorialsOpsPlainText, buildMiniTutorialsOpsHtmlEmail, buildSignatureUpdateHtmlEmail, buildSignatureUpdatePlainText, buildLeaveExpectedEndReminderPlainText, buildLeaveExpectedEndReminderHtmlEmail, buildLeaveSyncInfoPlainText, buildLeaveSyncInfoHtmlEmail } = require('../templates/emailTemplates');
 const { default: mongoose } = require('mongoose');
 
-
-
-
 /*OBETENER IDS DE LOS RESPONSABLES SINO COORDINADORES SINO RESPONSABLES DE PROGRAMA SINO COORDINADORES DE PROGRAMA SINO NINGUNO*/
 async function getLeaveNotificationResponsibleUserIds({
   dispositives = [],

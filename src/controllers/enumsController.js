@@ -102,6 +102,11 @@ function createDispositiveIndex(dispositives = []) {
       active: d.active,
       officeIdSesame: d.officeIdSesame ? String(d.officeIdSesame) : null,
       departamentSesame: d.departamentSesame ? String(d.departamentSesame) : null,
+       coordinates: {
+        lat: typeof d.coordinates?.lat === "number" ? d.coordinates.lat : null,
+        lng: typeof d.coordinates?.lng === "number" ? d.coordinates.lng : null,
+      },
+
       workplaces: Array.isArray(d.workplaces)
         ? d.workplaces.map((workplace) => ({
             _id: workplace?._id ? String(workplace._id) : null,
@@ -506,7 +511,7 @@ const deleteFileEnums = async (req, res) => {
 const getProgramsAndDispositiveEnums = async (req, res) => {
   const [programs, dispositives, provinces] = await Promise.all([
     Program.find({}, { name: 1, acronym: 1, active: 1, entity: 1, area: 1 }).lean(),
-    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1, departamentSesame: 1, workplaces: 1 })
+    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1, departamentSesame: 1, workplaces: 1, coordinates: 1, })
   .populate("workplaces", "_id name active officeIdSesame address")
   .lean(),
     Provinces.find({}, { name: 1, subcategories: 1 }).lean(),
