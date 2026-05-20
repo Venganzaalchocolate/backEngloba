@@ -6,6 +6,7 @@ const {ClientError}=require('./clientError')
 const {resError}= require('./resError');
 const {  validateRequiredFields, toId } = require("./utils");
 const { generarToken, verifyToken } = require("./jwt");
+const { NATIONALITIES, normalizeNationality, getNationalityLabel, normalizeText } = require("./nationalities");
 
 module.exports  = {
     resError,
@@ -28,5 +29,9 @@ module.exports  = {
     validText,
     validDecimalNumber,
     validateRequiredFields, 
-    toId
+    toId,
+    NATIONALITIES,
+    normalizeText,
+    normalizeNationality,
+    getNationalityLabel,
 }

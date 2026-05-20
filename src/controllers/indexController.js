@@ -302,6 +302,18 @@ const {
   postCanUserSignDocumentationReceipt,
 } = require("./userDocumentationAuditController");
 
+// ----------------------------- ATTENDED USERS -------------------------------
+const {
+  createAttendedUser,
+  listAttendedUsers,
+  getAttendedUserById,
+  updateAttendedUser,
+  openChronologyAttendedUser,
+  closeChronologyAttendedUser,
+  deleteAttendedUser,
+  importAttendedUsersExcel
+} = require("./attendedUserController");
+
 // Pendiente de migrar (lo mantenemos aquí de momento para no romper):
 // - ResourceMembership CRUD
 // - list/get de ModuleGrants (read-only)
@@ -571,5 +583,15 @@ postSesameGetOfficeManagers,
   addWorkplaceToDispositive,
   removeWorkplaceFromDispositive,
   listDispositivesByWorkplace,
+
+    // Attended Users
+  createAttendedUser,
+  listAttendedUsers,
+  getAttendedUserById,
+  updateAttendedUser,
+  openChronologyAttendedUser,
+  closeChronologyAttendedUser,
+  deleteAttendedUser,
+  importAttendedUsersExcel
 };
 
