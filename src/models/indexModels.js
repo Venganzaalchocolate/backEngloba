@@ -23,6 +23,7 @@ const UserDocumentationAudit=require('./userDocumentationAudit')
 const ScopedRoleRule=require('./scopedRoleRuleSchema')
 const Workplace = require('./workplace');
 const AttendedUser = require('./attendedUser');
+const ModuleScopeAccess = require("./ModuleScopeAccess");
 
 module.exports = {
     User,
@@ -48,5 +49,6 @@ module.exports = {
     UserDocumentationAudit,
     ScopedRoleRule,
     Workplace,
-    AttendedUser
+    AttendedUser,
+    ModuleScopeAccess
 }

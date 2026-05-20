@@ -314,10 +314,15 @@ const {
   importAttendedUsersExcel
 } = require("./attendedUserController");
 
-// Pendiente de migrar (lo mantenemos aquí de momento para no romper):
-// - ResourceMembership CRUD
-// - list/get de ModuleGrants (read-only)
-// - applyProfileToResourceMembers (bulk)
+
+// ----------------------------- MODULE SCOPE -------------------------------
+const { 
+  upsertModuleScopeAccess, 
+  listModuleScopeAccess, 
+  updateModuleScopeAccess, 
+  deleteModuleScopeAccess, 
+  getUserModuleScopeAccess 
+} = require("./moduleScopeAccessController");
 
 
 // ============================================================================
@@ -592,6 +597,13 @@ postSesameGetOfficeManagers,
   openChronologyAttendedUser,
   closeChronologyAttendedUser,
   deleteAttendedUser,
-  importAttendedUsersExcel
+  importAttendedUsersExcel,
+
+  // Alcance de Modulos
+  upsertModuleScopeAccess,
+  listModuleScopeAccess,
+  updateModuleScopeAccess,
+  deleteModuleScopeAccess,
+  getUserModuleScopeAccess
 };
 

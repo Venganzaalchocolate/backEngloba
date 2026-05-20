@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const { sendEmail, generateEmailHTML } = require('./emailControllerGoogle');
 const mongoose = require('mongoose');
 const { getUserScopedRolesData } = require('./scopedRolesController');
+const { getUserModuleScopeAccessData } = require('./moduleScopeAccessController');
 
 
 // Función para generar un código de 6 dígitos
@@ -30,40 +31,40 @@ const login = async (req, res) => {
     //     const respuesta = { user, token }
     //     response(res, 200, respuesta);
     // } else {
-        // 2. Generar código de un solo uso
-        const codigo = generarCodigoTemporal();
+    // 2. Generar código de un solo uso
+    const codigo = generarCodigoTemporal();
 
-        // 3. Actualizar (o crear) documento en MongoDB con upsert
-        await OneTimeCode.findOneAndUpdate(
-            { userId: user._id },
-            {
-                code: codigo,
-                createdAt: new Date(),  // Renueva la fecha de creación para el TTL
-                attempts: 0            // Resetea intentos en caso de que existan de un código anterior
-            },
-            { upsert: true, new: true }
-        );
+    // 3. Actualizar (o crear) documento en MongoDB con upsert
+    await OneTimeCode.findOneAndUpdate(
+        { userId: user._id },
+        {
+            code: codigo,
+            createdAt: new Date(),  // Renueva la fecha de creación para el TTL
+            attempts: 0            // Resetea intentos en caso de que existan de un código anterior
+        },
+        { upsert: true, new: true }
+    );
 
-        // 5. Enviar el email al usuario con el código
-        const asunto = "Tu código de verificación";
-        const textoPlano = `Este es tu código de verificación de un solo uso: ${codigo}. Es válido durante 5 minutos.`;
+    // 5. Enviar el email al usuario con el código
+    const asunto = "Tu código de verificación";
+    const textoPlano = `Este es tu código de verificación de un solo uso: ${codigo}. Es válido durante 5 minutos.`;
 
-        const htmlContent = generateEmailHTML({
-            logoUrl: "https://app.engloba.org.es/graphic/logotipo_blanco.png",
-            title: "Tu Código de Verificación",
-            greetingName: user.firstName, // o user.nombre
-            bodyText: "Este es tu código de verificación de un solo uso. Es válido durante 5 minutos. Por favor, no lo compartas.",
-            highlightText: codigo, // el código que quieras resaltar
-            footerText: "Gracias por usar nuestra plataforma. Si tienes dudas, contáctanos."
-        });
+    const htmlContent = generateEmailHTML({
+        logoUrl: "https://app.engloba.org.es/graphic/logotipo_blanco.png",
+        title: "Tu Código de Verificación",
+        greetingName: user.firstName, // o user.nombre
+        bodyText: "Este es tu código de verificación de un solo uso. Es válido durante 5 minutos. Por favor, no lo compartas.",
+        highlightText: codigo, // el código que quieras resaltar
+        footerText: "Gracias por usar nuestra plataforma. Si tienes dudas, contáctanos."
+    });
 
-        await sendEmail(user.email, asunto, textoPlano, htmlContent);
+    await sendEmail(user.email, asunto, textoPlano, htmlContent);
 
-        // 6. Responder
-        response(res, 200, {
-            message: `Código de verificación enviado a tu correo ${user.email}. Tienes 5 minutos para usarlo.`,
-            userId: user._id
-        });
+    // 6. Responder
+    response(res, 200, {
+        message: `Código de verificación enviado a tu correo ${user.email}. Tienes 5 minutos para usarlo.`,
+        userId: user._id
+    });
     // }
 
 };
@@ -106,14 +107,21 @@ const verifyCode = async (req, res) => {
     const user = await User.findById(userId).populate({
         path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
         model: 'Filedrive',       // Nombre del modelo de Filedrive
-      });
-    const list= await getUserScopedRolesData(user._id)
-    const token = await generarToken(user); // Ajusta según tu lógica de JWT
-    
+    });
+    const scopedRoles = await getUserScopedRolesData(user._id);
+    const attendedUsersScopes = await getUserModuleScopeAccessData(user._id, "attendedUsers");
+
+    const list = [
+        ...scopedRoles,
+        ...attendedUsersScopes,
+    ];
+
+    const token = await generarToken(user);
+
     response(res, 200, {
         user,
         token,
-        listResponsability:list
+        listResponsability: list
     });
 
 };
@@ -127,12 +135,20 @@ const validToken = async (req, res) => {
         const user = await User.findOne({ _id: id }).populate({
             path: 'files.filesId',  // Asegúrate de que este path coincida con tu esquema
             model: 'Filedrive',       // Nombre del modelo de Filedrive
-          });
-        const list= await getUserScopedRolesData(id);
+        });
+        const scopedRoles = await getUserScopedRolesData(id);
+        const attendedUsersScopes = await getUserModuleScopeAccessData(id, "attendedUsers");
+
+        const list = [
+            ...scopedRoles,
+            ...attendedUsersScopes,
+        ];
+
         response(res, 200, {
-        user,
-        listResponsability:list
-    })
+            user,
+            listResponsability: list
+        });
+
     } else {
         throw new ClientError("El token no es correcto", 401);
     }

@@ -25,6 +25,7 @@ const userDocumentationAudit=require('./routes/userAuditDocumentationRoutes')
 const scopedRoleRoutes=require('./routes/scopedRolesRoutes')
 const workplaceRoutes=require('./routes/workplaceRoutes')
 const attendedUserRoutes=require('./routes/attendedUserRoutes')
+const moduleScopeRoutes=require('./routes/moduleScopeRoutes')
 
 const { connectToDatabase } = require('./database/connect');
 require('./controllers/cronScheduleController');
@@ -83,6 +84,7 @@ app.use('/api', sesameRoutes)
 app.use('/api', userDocumentationAudit)
 app.use('/api', scopedRoleRoutes)
 app.use('/api', attendedUserRoutes)
+app.use('/api', moduleScopeRoutes)
 
 
 
