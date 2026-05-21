@@ -311,7 +311,8 @@ const {
   openChronologyAttendedUser,
   closeChronologyAttendedUser,
   deleteAttendedUser,
-  importAttendedUsersExcel
+  importAttendedUsersExcel,
+  exportAttendedUsers
 } = require("./attendedUserController");
 
 
@@ -598,6 +599,7 @@ postSesameGetOfficeManagers,
   closeChronologyAttendedUser,
   deleteAttendedUser,
   importAttendedUsersExcel,
+  exportAttendedUsers,
 
   // Alcance de Modulos
   upsertModuleScopeAccess,

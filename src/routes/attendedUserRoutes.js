@@ -10,7 +10,8 @@ const {
   openChronologyAttendedUser,
   closeChronologyAttendedUser,
   deleteAttendedUser,
-  importAttendedUsersExcel
+  importAttendedUsersExcel,
+  exportAttendedUsers
 } = require("../controllers/indexController");
 const multer = require('multer');
 
@@ -25,5 +26,6 @@ router.post("/attendeduseropenchronology", tokenValid, openChronologyAttendedUse
 router.post("/attendeduserclosechronology", tokenValid, closeChronologyAttendedUser);
 router.post("/attendeduserdelete", tokenValid, deleteAttendedUser);
 router.post("/attendeduserimportexcel", tokenValid, uploadMem.single('file'), importAttendedUsersExcel);
+router.post("/attendedusersexport", tokenValid, exportAttendedUsers);
 
 module.exports = router;

@@ -40,7 +40,7 @@ const getDispositiveContext = async (dispositiveId) => {
     .lean();
 
   if (!dispositive) {
-    throw new ClientError("Dispositivo no encontrado", 404);
+    throw new ClientError("Dispositivo no encontrado", 403);
   }
 
   return {
@@ -243,23 +243,43 @@ if (Object.keys(stayMatch).length) {
 };
 
 const getAttendedUserById = async (req, res) => {
-  const { id } = req.body;
+  
+  const { id, _id, documentId } = req.body || {};
+  const userId = id || _id;
 
-  if (!id || !isValidId(id)) {
-    throw new ClientError("El id no es válido", 400);
+  let user = null;
+
+  if (userId) {
+    if (!isValidId(userId)) {
+      throw new ClientError("El id no es válido", 400);
+    }
+
+    user = await AttendedUser.findById(userId)
+      .populate("stays.dispositive", "name")
+      .populate("stays.program", "name acronym")
+      .populate("stays.province", "name")
+      .populate("createdBy", "firstName lastName email")
+      .populate("updatedBy", "firstName lastName email");
+  } else if (documentId) {
+    const normalizedDocumentId = normalizeDocumentId(documentId);
+  
+    if (!normalizedDocumentId) {
+      throw new ClientError("El documento no es válido", 400);
+    }
+
+    user = await AttendedUser.findOne({ documentId: normalizedDocumentId })
+      .populate("stays.dispositive", "name")
+      .populate("stays.program", "name acronym")
+      .populate("stays.province", "name")
+      .populate("createdBy", "firstName lastName email")
+      .populate("updatedBy", "firstName lastName email");
+  } else {
+    throw new ClientError("Debes enviar id o documentId", 400);
   }
-
-  const user = await AttendedUser.findById(id)
-    .populate("stays.dispositive", "name")
-    .populate("stays.program", "name acronym")
-    .populate("stays.province", "name")
-    .populate("createdBy", "firstName lastName email")
-    .populate("updatedBy", "firstName lastName email");
 
   if (!user) {
-    throw new ClientError("Usuario atendido no encontrado", 404);
+    throw new ClientError("Usuario atendido no encontrado", 403);
   }
-
   response(res, 200, user);
 };
 
@@ -272,7 +292,7 @@ const updateAttendedUser = async (req, res) => {
 
   const current = await AttendedUser.findById(_id);
   if (!current) {
-    throw new ClientError("Usuario atendido no encontrado", 404);
+    throw new ClientError("Usuario atendido no encontrado", 403);
   }
 
   const updateFields = {
@@ -367,7 +387,7 @@ if (req.body.gender !== undefined) {
 
 const openChronologyAttendedUser = async (req, res) => {
   validateRequiredFields(req.body, ["id", "dispositive", "startDate"]);
-  
+
   const { id, dispositive, startDate, notes } = req.body;
 
   if (!isValidId(id)) {
@@ -376,15 +396,21 @@ const openChronologyAttendedUser = async (req, res) => {
 
   const user = await AttendedUser.findById(id);
   if (!user) {
-    throw new ClientError("Usuario atendido no encontrado", 404);
+    throw new ClientError("Usuario atendido no encontrado", 403);
   }
 
   const context = await getDispositiveContext(dispositive);
-    const hasActiveStay = user.stays.some((stay) => stay.active);
+  const dispositiveId = String(context.dispositive);
 
-    if (hasActiveStay) {
-      throw new ClientError("Este usuario ya tiene una estancia activa", 400);
-    }
+  const hasActiveStayInSameDevice = user.stays.some((stay) => {
+    if (!stay.active) return false;
+    return String(stay.dispositive) === dispositiveId;
+  });
+
+  if (hasActiveStayInSameDevice) {
+    throw new ClientError("Este usuario ya tiene una estancia activa en este dispositivo", 400);
+  }
+
   user.stays.push({
     ...context,
     startDate: parseDateOrNull(startDate, "startDate"),
@@ -420,12 +446,12 @@ const closeChronologyAttendedUser = async (req, res) => {
 
   const user = await AttendedUser.findById(id);
   if (!user) {
-    throw new ClientError("Usuario atendido no encontrado", 404);
+    throw new ClientError("Usuario atendido no encontrado", 403);
   }
 
   const item = user.stays.id(stayId);
   if (!item) {
-    throw new ClientError("Estancia no encontrada", 404);
+    throw new ClientError("Estancia no encontrada", 403);
   }
 
   item.endDate = parseDateOrNull(endDate, "endDate");
@@ -440,19 +466,66 @@ const closeChronologyAttendedUser = async (req, res) => {
 };
 
 const deleteAttendedUser = async (req, res) => {
-  const { id } = req.body;
+ const { id, stayId, dispositive } = req.body || {};
 
   if (!id || !isValidId(id)) {
     throw new ClientError("El id no es válido", 400);
   }
 
-  const deleted = await AttendedUser.findByIdAndDelete(id);
+  const user = await AttendedUser.findById(id);
 
-  if (!deleted) {
-    throw new ClientError("Usuario atendido no encontrado", 404);
+  if (!user) {
+    throw new ClientError("Usuario atendido no encontrado", 403);
   }
 
-  response(res, 200, deleted);
+  let targetStay = null;
+
+  if (stayId) {
+    targetStay = user.stays.id(stayId);
+  }
+
+  if (!targetStay && dispositive && isValidId(dispositive)) {
+    const dispositiveId = String(dispositive);
+
+    targetStay =
+      user.stays.find((stay) => stay.active && String(stay.dispositive) === dispositiveId) ||
+      [...user.stays].reverse().find((stay) => String(stay.dispositive) === dispositiveId);
+  }
+
+  if (!targetStay) {
+    throw new ClientError("No se ha encontrado la estancia a borrar", 400);
+  }
+
+  const targetDispositiveId = String(targetStay.dispositive);
+
+  const hasStayInOtherDevice = user.stays.some((stay) => {
+    if (String(stay._id) === String(targetStay._id)) return false;
+    return String(stay.dispositive) !== targetDispositiveId;
+  });
+
+  if (hasStayInOtherDevice) {
+    user.stays.pull(targetStay._id);
+
+    user.active = user.stays.some((stay) => stay.active);
+    user.updatedBy = req.user?._id || null;
+
+    await user.save();
+
+    return response(res, 200, {
+      deletedUser: false,
+      removedStay: true,
+      message: "Se ha borrado solo la estancia de este dispositivo porque la persona tiene historial en otros dispositivos.",
+      user,
+    });
+  }
+
+  await AttendedUser.deleteOne({ _id: user._id });
+
+  return response(res, 200, {
+    deletedUser: true,
+    removedStay: false,
+    message: "Se ha borrado el usuario atendido completo porque solo tenía estancias en este dispositivo.",
+  });
 };
 
 
@@ -569,6 +642,7 @@ const importAttendedUsersExcel = async (req, res) => {
 
   const { dispositive } = req.body;
   const context = await getDispositiveContext(dispositive);
+  const contextDispositiveId = String(context.dispositive);
 
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(req.file.buffer);
@@ -611,7 +685,6 @@ const importAttendedUsersExcel = async (req, res) => {
 
   for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber++) {
     const row = worksheet.getRow(rowNumber);
-
     const documentId = normalizeDocumentId(row.getCell(1).value);
 
     if (!documentId) continue;
@@ -629,6 +702,7 @@ const importAttendedUsersExcel = async (req, res) => {
         ignoredDuplicatedRows.push({
           row: rowNumber,
           documentId,
+          reason: "Documento duplicado dentro del Excel",
         });
         continue;
       }
@@ -689,6 +763,8 @@ const importAttendedUsersExcel = async (req, res) => {
   if (errors.length) {
     return response(res, 200, {
       created: 0,
+      openedStays: 0,
+      skippedActiveStays: 0,
       imported: false,
       ignoredDuplicates: ignoredDuplicatedRows,
       errors,
@@ -699,56 +775,198 @@ const importAttendedUsersExcel = async (req, res) => {
 
   const existingUsers = await AttendedUser.find({
     documentId: { $in: documentIds },
-  })
-    .select("documentId")
-    .lean();
+  });
 
-  if (existingUsers.length) {
-    const existingSet = new Set(existingUsers.map((u) => u.documentId));
+  const existingByDocument = new Map(
+    existingUsers.map((user) => [user.documentId, user])
+  );
 
-    return response(res, 200, {
-      created: 0,
-      imported: false,
-      ignoredDuplicates: ignoredDuplicatedRows,
-      errors: rows
-        .filter((r) => existingSet.has(r.documentId))
-        .map((r) => ({
-          row: r.rowNumber,
-          message: `Ya existe un usuario atendido con el documento ${r.documentId}`,
-        })),
+  const docsToCreate = [];
+  const usersToSave = [];
+  const skippedActiveStays = [];
+
+  for (const r of rows) {
+    const existingUser = existingByDocument.get(r.documentId);
+
+    if (!existingUser) {
+      docsToCreate.push({
+        active: true,
+        documentId: r.documentId,
+        firstName: r.firstName,
+        lastName: r.lastName,
+        birthday: r.birthday,
+        nationality: r.nationality,
+        gender: r.gender,
+        notes: r.notes || "",
+        createdBy: req.user?._id || null,
+        updatedBy: req.user?._id || null,
+        stays: [
+          {
+            ...context,
+            startDate: r.startDate,
+            endDate: null,
+            active: true,
+            notes: "",
+          },
+        ],
+      });
+
+      continue;
+    }
+
+    const hasActiveStayInSameDevice = existingUser.stays.some((stay) => {
+      if (!stay.active) return false;
+      return String(stay.dispositive) === contextDispositiveId;
     });
+
+    if (hasActiveStayInSameDevice) {
+      skippedActiveStays.push({
+        row: r.rowNumber,
+        documentId: r.documentId,
+        reason: "Ya tiene una estancia activa en este dispositivo",
+      });
+
+      continue;
+    }
+
+    existingUser.stays.push({
+      ...context,
+      startDate: r.startDate,
+      endDate: null,
+      active: true,
+      notes: r.notes || "",
+    });
+
+    existingUser.active = true;
+    existingUser.updatedBy = req.user?._id || null;
+
+    usersToSave.push(existingUser);
   }
 
-  const docsToCreate = rows.map((r) => ({
-    active: true,
-    documentId: r.documentId,
-    firstName: r.firstName,
-    lastName: r.lastName,
-    birthday: r.birthday,
-    nationality: r.nationality,
-    gender: r.gender,
-    notes: r.notes || "",
-    createdBy: req.user?._id || null,
-    updatedBy: req.user?._id || null,
-    stays: [
-      {
-        ...context,
-        startDate: r.startDate,
-        endDate: null,
-        active: true,
-        notes: "",
-      },
-    ],
-  }));
+  const created = docsToCreate.length
+    ? await AttendedUser.insertMany(docsToCreate, { ordered: true })
+    : [];
 
-  const created = await AttendedUser.insertMany(docsToCreate, { ordered: true });
+  if (usersToSave.length) {
+    await Promise.all(usersToSave.map((user) => user.save()));
+  }
 
   response(res, 200, {
     created: created.length,
+    openedStays: usersToSave.length,
+    skippedActiveStays: skippedActiveStays.length,
     imported: true,
     ignoredDuplicates: ignoredDuplicatedRows,
+    skipped: skippedActiveStays,
     errors: [],
   });
+};
+
+const exportAttendedUsers = async (req, res) => {
+  const {
+    documentId,
+    firstName,
+    lastName,
+    q,
+    gender,
+    nationality,
+    active,
+    dispositive,
+    program,
+    province,
+    allowedDispositiveIds,
+    onlyActiveStays,
+    onlyActiveChronology,
+  } = req.body || {};
+
+  const filters = {};
+
+  if (firstName) {
+    const rx = createAccentInsensitiveRegex(firstName);
+    filters.firstName = { $regex: rx };
+  }
+
+  if (lastName) {
+    const rx = createAccentInsensitiveRegex(lastName);
+    filters.lastName = { $regex: rx };
+  }
+
+  if (q) {
+    const rx = createAccentInsensitiveRegex(q);
+    const docRx = new RegExp(escapeRegex(normalizeDocumentId(q)), "i");
+
+    filters.$or = [
+      { documentId: { $regex: docRx } },
+      { firstName: { $regex: rx } },
+      { lastName: { $regex: rx } },
+      { nationality: { $regex: rx } },
+      { "aliases.firstName": { $regex: rx } },
+      { "aliases.lastName": { $regex: rx } },
+    ];
+  }
+
+  if (documentId) {
+    filters.documentId = {
+      $regex: escapeRegex(normalizeDocumentId(documentId)),
+      $options: "i",
+    };
+  }
+
+  if (gender) filters.gender = gender;
+
+  if (nationality) {
+    const nationalityCode = normalizeNationality(nationality);
+    if (nationalityCode) filters.nationality = nationalityCode;
+  }
+
+  if (active === true || active === "true") filters.active = true;
+  if (active === false || active === "false") filters.active = false;
+
+  const stayMatch = {};
+
+  if (dispositive && isValidId(dispositive)) {
+    stayMatch.dispositive = toId(dispositive);
+  } else if (Array.isArray(allowedDispositiveIds) && allowedDispositiveIds.length) {
+    const validIds = allowedDispositiveIds
+      .filter((id) => isValidId(id))
+      .map((id) => toId(id));
+
+    if (!validIds.length) {
+      return response(res, 200, { users: [] });
+    }
+
+    stayMatch.dispositive = { $in: validIds };
+  }
+
+  if (program && isValidId(program)) {
+    stayMatch.program = toId(program);
+  }
+
+  if (province && isValidId(province)) {
+    stayMatch.province = toId(province);
+  }
+
+  if (
+    onlyActiveStays === true ||
+    onlyActiveStays === "true" ||
+    onlyActiveChronology === true ||
+    onlyActiveChronology === "true"
+  ) {
+    stayMatch.active = true;
+  }
+
+  if (Object.keys(stayMatch).length) {
+    filters.stays = { $elemMatch: stayMatch };
+  }
+
+  const users = await AttendedUser.find(filters)
+    .sort({ updatedAt: -1 })
+    .populate("stays.dispositive", "name")
+    .populate("stays.program", "name acronym")
+    .populate("stays.province", "name")
+    .lean();
+
+  response(res, 200, { users });
 };
 
 module.exports = {
@@ -759,5 +977,6 @@ module.exports = {
   openChronologyAttendedUser: catchAsync(openChronologyAttendedUser),
   closeChronologyAttendedUser: catchAsync(closeChronologyAttendedUser),
   deleteAttendedUser: catchAsync(deleteAttendedUser),
-  importAttendedUsersExcel:catchAsync(importAttendedUsersExcel)
+  importAttendedUsersExcel:catchAsync(importAttendedUsersExcel),
+  exportAttendedUsers:catchAsync(exportAttendedUsers),
 };
