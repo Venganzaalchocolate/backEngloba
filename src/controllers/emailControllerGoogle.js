@@ -1,9 +1,20 @@
 
 const { google }   = require('googleapis');
 const MailComposer = require('nodemailer/lib/mail-composer');
-const { User, Periods, UserChangeRequest, Dispositive , Program, UserCv, Leaves } = require('../models/indexModels');
+const {
+  User,
+  Periods,
+  UserChangeRequest,
+  Dispositive,
+  Program,
+  UserCv,
+  Leaves,
+  ScopedRoleRule,
+  Provinces,
+} = require('../models/indexModels');
 const {   buildSesameInactiveByLeavePlainText, buildSesameInactiveByLeaveHtmlEmail, buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail, buildEqualityLgtbiqSurveyPlainText, buildEqualityLgtbiqSurveyHtmlEmail, buildMiniTutorialsOpsPlainText, buildMiniTutorialsOpsHtmlEmail, buildSignatureUpdateHtmlEmail, buildSignatureUpdatePlainText, buildLeaveExpectedEndReminderPlainText, buildLeaveExpectedEndReminderHtmlEmail, buildLeaveSyncInfoPlainText, buildLeaveSyncInfoHtmlEmail } = require('../templates/emailTemplates');
 const { default: mongoose } = require('mongoose');
+
 
 /*OBETENER IDS DE LOS RESPONSABLES SINO COORDINADORES SINO RESPONSABLES DE PROGRAMA SINO COORDINADORES DE PROGRAMA SINO NINGUNO*/
 async function getLeaveNotificationResponsibleUserIds({

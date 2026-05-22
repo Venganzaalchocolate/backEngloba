@@ -6,6 +6,7 @@ const { validateRequiredFields, createAccentInsensitiveRegex } = require('../uti
 const { uploadFileToDrive, getFileById, deleteFileById, gestionAutomaticaNominas, obtenerCarpetaContenedora } = require('./googleController');
 const { createUserWS, deleteUserByEmailWS, addUserToGroup, recreateCorporateEmailByUserId } = require('./workspaceController');
 const { sendWelcomeEmail } = require('./emailControllerGoogle');
+const { notifyPrlOfNewHiring } = require("./prlNotificationController");
 const { default: pLimit } = require('p-limit');
 const {
   ensureSesameEmployeeForUser,
@@ -82,6 +83,20 @@ const normalizeVacationEntries = (arr) => {
     .filter(Boolean);
 };
 
+async function getLastOpenHiringForUser(userId) {
+  return Periods.findOne({
+    idUser: userId,
+    active: true,
+    $or: [
+      { endDate: { $exists: false } },
+      { endDate: null },
+    ],
+  })
+    .sort({ startDate: -1 })
+    .select("_id dispositiveId position startDate")
+    .lean();
+}
+
 // =========================
 // CREATE USER (migrado a Dispositive)
 // =========================
@@ -140,14 +155,14 @@ const postCreateUser = async (req, res) => {
   }
   userData.birthday = bday;
 
-  if(drivingLicenceIssueDate){
-    const dday=new Date(drivingLicenceIssueDate);
-     if (Number.isNaN(dday.getTime())) {
-    throw new ClientError('Fecha de expedición no válida', 400);
+  if (drivingLicenceIssueDate) {
+    const dday = new Date(drivingLicenceIssueDate);
+    if (Number.isNaN(dday.getTime())) {
+      throw new ClientError('Fecha de expedición no válida', 400);
+    }
+    userData.drivingLicenceIssueDate = dday;
   }
-  userData.drivingLicenceIssueDate = dday;
-  }
-  
+
 
 
 
@@ -288,26 +303,26 @@ const postCreateUser = async (req, res) => {
   }
 
 
-try {
-  const ws = await createUserWS(newUser._id);
-  if (ws?.email) {
-    const email_cor = String(ws.email).toLowerCase();
-    newUser.email = email_cor;
-    await newUser.save();
-    await sendWelcomeEmail(newUser, email_cor);
+  try {
+    const ws = await createUserWS(newUser._id);
+    if (ws?.email) {
+      const email_cor = String(ws.email).toLowerCase();
+      newUser.email = email_cor;
+      await newUser.save();
+      await sendWelcomeEmail(newUser, email_cor);
+    }
+  } catch (e) {
+    console.log("no se ha podido crear el email corporativo", e?.message || e);
   }
-} catch (e) {
-  console.log("no se ha podido crear el email corporativo", e?.message || e);
-}
 
-try {
-  const sesameResult = await ensureSesameEmployeeForUser(newUser._id, { status: "inactive" });
-  if (sesameResult?.action !== "not-created" && sesameResult?.action !== "not-linked") {
-    newUser = await User.findById(newUser._id);
+  try {
+    const sesameResult = await ensureSesameEmployeeForUser(newUser._id, { status: "inactive" });
+    if (sesameResult?.action !== "not-created" && sesameResult?.action !== "not-linked") {
+      newUser = await User.findById(newUser._id);
+    }
+  } catch (e) {
+    console.log("no se ha podido crear/sincronizar el usuario en Sesame", e?.message || e);
   }
-} catch (e) {
-  console.log("no se ha podido crear/sincronizar el usuario en Sesame", e?.message || e);
-}
 
   response(res, 200, newUser);
 };
@@ -701,58 +716,56 @@ const userPut = async (req, res) => {
   const userAux = await User.findById(userId).select("email employmentStatus userIdSesame");
   if (!userAux) throw new ClientError("Usuario no encontrado", 404);
 
- if (req.body.employmentStatus) {
-  const nextStatus = req.body.employmentStatus;
+  if (req.body.employmentStatus) {
+    const nextStatus = req.body.employmentStatus;
 
-  if (nextStatus === "ya no trabaja con nosotros") {
-    const open = await hasOpenHiring(userId);
+    if (nextStatus === "ya no trabaja con nosotros") {
+      const open = await hasOpenHiring(userId);
 
-    if (open) {
-      throw new ClientError(
-        `Para cambiar el estado laboral a "Ya no trabaja con nosotros" debes cerrar todos los periodos abiertos`,
-        400
-      );
+      if (open) {
+        throw new ClientError(
+          `Para cambiar el estado laboral a "Ya no trabaja con nosotros" debes cerrar todos los periodos abiertos`,
+          400
+        );
+      }
+
+      if (userAux?.userIdSesame) {
+        await disableSesameEmployeeForUser(userId);
+      }
+
+      if (userAux.email) {
+        await deleteUserByEmailWS(userAux.email);
+      }
+
+      updateFields.employmentStatus = "ya no trabaja con nosotros";
+      updateFields.email = "";
+    } else if (nextStatus === "en proceso de contratación") {
+      if (userAux?.userIdSesame) {
+        await disableSesameEmployeeForUser(userId);
+      }
+
+      updateFields.employmentStatus = "en proceso de contratación";
+
+      if (!userAux.email) {
+        const ws = await createUserWS(userId);
+        updateFields.email = ws.email;
+      }
+    } else if (nextStatus === "activo") {
+      updateFields.employmentStatus = "activo";
+
+      if (!userAux.email) {
+        const ws = await createUserWS(userId);
+        updateFields.email = ws.email;
+      }
+
+      /**
+       * No activamos Sesame aquí.
+       * La activación Sesame se hace desde el flujo del front:
+       * postSesameAssignEmployeeToDispositiveScopes
+       * porque necesita seleccionar dispositivo y, a veces, workplace.
+       */
     }
-
-    if (userAux?.userIdSesame) {
-      await disableSesameEmployeeForUser(userId);
-    }
-
-    if (userAux.email) {
-      await deleteUserByEmailWS(userAux.email);
-    }
-
-    updateFields.employmentStatus = "ya no trabaja con nosotros";
-    updateFields.email = "";
-  } else if (nextStatus === "en proceso de contratación") {
-    if (userAux?.userIdSesame) {
-      await disableSesameEmployeeForUser(userId);
-    }
-
-    updateFields.employmentStatus = "en proceso de contratación";
-
-    if (!userAux.email) {
-      const ws = await createUserWS(userId);
-      updateFields.email = ws.email;
-    }
-  } else if (nextStatus === "activo") {
-    updateFields.employmentStatus = "activo";
-
-    if (!userAux.email) {
-      const ws = await createUserWS(userId);
-      updateFields.email = ws.email;
-    }
-
-    /**
-     * No activamos Sesame aquí.
-     * La activación Sesame se hace desde el flujo del front:
-     * postSesameAssignEmployeeToDispositiveScopes
-     * porque necesita seleccionar dispositivo y, a veces, workplace.
-     */
-  } else {
-    updateFields.employmentStatus = nextStatus;
   }
-}
 
   if (req.body.firstName) updateFields.firstName = toTitleCase(req.body.firstName);
   if (req.body.lastName) updateFields.lastName = toTitleCase(req.body.lastName);
@@ -771,18 +784,18 @@ const userPut = async (req, res) => {
   }
 
   if (req.body.drivingLicenceIssueDate !== undefined) {
-  if (!req.body.drivingLicenceIssueDate) {
-    updateFields.drivingLicenceIssueDate = null;
-  } else {
-    const dday = new Date(req.body.drivingLicenceIssueDate);
+    if (!req.body.drivingLicenceIssueDate) {
+      updateFields.drivingLicenceIssueDate = null;
+    } else {
+      const dday = new Date(req.body.drivingLicenceIssueDate);
 
-    if (Number.isNaN(dday.getTime())) {
-      throw new ClientError('Fecha de expedición no válida', 400);
+      if (Number.isNaN(dday.getTime())) {
+        throw new ClientError('Fecha de expedición no válida', 400);
+      }
+
+      updateFields.drivingLicenceIssueDate = dday;
     }
-
-    updateFields.drivingLicenceIssueDate = dday;
   }
-}
 
   if (req.body.disPercentage !== undefined || req.body.disNotes !== undefined) {
     updateFields.disability = {};
@@ -804,7 +817,7 @@ const userPut = async (req, res) => {
 
   if (req.body.studies) {
     const studiesParsed = parseField(req.body.studies, "studies");
-  
+
     updateFields.studies = studiesParsed.map((s) => new mongoose.Types.ObjectId(s));
   }
 
@@ -826,6 +839,25 @@ const userPut = async (req, res) => {
       { new: true, runValidators: true }
     );
 
+    if (
+      req.body.employmentStatus === "activo" &&
+      userAux.employmentStatus !== "activo"
+    ) {
+      const openHiring = await getLastOpenHiringForUser(userId);
+
+      if (openHiring?.dispositiveId) {
+        notifyPrlOfNewHiring({
+          userId,
+          periodId: openHiring._id,
+          dispositiveId: openHiring.dispositiveId,
+        }).catch((e) => {
+          console.log("no se ha podido enviar la notificación PRL", e?.message || e);
+        });
+      } else {
+        console.log("No se ha enviado notificación PRL: el usuario no tiene periodo abierto con dispositivo.");
+      }
+    }
+
     if (req.body.personalHours || req.body.vacationHours) {
       const payload = {
         _id: updatedUser._id,
@@ -846,6 +878,8 @@ const userPut = async (req, res) => {
     throw new ClientError("Error al actualizar el usuario", 500);
   }
 };
+
+
 // =========================
 // Payroll (igual)
 // =========================
@@ -1347,8 +1381,8 @@ const getUsers = async (req, res) => {
     filters.lastName = { $regex: rx };
   }
 
-  if(body.role){
-    filters.role=body.role
+  if (body.role) {
+    filters.role = body.role
   }
 
   if (body.email) {
@@ -1391,12 +1425,12 @@ const getUsers = async (req, res) => {
   }
 
   // ---------------- Filtros por Periods abiertos (programa/dispositivo/provincia/posición) ----------------
-const mustFilterByPeriods =
-  body.dispositive ||
-  body.programId ||
-  body.provinces ||
-  body.position ||
-  (Array.isArray(body.allowedDispositiveIds) && body.allowedDispositiveIds.length);
+  const mustFilterByPeriods =
+    body.dispositive ||
+    body.programId ||
+    body.provinces ||
+    body.position ||
+    (Array.isArray(body.allowedDispositiveIds) && body.allowedDispositiveIds.length);
 
   if (mustFilterByPeriods) {
     const userIdsFromPeriods = await getUserIdsWithOpenPeriodsForFilters(body);
@@ -1430,7 +1464,7 @@ const mustFilterByPeriods =
     phoneJob: 1,
     photoProfile: 1,
     userIdSesame: 1,
-    drivingLicenceIssueDate:1,
+    drivingLicenceIssueDate: 1,
   };
 
   // ---------------- Paginación sobre Users ya filtrados ----------------

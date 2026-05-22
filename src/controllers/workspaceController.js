@@ -1,6 +1,6 @@
 
 const { google } = require('googleapis');
-const { User, Program, Provinces, Dispositive } = require('../models/indexModels');
+const { User, Program, Provinces, Dispositive,  ScopedRoleRule, Periods } = require('../models/indexModels');
 const mongoose = require('mongoose');
 const { catchAsync } = require('../utils/catchAsync');
 const { response } = require('../utils/response');
@@ -8,6 +8,7 @@ const { error } = require('pdf-lib');
 const { ClientError } = require('../utils/clientError');
 // arriba del archivo (ajusta rutas)
 const { generateEmailHTML, sendEmail, sendWelcomeEmail } = require('./emailControllerGoogle'); 
+
 
 // 1. Decodificamos las credenciales
 const credentials = JSON.parse(
@@ -360,7 +361,6 @@ const infoGroupWS = async (req, res) => {
       { _id: idProgram, 'devices._id': idDevice },
       { 'devices.$': 1, _id: 0 }
     )
-    console.log(doc)
     idGroupWorkSpace = doc.devices[0].groupWorkspace
   } else if (!!idProgram) {
     const programInfo = await Program.findById(idProgram).select('groupWorkspace');
@@ -1579,6 +1579,26 @@ async function testAttachGroupToDispositiveByName() {
   console.log('Resultado:', result);
 }
 
+const isEmail = (value = "") =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value).trim());
+
+const getWorkspaceGroupEmailByKey = async (groupKey) => {
+  const key = String(groupKey || "").trim();
+
+  if (!key) return "";
+  if (isEmail(key)) return key.toLowerCase();
+
+  const admin = getAdminDirectoryClient(); 
+  // 👆 CAMBIA getAdminDirectoryClient() por el nombre real
+  // del cliente que YA usas en workspaceController para addUserToGroup/infoGroupWS.
+
+  const { data } = await admin.groups.get({
+    groupKey: key,
+  });
+
+  return String(data?.email || "").trim().toLowerCase();
+};
+
 
 module.exports = {
   addUserToGroup,
@@ -1598,6 +1618,8 @@ module.exports = {
   moveUserBetweenDevicesWS,
   ensureWorkspaceGroupsForModel,
   recreateCorporateEmailByUserId,
-  emailExiste
+  emailExiste,
+  getWorkspaceGroupEmailByKey,
+
 
 };

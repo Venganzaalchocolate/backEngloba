@@ -969,6 +969,9 @@ const exportAttendedUsers = async (req, res) => {
   response(res, 200, { users });
 };
 
+
+
+
 module.exports = {
   createAttendedUser: catchAsync(createAttendedUser),
   listAttendedUsers: catchAsync(listAttendedUsers),

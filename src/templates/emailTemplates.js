@@ -2452,3 +2452,98 @@ export function buildLeaveExpectedEndReminderHtmlEmail(
 </html>`;
 }
 
+export function buildPrlNewHiringPlainText({
+  workerName = "",
+  workerDni = "",
+  workerEmail = "",
+  workerPhone = "",
+  dispositiveName = "",
+  programName = "",
+  provinceName = "",
+  startDate = "",
+  positionName = "",
+} = {}) {
+  return `Hola,
+
+Se ha registrado una nueva contratación que requiere revisión/seguimiento desde Prevención de Riesgos Laborales.
+
+Trabajador/a:
+- Nombre: ${workerName}
+- DNI/NIE: ${workerDni}
+- Email: ${workerEmail || "No indicado"}
+- Teléfono: ${workerPhone || "No indicado"}
+
+Contratación:
+- Puesto: ${positionName || "No indicado"}
+- Fecha de alta: ${startDate || "No indicada"}
+- Dispositivo: ${dispositiveName || "No indicado"}
+- Programa: ${programName || "No indicado"}
+- Provincia: ${provinceName || "No indicada"}
+
+Un saludo.`;
+}
+
+export function buildPrlNewHiringHtmlEmail({
+  workerName = "",
+  workerDni = "",
+  workerEmail = "",
+  workerPhone = "",
+  dispositiveName = "",
+  programName = "",
+  provinceName = "",
+  startDate = "",
+  positionName = "",
+  logoUrl = "https://app.engloba.org.es/graphic/logotipo_blanco.png",
+} = {}) {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Nueva contratación · PRL</title>
+<style>
+  body{margin:0;padding:0;background:#f2f2f2;font-family:Arial,sans-serif;color:#333}
+  .card{max-width:680px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+  .header{background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);color:#fff;padding:26px 24px;text-align:center}
+  .logo{max-width:120px;margin-bottom:8px}
+  .header h1{margin:0;font-size:23px}
+  .content{padding:28px 34px;font-size:15px;line-height:1.55}
+  .block{background:#f8f9ff;border:1px solid #e5e7ff;border-radius:10px;padding:16px;margin:14px 0}
+  .label{font-weight:bold;color:#4f529f}
+  .footer{background:#f4f5fb;text-align:center;padding:16px;font-size:13px;color:#777}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      ${logoUrl ? `<img class="logo" src="${logoUrl}" alt="Asociación Engloba">` : ""}
+      <h1>Nueva contratación · Prevención de Riesgos Laborales</h1>
+    </div>
+
+    <div class="content">
+      <p>Se ha registrado una nueva contratación que requiere revisión/seguimiento desde el área de Prevención de Riesgos Laborales.</p>
+
+      <div class="block">
+        <p><span class="label">Trabajador/a:</span> ${workerName || "No indicado"}</p>
+        <p><span class="label">DNI/NIE:</span> ${workerDni || "No indicado"}</p>
+        <p><span class="label">Email:</span> ${workerEmail || "No indicado"}</p>
+        <p><span class="label">Teléfono:</span> ${workerPhone || "No indicado"}</p>
+      </div>
+
+      <div class="block">
+        <p><span class="label">Puesto:</span> ${positionName || "No indicado"}</p>
+        <p><span class="label">Fecha de alta:</span> ${startDate || "No indicada"}</p>
+        <p><span class="label">Dispositivo:</span> ${dispositiveName || "No indicado"}</p>
+        <p><span class="label">Programa:</span> ${programName || "No indicado"}</p>
+        <p><span class="label">Provincia:</span> ${provinceName || "No indicada"}</p>
+      </div>
+
+      <p>Este correo se ha generado automáticamente desde la aplicación de Engloba.</p>
+    </div>
+
+    <div class="footer">
+      Asociación Engloba · Prevención de Riesgos Laborales
+    </div>
+  </div>
+</body>
+</html>`;
+}
