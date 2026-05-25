@@ -1,89 +1,221 @@
-
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const { uploadFile, getFileCv, deleteFile, getPresignedPut, getPresignedGet } = require('./ovhController');
 const mongoose = require('mongoose');
-const { uploadFileToDrive, deleteFileById, getFileById, updateFileInDrive, appendFilesToArchiveOptimized } = require('./googleController');
-const { User, Program, Jobs, Leavetype, Filedrive, Dispositive, Documentation, VolunteerApplication } = require('../models/indexModels'); // 👈 añadimos Dispositive
-const archiver = require("archiver");
+const {
+  uploadFileToDrive,
+  deleteFileById,
+  getFileById,
+  updateFileInDrive,
+  appendFilesToArchiveOptimized
+} = require('./googleController');
+
+const {
+  User,
+  Program,
+  Jobs,
+  Leavetype,
+  Filedrive,
+  Dispositive,
+  Documentation,
+  VolunteerApplication,
+  Workplace
+} = require('../models/indexModels');
+
+const archiver = require('archiver');
+const { registerDocumentationAuditDownload } = require('./userDocumentationAuditController');
+
+/* ======================================================
+   HELPERS
+====================================================== */
 
 const sanitize = (text) =>
-  String(text || "")
-    .normalize("NFD")                          // quitar acentos
-    .replace(/[\u0300-\u036f]/g, "")           // limpiar caracteres combinados
-    .replace(/[^a-zA-Z0-9_\-]/g, "_")          // solo permitir A-Z 0-9 _ -
-    .replace(/_+/g, "_")                       // evitar ___ repetidos
+  String(text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9_\-]/g, '_')
+    .replace(/_+/g, '_')
     .trim()
-    .slice(0, 60);      
+    .slice(0, 60);
 
-    
+const MODEL_MAP = {
+  user: 'User',
+  program: 'Program',
+  dispositive: 'Dispositive',
+  workplace: 'Workplace',
+  volunteerapplication: 'VolunteerApplication',
+  usercv: 'UserCv',
+  finantial: 'Finantial',
+  estadistics: 'Estadistics',
+};
+
+const normalizeOriginModel = (originModel) => {
+  const key = String(originModel || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .toLowerCase();
+
+  return MODEL_MAP[key] || null;
+};
+
+const getParentConfig = (originModel) => {
+  const canonicalModel = normalizeOriginModel(originModel);
+
+  if (!canonicalModel) return null;
+
+  const configs = {
+    Program: {
+      Model: Program,
+      push: (fileId) => ({ $push: { files: fileId } }),
+      add: (fileId) => ({ $addToSet: { files: fileId } }),
+      pull: (fileId) => ({ $pull: { files: fileId } }),
+      populate: 'files',
+    },
+
+    User: {
+      Model: User,
+      push: (fileId) => ({ $push: { files: { filesId: fileId } } }),
+      add: (fileId) => ({ $addToSet: { files: { filesId: fileId } } }),
+      pull: (fileId) => ({ $pull: { files: { filesId: fileId } } }),
+      populate: 'files.filesId',
+    },
+
+    Dispositive: {
+      Model: Dispositive,
+      push: (fileId) => ({ $push: { files: fileId } }),
+      add: (fileId) => ({ $addToSet: { files: fileId } }),
+      pull: (fileId) => ({ $pull: { files: fileId } }),
+      populate: 'files',
+    },
+
+    VolunteerApplication: {
+      Model: VolunteerApplication,
+      push: (fileId) => ({ $push: { files: fileId } }),
+      add: (fileId) => ({ $addToSet: { files: fileId } }),
+      pull: (fileId) => ({ $pull: { files: fileId } }),
+      populate: 'files',
+    },
+
+    Workplace: {
+      Model: Workplace,
+      push: (fileId) => ({ $push: { files: fileId } }),
+      add: (fileId) => ({ $addToSet: { files: fileId } }),
+      pull: (fileId) => ({ $pull: { files: fileId } }),
+      populate: 'files',
+    },
+  };
+
+  return {
+    canonicalModel,
+    ...configs[canonicalModel],
+  };
+};
+
+const addFileToParent = async ({ originModel, idModel, fileId, session, mode = 'push' }) => {
+  const config = getParentConfig(originModel);
+  if (!config?.Model) throw new ClientError('originModel no permitido', 400);
+
+  const update = mode === 'add'
+    ? config.add(fileId)
+    : config.push(fileId);
+
+  return config.Model.findByIdAndUpdate(
+    idModel,
+    update,
+    { new: true, session }
+  ).populate(config.populate);
+};
+
+const removeFileFromParent = async ({ originModel, idModel, fileId, session }) => {
+  const config = getParentConfig(originModel);
+  if (!config?.Model) throw new ClientError('originModel no permitido', 400);
+
+  return config.Model.findByIdAndUpdate(
+    idModel,
+    config.pull(fileId),
+    { new: true, session }
+  ).populate(config.populate);
+};
+
+const getParentWithFiles = async ({ originModel, idModel }) => {
+  const config = getParentConfig(originModel);
+  if (!config?.Model) throw new ClientError('originModel no permitido', 400);
+
+  return config.Model.findById(idModel).populate(config.populate);
+};
+
+/* ======================================================
+   ZIP NOMINAS
+====================================================== */
 
 const zipPayrolls = async (req, res) => {
   const { userId } = req.body;
 
-  if (!userId) throw new ClientError("Falta userId", 400);
+  if (!userId) throw new ClientError('Falta userId', 400);
 
   const user = await User.findById(userId).lean();
-  if (!user || !user.payrolls || user.payrolls.length === 0)
-    throw new ClientError("El usuario no tiene nóminas", 404);
 
-  const archive = archiver("zip", { zlib: { level: 9 } });
+  if (!user || !user.payrolls || user.payrolls.length === 0) {
+    throw new ClientError('El usuario no tiene nóminas', 404);
+  }
 
-  res.setHeader("Content-Type", "application/zip");
+  const archive = archiver('zip', { zlib: { level: 9 } });
+
+  res.setHeader('Content-Type', 'application/zip');
   res.setHeader(
-    "Content-Disposition",
+    'Content-Disposition',
     `attachment; filename=nominas_${sanitize(user.firstName)}_${sanitize(user.lastName)}.zip`
   );
 
   archive.pipe(res);
 
-  // Preparamos una lista de "fileDocs" para la función optimizada
-  const payrollDocs = user.payrolls.map(p => ({
+  const payrollDocs = user.payrolls.map((p) => ({
     idDrive: p.pdf,
-    fileLabel: `Nomina_${p.payrollYear}_${String(p.payrollMonth).padStart(2, "0")}`,
+    fileLabel: `Nomina_${p.payrollYear}_${String(p.payrollMonth).padStart(2, '0')}`,
     description: null,
-    originDocumentation: null
+    originDocumentation: null,
   }));
 
-  // 🚀 Descargas concurrentes (más rápido y estable)
   await appendFilesToArchiveOptimized(payrollDocs, archive, 5);
-
   await archive.finalize();
 };
+
+/* ======================================================
+   ZIP MULTIPLE FILES
+====================================================== */
 
 const zipMultipleFiles = async (req, res) => {
   const { fileIds } = req.body;
 
   if (!Array.isArray(fileIds) || fileIds.length === 0) {
-    throw new ClientError("fileIds debe ser un array con IDs", 400);
+    throw new ClientError('fileIds debe ser un array con IDs', 400);
   }
 
-  // 1️⃣ Obtener Filedrive
   const files = await Filedrive.find({ _id: { $in: fileIds } }).lean();
+
   if (!files || files.length === 0) {
-    throw new ClientError("No se encontraron archivos para esos IDs", 404);
+    throw new ClientError('No se encontraron archivos para esos IDs', 404);
   }
 
-  // 2️⃣ Preparar ZIP
-  const archive = archiver("zip", { zlib: { level: 9 } });
-  res.setHeader("Content-Type", "application/zip");
-  res.setHeader("Content-Disposition", `attachment; filename=Documentos.zip`);
+  const archive = archiver('zip', { zlib: { level: 9 } });
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename=Documentos.zip');
+
   archive.pipe(res);
 
-  // 3️⃣ Preparamos docs para la función optimizada
   const listDocs = [];
 
   for (const fileDoc of files) {
-    let baseName = "documento";
+    let baseName = 'documento';
 
-    // fileLabel
-    if (fileDoc.fileLabel) baseName = fileDoc.fileLabel;
+    if (fileDoc.fileLabel) {
+      baseName = fileDoc.fileLabel;
+    } else if (fileDoc.description) {
+      baseName = fileDoc.description;
+    }
 
-    // description
-    else if (fileDoc.description) baseName = fileDoc.description;
-
-    // documentación oficial
     if (fileDoc.originDocumentation) {
-      const doc = await Documentation.findById(fileDoc.originDocumentation).select("name");
+      const doc = await Documentation.findById(fileDoc.originDocumentation).select('name');
       if (doc?.name) baseName = doc.name;
     }
 
@@ -91,160 +223,162 @@ const zipMultipleFiles = async (req, res) => {
       idDrive: fileDoc.idDrive,
       fileLabel: sanitize(baseName),
       description: null,
-      originDocumentation: null
+      originDocumentation: null,
     });
   }
 
-  // 🚀 Descarga concurrente optimizada (hasta 5 en paralelo)
   await appendFilesToArchiveOptimized(listDocs, archive, 5);
-
-  // 4️⃣ Finalizar ZIP
   await archive.finalize();
 };
 
-
+/* ======================================================
+   OVH CV
+====================================================== */
 
 const getCvPresignPut = async (req, res) => {
-  const { id } = req.body;              // id del UserCv de tu BD
+  const { id } = req.body;
+
   if (!id) throw new ClientError('Falta id', 400);
 
-  // la clave real del objeto (mantén tu esquema actual)
-  const key = `${id}.pdf`;              // <= no cambies nada más para “mínimos cambios”
-  const url = await getPresignedPut(key); // 5 minutos de validez
+  const key = `${id}.pdf`;
+  const url = await getPresignedPut(key);
+
   response(res, 200, { url, key });
 };
 
-// Presigned GET para ver/descargar
 const getCvPresignGet = async (req, res) => {
   const { id } = req.body;
+
   if (!id) throw new ClientError('Falta id', 400);
 
   const key = `${id}.pdf`;
   const url = await getPresignedGet(key);
+
   response(res, 200, { url });
 };
-
 
 const postUploadFile = async (req, res) => {
   if (!req.file || !req.body.nameFile) {
     throw new ClientError('No se proporcionó archivo, o nombre para el archivo', 400);
-  } else {
-    const archivoGuardado = await uploadFile(req.file, `${req.body.nameFile}.pdf`); // Pasar el flujo de datos del archivo directamente
-    response(res, 200, archivoGuardado); // Enviar los datos del archivo guardado a la respuesta
   }
+
+  const archivoGuardado = await uploadFile(req.file, `${req.body.nameFile}.pdf`);
+  response(res, 200, archivoGuardado);
 };
 
 const getFile = async (req, res) => {
   if (!req.body.id) {
     throw new ClientError('No se proporcionó id', 400);
-  } else {
-    const archivoStream = await getFileCv(req.body.id);
-
-    if (!archivoStream) {
-      throw new ClientError('Archivo no encontrado', 404);
-    }
-    // Configurar la respuesta HTTP
-    res.writeHead(200, {
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': 'attachment; filename=' + req.body.id,
-    });
-
-    // Enviar el stream como respuesta HTTP
-    archivoStream.pipe(res);
   }
+
+  const archivoStream = await getFileCv(req.body.id);
+
+  if (!archivoStream) {
+    throw new ClientError('Archivo no encontrado', 404);
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename=${req.body.id}`,
+  });
+
+  archivoStream.pipe(res);
 };
 
 const deleteIdFile = async (req, res) => {
   if (!req.id) {
     throw new ClientError('No se proporcionó nombre para el archivo', 400);
-  } else {
-    const archivoEliminado = await deleteFile(req.id); // Pasar el flujo de datos del archivo directamente
-    response(res, 200, archivoEliminado); // Enviar los datos del archivo guardado a la respuesta
   }
-}
 
-// GOOGLE
-// FileDriveService.js
-
-const getFileDrive = async (req, res, next) => {
-  try {
-    const { idFile, userId } = req.body || {};
-    if (!idFile) throw new ClientError('Falta idFile', 400);
-
-    let driveId = null;
-    let fileDoc = null;
-
-    // 1) Intentamos tratarlo como Filedrive._id
-    if (mongoose.Types.ObjectId.isValid(idFile)) {
-      fileDoc = await Filedrive.findById(idFile)
-        .select('_id idDrive originModel idModel originDocumentation')
-        .lean();
-
-      if (fileDoc?.idDrive) {
-        driveId = fileDoc.idDrive;
-      }
-    }
-
-    // 2) Si no existe Filedrive, asumimos que nos han pasado un idDrive directo
-    if (!driveId) {
-      driveId = idFile;
-    }
-
-    const { file, stream } = await getFileById(driveId);
-
-    if (!stream) {
-      throw new ClientError('Archivo no encontrado en Google Drive', 404);
-    }
-
-    // 3) Solo auditamos si realmente era un Filedrive oficial de usuario
-    if (
-      fileDoc &&
-      userId &&
-      fileDoc.originModel === 'User' &&
-      fileDoc.originDocumentation &&
-      String(fileDoc.idModel) === String(userId)
-    ) {
-      await registerDocumentationAuditDownload({
-        userId,
-        documentationId: fileDoc.originDocumentation,
-        fileId: fileDoc._id,
-        driveId: fileDoc.idDrive,
-      });
-    }
-
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${file.name}"`
-    );
-    res.setHeader('Content-Type', file.mimeType);
-
-    stream.pipe(res);
-  } catch (error) {
-    next(error);
-  }
+  const archivoEliminado = await deleteFile(req.id);
+  response(res, 200, archivoEliminado);
 };
 
+/* ======================================================
+   GOOGLE DRIVE - GET FILE
+====================================================== */
 
-const createFileDrive = async (req, res, next) => {
+const getFileDrive = async (req, res) => {
+  const { idFile, userId } = req.body || {};
+
+  if (!idFile) throw new ClientError('Falta idFile', 400);
+
+  let driveId = null;
+  let fileDoc = null;
+
+  if (mongoose.Types.ObjectId.isValid(idFile)) {
+    fileDoc = await Filedrive.findById(idFile)
+      .select('_id idDrive originModel idModel originDocumentation')
+      .lean();
+
+    if (fileDoc?.idDrive) driveId = fileDoc.idDrive;
+  }
+
+  if (!driveId) driveId = idFile;
+
+  const { file, stream } = await getFileById(driveId);
+
+  if (!stream) {
+    throw new ClientError('Archivo no encontrado en Google Drive', 404);
+  }
+  
+  if (
+    fileDoc &&
+    userId &&
+    fileDoc.originModel === 'User' &&
+    fileDoc.originDocumentation &&
+    String(fileDoc.idModel) === String(userId)
+  ) {
+    await registerDocumentationAuditDownload({
+      userId,
+      documentationId: fileDoc.originDocumentation,
+      fileId: fileDoc._id,
+      driveId: fileDoc.idDrive,
+    });
+  }
+  
+
+  res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
+  res.setHeader('Content-Type', file.mimeType);
+
+  stream.pipe(res);
+};
+
+/* ======================================================
+   GOOGLE DRIVE - CREATE FILE
+====================================================== */
+
+const createFileDrive = async (req, res) => {
   const {
-    originModel, idModel, originDocumentation,
-    fileName, fileLabel, date, notes, description, cronology, category
+    originModel,
+    idModel,
+    originDocumentation,
+    fileName,
+    fileLabel,
+    date,
+    notes,
+    description,
+    cronology,
+    category,
   } = req.body;
-  const file = req.file;
 
+  const file = req.file;
 
   if (!file) throw new ClientError('No se recibió ningún archivo a subir', 400);
   if (!originModel) throw new ClientError('Falta originModel', 400);
   if (!idModel) throw new ClientError('Falta idModel', 400);
 
+  const canonicalModel = normalizeOriginModel(originModel);
+  if (!canonicalModel) throw new ClientError('originModel no permitido', 400);
+
   const fileData = {
     description,
     date: date ? new Date(date) : undefined,
     notes,
-    originModel,
+    originModel: canonicalModel,
     idModel: new mongoose.Types.ObjectId(idModel),
     cronology: cronology || {},
-    category: category || 'Varios'
+    category: category || 'Varios',
   };
 
   if (originDocumentation) {
@@ -254,56 +388,37 @@ const createFileDrive = async (req, res, next) => {
     fileData.fileLabel = fileLabel;
   }
 
-  let newFile, uploadResult, updated;
+  let newFile = null;
+  let uploadResult = null;
+  let updated = null;
+
   const session = await mongoose.startSession();
 
   try {
     await session.withTransaction(async () => {
-      // Guardar en MongoDB
       newFile = await new Filedrive(fileData).save({ session });
 
-      // Subir archivo a Drive
-      const folderId = process.env.GOOGLE_DRIVE_FILES,
-        driveName = newFile._id.toString();
+      const folderId = process.env.GOOGLE_DRIVE_FILES;
+      const driveName = newFile._id.toString();
+
       uploadResult = await uploadFileToDrive(file, folderId, driveName, false);
 
-      if (!uploadResult)
+      if (!uploadResult) {
         throw new ClientError('Error al subir archivo a Drive', 500);
+      }
 
-      // Asociar ID de Drive al archivo y guardarlo
       newFile.idDrive = uploadResult.id;
       await newFile.save({ session });
 
-      // Actualizar el documento padre según originModel
-      if (originModel.toLowerCase() === 'program') {
-        updated = await Program.findByIdAndUpdate(
-          idModel,
-          { $push: { files: newFile._id } },
-          { new: true, session }
-        ).populate('files');
-      } else if (originModel.toLowerCase() === 'user') {
-        updated = await User.findByIdAndUpdate(
-          idModel,
-          { $push: { files: { filesId: newFile._id } } },
-          { new: true, session }
-        ).populate('files.filesId');
-      } else if (originModel.toLowerCase() === 'dispositive') {
-        // ✅ Ahora los dispositivos son independientes
-        updated = await Dispositive.findByIdAndUpdate(
-          idModel,
-          { $push: { files: newFile._id } },
-          { new: true, session }
-        ).populate('files');
-      } else if(originModel.toLowerCase() === 'volunteerapplication'){
-        updated = await VolunteerApplication.findByIdAndUpdate(
-          idModel,
-          { $push: { files: newFile._id } },
-          { new: true, session }
-        ).populate('files');
-      }
+      updated = await addFileToParent({
+        originModel: canonicalModel,
+        idModel,
+        fileId: newFile._id,
+        session,
+        mode: 'push',
+      });
     });
   } catch (err) {
-    console.log(err)
     if (uploadResult?.id) await deleteFileById(uploadResult.id);
     throw err;
   } finally {
@@ -313,9 +428,11 @@ const createFileDrive = async (req, res, next) => {
   response(res, 200, updated);
 };
 
-// ======================================================
+/* ======================================================
+   GOOGLE DRIVE - UPDATE FILE
+====================================================== */
 
-const updateFileDrive = async (req, res, next) => {
+const updateFileDrive = async (req, res) => {
   const {
     fileId,
     originDocumentation,
@@ -327,24 +444,31 @@ const updateFileDrive = async (req, res, next) => {
     cronology,
     originModel,
     idModel,
-    category
+    category,
   } = req.body;
+
   const newFile = req.file;
 
-  if (!fileId)
+  if (!fileId) {
     throw new ClientError('Falta fileId para actualizar el archivo', 400);
+  }
 
   const session = await mongoose.startSession();
+
   let updatedParent = null;
-  let fileDoc;
+  let fileDoc = null;
 
   try {
     await session.withTransaction(async () => {
       fileDoc = await Filedrive.findById(fileId).session(session);
-      if (!fileDoc)
-        throw new ClientError('No se encontró el archivo a actualizar', 404);
 
-      // Actualizar campos comunes
+      if (!fileDoc) {
+        throw new ClientError('No se encontró el archivo a actualizar', 404);
+      }
+
+      const oldOriginModel = fileDoc.originModel;
+      const oldIdModel = fileDoc.idModel;
+
       if (description !== undefined) fileDoc.description = description;
       if (notes !== undefined) fileDoc.notes = notes;
       if (date) fileDoc.date = new Date(date);
@@ -353,171 +477,134 @@ const updateFileDrive = async (req, res, next) => {
 
       if (originDocumentation) {
         fileDoc.originDocumentation = new mongoose.Types.ObjectId(originDocumentation);
+        fileDoc.fileName = undefined;
+        fileDoc.fileLabel = undefined;
       } else {
         if (fileName !== undefined) fileDoc.fileName = fileName;
         if (fileLabel !== undefined) fileDoc.fileLabel = fileLabel;
       }
 
-      // Si hay archivo nuevo
       if (newFile) {
         const updateResult = await updateFileInDrive(newFile, fileDoc.idDrive);
-        if (!updateResult)
+
+        if (!updateResult) {
           throw new ClientError('Error al actualizar el archivo en Drive', 500);
+        }
       }
 
-      // Si cambia de modelo o id padre
-      if (
-        originModel && idModel &&
-        (originModel.toLowerCase() !== fileDoc.originModel.toLowerCase() ||
-         idModel !== fileDoc.idModel.toString())
-      ) {
-        fileDoc.originModel = originModel;
+      const canonicalModel = originModel ? normalizeOriginModel(originModel) : null;
+
+      if (originModel && !canonicalModel) {
+        throw new ClientError('originModel no permitido', 400);
+      }
+
+      const mustMoveParent =
+        canonicalModel &&
+        idModel &&
+        (
+          canonicalModel !== fileDoc.originModel ||
+          String(idModel) !== String(fileDoc.idModel)
+        );
+
+      if (mustMoveParent) {
+        await removeFileFromParent({
+          originModel: oldOriginModel,
+          idModel: oldIdModel,
+          fileId: fileDoc._id,
+          session,
+        });
+
+        fileDoc.originModel = canonicalModel;
         fileDoc.idModel = new mongoose.Types.ObjectId(idModel);
 
-        if (originModel.toLowerCase() === 'program') {
-          updatedParent = await Program.findByIdAndUpdate(
-            idModel,
-            { $addToSet: { files: fileDoc._id } },
-            { new: true, session }
-          ).populate('files');
-        } else if (originModel.toLowerCase() === 'user') {
-          updatedParent = await User.findByIdAndUpdate(
-            idModel,
-            { $addToSet: { files: { filesId: fileDoc._id } } },
-            { new: true, session }
-          ).populate('files.filesId');
-        } else if (originModel.toLowerCase() === 'dispositive') {
-          updatedParent = await Dispositive.findByIdAndUpdate(
-            idModel,
-            { $addToSet: { files: fileDoc._id } },
-            { new: true, session }
-          ).populate('files');
-        }  else if(originModel.toLowerCase() === 'volunteerapplication'){
-        updatedParent = await VolunteerApplication.findByIdAndUpdate(
+        updatedParent = await addFileToParent({
+          originModel: canonicalModel,
           idModel,
-          { $addToSet: { files: fileDoc._id } },
-          { new: true, session }
-        ).populate('files');
-      }
+          fileId: fileDoc._id,
+          session,
+          mode: 'add',
+        });
       }
 
       await fileDoc.save({ session });
     });
-
+  } finally {
     session.endSession();
-
-    if (!updatedParent) {
-      if (fileDoc.originModel.toLowerCase() === 'program') {
-        updatedParent = await Program.findById(fileDoc.idModel).populate('files');
-      } else if (fileDoc.originModel.toLowerCase() === 'user') {
-        updatedParent = await User.findById(fileDoc.idModel).populate('files.filesId');
-      } else if (fileDoc.originModel.toLowerCase() === 'dispositive') {
-        updatedParent = await Dispositive.findById(fileDoc.idModel).populate('files');
-      }  else if (fileDoc.originModel.toLowerCase() === 'volunteerapplication') {
-        updatedParent = await VolunteerApplication.findById(fileDoc.idModel).populate('files');
-      }
-    }
-
-    response(res, 200, updatedParent);
-  } catch (err) {
-    session.endSession();
-    next(err);
-  }
-};
-
-// ======================================================
-
-const deleteFileDrive = async (req, res, next) => {
-  const idFile = req.body.fileId;
-  if (!idFile) throw new ClientError('Falta idFile', 400);
-
-  let updatedParent = null;
-
-  const fileDoc = await Filedrive.findById(idFile);
-  if (!fileDoc) throw new ClientError('No se encontró el File a eliminar', 404);
-
-  // Eliminar en Drive
-  if (fileDoc.idDrive) {
-    const success = await deleteFileById(fileDoc.idDrive);
-    if (!success) throw new ClientError('Error al eliminar archivo en Drive', 500);
   }
 
-  // Quitar del padre
-  if (fileDoc.originModel.toLowerCase() === 'program') {
-    updatedParent = await Program.findByIdAndUpdate(
-      fileDoc.idModel,
-      { $pull: { files: fileDoc._id } },
-      { new: true }
-    ).populate('files');
-  } else if (fileDoc.originModel.toLowerCase() === 'user') {
-    updatedParent = await User.findByIdAndUpdate(
-      fileDoc.idModel,
-      { $pull: { files: { filesId: fileDoc._id } } },
-      { new: true }
-    ).populate('files.filesId');
-  } else if (fileDoc.originModel.toLowerCase() === 'dispositive') {
-    // ✅ ahora es independiente
-    updatedParent = await Dispositive.findByIdAndUpdate(
-      fileDoc.idModel,
-      { $pull: { files: fileDoc._id } },
-      { new: true }
-    ).populate('files');
-  } else if (fileDoc.originModel.toLowerCase() === 'volunteerapplication') {
-    updatedParent = await VolunteerApplication.findByIdAndUpdate(
-      fileDoc.idModel,
-      { $pull: { files: fileDoc._id } },
-      { new: true }
-    ).populate('files');
+  if (!updatedParent) {
+    updatedParent = await getParentWithFiles({
+      originModel: fileDoc.originModel,
+      idModel: fileDoc.idModel,
+    });
   }
 
-  await Filedrive.findByIdAndDelete(idFile);
   response(res, 200, updatedParent);
 };
 
+/* ======================================================
+   GOOGLE DRIVE - DELETE FILE
+====================================================== */
 
+const deleteFileDrive = async (req, res) => {
+  const idFile = req.body.fileId;
 
-const MODEL_MAP = {
-  user: "User",
-  User: "User",
-  program: "Program",
-  Program: "Program",
-  dispositive: "Dispositive",
-  Dispositive: "Dispositive",
-  finantial: "Finantial",
-  Finantial: "Finantial",
-  estadistics: "Estadistics",
-  Estadistics: "Estadistics",
-  usercv: "UserCv",
-  UserCv: "UserCv",
-  VolunteerApplication:'VolunteerApplication',
-  volunteerapplication:'VolunteerApplication'
+  if (!idFile) throw new ClientError('Falta idFile', 400);
+
+  const fileDoc = await Filedrive.findById(idFile);
+
+  if (!fileDoc) {
+    throw new ClientError('No se encontró el File a eliminar', 404);
+  }
+
+  if (fileDoc.idDrive) {
+    const success = await deleteFileById(fileDoc.idDrive);
+
+    if (!success) {
+      throw new ClientError('Error al eliminar archivo en Drive', 500);
+    }
+  }
+
+  const updatedParent = await removeFileFromParent({
+    originModel: fileDoc.originModel,
+    idModel: fileDoc.idModel,
+    fileId: fileDoc._id,
+  });
+
+  await Filedrive.findByIdAndDelete(idFile);
+
+  response(res, 200, updatedParent);
 };
+
+/* ======================================================
+   LIST FILES
+====================================================== */
 
 const listFile = async (req, res) => {
   const { originModel, idModel } = req.body;
 
-  if (!originModel) {
-    throw new ClientError("Falta originModel", 400);
-  }
-  if (!idModel) {
-    throw new ClientError("Falta idModel", 400);
-  }
+  if (!originModel) throw new ClientError('Falta originModel', 400);
+  if (!idModel) throw new ClientError('Falta idModel', 400);
 
-  const canonicalModel = MODEL_MAP[originModel];
+  const canonicalModel = normalizeOriginModel(originModel);
+
   if (!canonicalModel) {
-    throw new ClientError("originModel no permitido", 400);
+    throw new ClientError('originModel no permitido', 400);
   }
 
   const files = await Filedrive.find({
     originModel: canonicalModel,
     idModel: new mongoose.Types.ObjectId(idModel),
   })
-    .select("_id originDocumentation date fileLabel description idDrive category")
+    .select('_id originDocumentation date fileLabel description idDrive category')
     .lean();
 
   response(res, 200, { items: files });
 };
 
+/* ======================================================
+   GENERATED OFFICIAL FILES
+====================================================== */
 
 const attachGeneratedOfficialFileToUser = async ({
   userId,
@@ -528,18 +615,19 @@ const attachGeneratedOfficialFileToUser = async ({
   category,
 }) => {
   const session = await mongoose.startSession();
+
   let updatedUser = null;
   let newFile = null;
 
   try {
     await session.withTransaction(async () => {
       newFile = await new Filedrive({
-        originModel: "User",
+        originModel: 'User',
         idModel: new mongoose.Types.ObjectId(userId),
         originDocumentation: new mongoose.Types.ObjectId(documentationId),
-        description: description || "",
+        description: description || '',
         date: date ? new Date(date) : undefined,
-        category: category || "Oficial",
+        category: category || 'Oficial',
         idDrive: driveId,
       }).save({ session });
 
@@ -547,10 +635,9 @@ const attachGeneratedOfficialFileToUser = async ({
         userId,
         { $push: { files: { filesId: newFile._id } } },
         { new: true, session }
-      ).populate("files.filesId");
+      ).populate('files.filesId');
     });
   } catch (error) {
-    console.log(error)
     if (driveId) await deleteFileById(driveId).catch(() => {});
     throw error;
   } finally {
@@ -560,19 +647,27 @@ const attachGeneratedOfficialFileToUser = async ({
   return { updatedUser, newFile };
 };
 
+/* ======================================================
+   EXPORTS
+====================================================== */
+
 module.exports = {
   postUploadFile: catchAsync(postUploadFile),
   getFile: catchAsync(getFile),
   deleteIdFile: catchAsync(deleteIdFile),
+
   createFileDrive: catchAsync(createFileDrive),
   updateFileDrive: catchAsync(updateFileDrive),
   deleteFileDrive: catchAsync(deleteFileDrive),
   getFileDrive: catchAsync(getFileDrive),
+
   getCvPresignPut: catchAsync(getCvPresignPut),
   getCvPresignGet: catchAsync(getCvPresignGet),
-  zipMultipleFiles: catchAsync(zipMultipleFiles),
-  zipPayrolls:catchAsync(zipPayrolls),
-  listFile:catchAsync(listFile),
-  attachGeneratedOfficialFileToUser
 
+  zipMultipleFiles: catchAsync(zipMultipleFiles),
+  zipPayrolls: catchAsync(zipPayrolls),
+
+  listFile: catchAsync(listFile),
+
+  attachGeneratedOfficialFileToUser,
 };

@@ -1,4 +1,4 @@
-const { Filedrive, UserChangeRequest, Documentation, Dispositive } = require('../models/indexModels');
+const { Filedrive, UserChangeRequest, Documentation, Dispositive, Workplace  } = require('../models/indexModels');
 const mongoose = require('mongoose');
 const { catchAsync, ClientError } = require('../utils/catchAsync');
 const { response } = require('../utils/response');
@@ -108,36 +108,62 @@ const getDocumentationUnified = async (req, res) => {
 };
 
 const getDocumentationProgramDispositive = async (req, res) => {
-  const { type, id } = req.body || {};
+  const { type, id, includeWorkplaces = false } = req.body || {};
 
-  // 🔹 Si estamos en un Programa → incluir tanto los docs de Program como los de Dispositive
   let filter;
+
   if (type === "Program") {
-    filter = { model: { $in: ["Program", "Dispositive"] } };
+    filter = { model: { $in: ["Program", "Dispositive"] }, visible: true };
+
   } else if (type === "Dispositive") {
-    filter = { model: "Dispositive" };
+    filter = includeWorkplaces
+      ? { model: { $in: ["Dispositive", "Workplace"] }, visible: true }
+      : { model: "Dispositive", visible: true };
+
+  } else if (type === "Workplace") {
+    filter = { model: "Workplace", visible: true };
+
   } else {
-    filter = { model: { $in: ["Program", "Dispositive"] } };
+    filter = { model: { $in: ["Program", "Dispositive"] }, visible: true };
   }
 
   const list = await Documentation.find(filter).lean();
 
-  // 🔹 Documentación vinculada al id
   let linkedDocs = [];
-  if (id) {
-    const field =
-      type === "Program"
-        ? "programs"
-        : type === "Dispositive"
-        ? "dispositives"
-        : null;
 
-    if (field) {
-      linkedDocs = await Documentation.find({ [field]: id }).lean();
+  if (id) {
+    if (type === "Program") {
+      linkedDocs = await Documentation.find({
+        programs: id,
+        visible: true
+      }).lean();
+
+    } else if (type === "Dispositive") {
+      linkedDocs = await Documentation.find({
+        dispositives: id,
+        visible: true
+      }).lean();
+
+    } else if (type === "Workplace") {
+      linkedDocs = await Documentation.find({
+        workplaces: id,
+        visible: true
+      }).lean();
     }
   }
 
-  response(res, 200, { list, linkedDocs });
+  let workplaces = [];
+
+  if (type === "Dispositive" && id && includeWorkplaces) {
+    const dispositive = await Dispositive.findById(id)
+      .select("workplaces")
+      .populate("workplaces", "_id name address province")
+      .lean();
+
+    workplaces = dispositive?.workplaces || [];
+  }
+
+  response(res, 200, { list, linkedDocs, workplaces });
 };
 
 
@@ -150,9 +176,10 @@ const getDocumentationProgramDispositive = async (req, res) => {
  *     - si viene dispositiveId → aplica solo a ese dispositivo.
  */
 const addProgramOrDispositiveToDocumentation = async (req, res) => {
-  const { documentationId, programId, dispositiveId, action } = req.body || {};
+  const { documentationId, programId, dispositiveId, workplaceId, action } = req.body || {};
 
   if (!documentationId) return response(res, 400, { error: "Falta documentationId" });
+
   if (!["add", "remove"].includes(action)) {
     return response(res, 400, { error: "Acción inválida. Usa 'add' o 'remove'." });
   }
@@ -161,63 +188,95 @@ const addProgramOrDispositiveToDocumentation = async (req, res) => {
   if (!doc) return response(res, 404, { error: "Documento no encontrado" });
 
   const session = await mongoose.startSession();
-  await session.withTransaction(async () => {
-    const update = {};
-    const mode = action === "add" ? "$addToSet" : "$pull";
 
-    // === 🔹 Caso 1: Añadir o quitar a un PROGRAMA ===
-    if (programId) {
-      if (!mongoose.isValidObjectId(programId))
-        throw new ClientError("programId inválido", 400);
+  try {
+    await session.withTransaction(async () => {
+      const update = {};
+      const mode = action === "add" ? "$addToSet" : "$pull";
 
-      // Si es documento de programa, solo lo añadimos a programs[]
-      if (doc.model === "Program") {
-        update[mode] = { programs: programId };
-      }
+      // === Caso 1: Añadir/quitar a un PROGRAMA ===
+      if (programId) {
+        if (!mongoose.isValidObjectId(programId)) {
+          throw new ClientError("programId inválido", 400);
+        }
 
-      // Si es documento de dispositivo, lo aplicamos globalmente al programa
-      else if (doc.model === "Dispositive") {
-        update[mode] = { programs: programId };
+        if (doc.model === "Program") {
+          update[mode] = { programs: programId };
+        }
 
-        // Buscar todos los dispositivos del programa
-        const dispositives = await Dispositive.find({ program: programId }, "_id").lean();
-        const dispositiveIds = dispositives.map((d) => d._id);
+        else if (doc.model === "Dispositive") {
+          update[mode] = { programs: programId };
 
-        if (dispositiveIds.length > 0) {
-          if (action === "add") {
-            update["$addToSet"] = {
-              ...update["$addToSet"],
-              dispositives: { $each: dispositiveIds },
-            };
-          } else {
-            update["$pull"] = {
-              ...update["$pull"],
-              dispositives: { $in: dispositiveIds },
-            };
+          const dispositives = await Dispositive.find({ program: programId }, "_id").lean();
+          const dispositiveIds = dispositives.map((d) => d._id);
+
+          if (dispositiveIds.length > 0) {
+            if (action === "add") {
+              update.$addToSet = {
+                ...update.$addToSet,
+                dispositives: { $each: dispositiveIds },
+              };
+            } else {
+              update.$pull = {
+                ...update.$pull,
+                dispositives: { $in: dispositiveIds },
+              };
+            }
           }
         }
+
+        else if (doc.model === "Workplace") {
+          /*
+            Opcional:
+            Si algún día quieres aplicar documentación de Workplace a todos los centros
+            asociados a dispositivos de un programa, puedes hacerlo aquí.
+            Por ahora lo dejaría bloqueado para evitar asignaciones masivas raras.
+          */
+          throw new ClientError("Los documentos de centro de trabajo deben asignarse a un Workplace concreto", 400);
+        }
       }
-    }
 
-    // === 🔹 Caso 2: Añadir o quitar a un DISPOSITIVO individual ===
-    else if (dispositiveId) {
-      if (!mongoose.isValidObjectId(dispositiveId))
-        throw new ClientError("dispositiveId inválido", 400);
+      // === Caso 2: Añadir/quitar a un DISPOSITIVO individual ===
+      else if (dispositiveId) {
+        if (!mongoose.isValidObjectId(dispositiveId)) {
+          throw new ClientError("dispositiveId inválido", 400);
+        }
 
-      update[mode] = { dispositives: dispositiveId };
-    }
+        if (doc.model !== "Dispositive") {
+          throw new ClientError("Este documento no pertenece al modelo Dispositive", 400);
+        }
 
-    // === Ejecutar la actualización ===
-    const updated = await Documentation.findByIdAndUpdate(
-      documentationId,
-      update,
-      { new: true, session }
-    ).lean();
+        update[mode] = { dispositives: dispositiveId };
+      }
 
-    response(res, 200, updated);
-  });
+      // === Caso 3: Añadir/quitar a un CENTRO DE TRABAJO individual ===
+      else if (workplaceId) {
+        if (!mongoose.isValidObjectId(workplaceId)) {
+          throw new ClientError("workplaceId inválido", 400);
+        }
 
-  session.endSession();
+        if (doc.model !== "Workplace") {
+          throw new ClientError("Este documento no pertenece al modelo Workplace", 400);
+        }
+
+        update[mode] = { workplaces: workplaceId };
+      }
+
+      else {
+        throw new ClientError("Debes enviar programId, dispositiveId o workplaceId", 400);
+      }
+
+      const updated = await Documentation.findByIdAndUpdate(
+        documentationId,
+        update,
+        { new: true, session }
+      ).lean();
+
+      response(res, 200, updated);
+    });
+  } finally {
+    session.endSession();
+  }
 };
 
 

@@ -25,7 +25,7 @@ const fileSchema = new Schema({
     },
     originModel:{
         type: String,
-        enum:['User', 'UserCv', 'Program', 'Finantial', 'Estadistics', 'Dispositive', 'VolunteerApplication'],
+        enum:['User', 'UserCv', 'Program', 'Finantial', 'Estadistics', 'Dispositive', 'VolunteerApplication', 'Workplace'],
         required: true 
     },
     idModel:{

@@ -72,22 +72,6 @@ const auth = new google.auth.JWT({
 //hjbg
 const directory = google.admin({ version: 'directory_v1', auth });
 
-// const getAdminDirectoryClient = () => {
-//   const auth = new google.auth.JWT({
-//     email: client_email,
-//     key: private_key,
-//     scopes: [
-//       "https://www.googleapis.com/auth/admin.directory.group.readonly",
-//     ],
-//     subject:
-//       process.env.GOOGLE_WORKSPACE_ADMIN ||
-//       process.env.GOOGLE_ADMIN_EMAIL ||
-//       process.env.DEFAULT_SENDER,
-//   });
-
-//   return google.admin({ version: "directory_v1", auth });
-// };
-
 const getWorkspaceGroupEmailByKey = async (groupKey) => {
   const key = String(groupKey || "").trim();
 

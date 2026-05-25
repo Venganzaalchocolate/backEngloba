@@ -13,7 +13,7 @@ const documentation = mongoose.Schema({
     },
     model:{
         type:String,
-        enum:['User', 'UserCv', 'Program', 'Finantial', 'Estadistics', 'Dispositive', 'VolunteerApplication'],
+        enum:['User', 'UserCv', 'Program', 'Finantial', 'Estadistics', 'Dispositive', 'VolunteerApplication', 'Workplace'],
         required: true
     },
     visible:{
@@ -46,6 +46,13 @@ const documentation = mongoose.Schema({
         index: true,
         default:[]  
     },
+    
+workplaces: { 
+  type: [Schema.Types.ObjectId], 
+  ref: 'Workplace', 
+  index: true,
+  default: []  
+},
 
 
 }, { timestamps: true });

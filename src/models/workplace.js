@@ -35,7 +35,7 @@ const workplaceSchema = new Schema({
 
   cronology: [cronologySchema],
 
-  files: [{ type: Schema.Types.ObjectId, ref: 'Filedrive' }],
+  files: [{ type: Schema.Types.ObjectId, ref: 'Filedrive', default: [] }],
 
   officeIdSesame: {
     type: String,
@@ -45,7 +45,7 @@ const workplaceSchema = new Schema({
 
   entity:{
     type:String,
-    enums:['Engloba', 'Quiron'],
+    enum:['Engloba', 'Quiron'],
     default:'Engloba'
   }
 }, { timestamps: true });
