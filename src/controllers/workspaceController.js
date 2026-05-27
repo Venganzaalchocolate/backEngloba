@@ -243,6 +243,7 @@ const createUserWS = async (userId, contador = 0) => {
         name: { givenName, familyName },
         password: 'Temporal123*',
         changePasswordAtNextLogin: true,
+        orgUnitPath:'/Empleados'
       }
     });
 
@@ -1600,6 +1601,127 @@ const getWorkspaceGroupEmailByKey = async (groupKey) => {
 };
 
 
+
+
+// poner a usuarios en la unidad organizativa que tocan
+const RESPONSABLE_POSITION_ID = '6791094710c1c8e7e9c42f69';
+
+const SUPER_ROOT_USER_IDS = new Set([
+  '6790e50a1c4635cb35cc176f',
+  '67910d2410c1c8e7e9c44612',
+]);
+
+const RESPONSABLE_ROLES = new Set([
+  'global',
+]);
+
+const getCurrentHiringPeriodForOrgUnit = async (userId) => {
+  return await Periods.findOne({
+    idUser: userId,
+    active: true,
+    $or: [
+      { endDate: null },
+      { endDate: { $exists: false } },
+    ],
+  })
+    .sort({ startDate: -1 })
+    .lean();
+};
+
+const getWorkspaceOrgUnitPathForUser = (user, currentPeriod) => {
+  const userId = String(user._id);
+
+  if (SUPER_ROOT_USER_IDS.has(userId)) {
+    return '/SuperRoots';
+  }
+
+  if (RESPONSABLE_ROLES.has(user.role)) {
+    return '/Responsables';
+  }
+
+  if (String(currentPeriod?.position || '') === RESPONSABLE_POSITION_ID) {
+    return '/Responsables';
+  }
+
+  return '/Empleados';
+};
+
+const syncWorkspaceOrgUnitForUser = async (userId) => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return {
+      success: false,
+      skipped: true,
+      reason: 'INVALID_USER_ID',
+    };
+  }
+
+  const user = await User.findById(userId)
+    .select('_id firstName lastName email role')
+    .lean();
+
+  if (!user) {
+    return {
+      success: false,
+      skipped: true,
+      reason: 'USER_NOT_FOUND',
+    };
+  }
+
+  if (!user.email) {
+    return {
+      success: true,
+      skipped: true,
+      reason: 'USER_WITHOUT_WORKSPACE_EMAIL',
+      userId: String(user._id),
+    };
+  }
+
+  const currentPeriod = await getCurrentHiringPeriodForOrgUnit(user._id);
+  const targetOrgUnitPath = getWorkspaceOrgUnitPathForUser(user, currentPeriod);
+
+  const googleUser = await directory.users.get({
+    userKey: user.email,
+    projection: 'basic',
+  });
+
+  const currentOrgUnitPath = googleUser.data.orgUnitPath;
+
+  if (currentOrgUnitPath === targetOrgUnitPath) {
+    return {
+      success: true,
+      skipped: true,
+      reason: 'ALREADY_IN_TARGET_ORG_UNIT',
+      userId: String(user._id),
+      email: user.email,
+      currentOrgUnitPath,
+      targetOrgUnitPath,
+    };
+  }
+
+  await directory.users.patch({
+    userKey: user.email,
+    requestBody: {
+      orgUnitPath: targetOrgUnitPath,
+    },
+  });
+
+  return {
+    success: true,
+    skipped: false,
+    userId: String(user._id),
+    email: user.email,
+    previousOrgUnitPath: currentOrgUnitPath,
+    targetOrgUnitPath,
+    currentPeriodId: currentPeriod?._id ? String(currentPeriod._id) : null,
+    currentPosition: currentPeriod?.position ? String(currentPeriod.position) : null,
+    role: user.role,
+  };
+};
+
+// FIN poner a usuarios en la unidad organizativa que tocan
+
+
+
 module.exports = {
   addUserToGroup,
   deleteMemeberAllGroups,
@@ -1620,6 +1742,7 @@ module.exports = {
   recreateCorporateEmailByUserId,
   emailExiste,
   getWorkspaceGroupEmailByKey,
+  syncWorkspaceOrgUnitForUser
 
 
 };

@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const { User, Periods, Leaves, Preferents, Dispositive, Jobs } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const { actualizacionHiringyLeave, backfillSelectionProcessFromOffers, repairExistingPeriods, fullFreshMigration, migrateOffersNewdispositiveId, migrateUserCvNameFieldsToRefs, backfillPeriodsFromEmbedded, getAllManagerEmails } = require('./periodoTransicionController');
-const { moveUserBetweenDevicesWS } = require('./workspaceController');
+const { moveUserBetweenDevicesWS, syncWorkspaceOrgUnitForUser } = require('./workspaceController');
 // Opcional si lo usas en un script aparte:
 // const { backfillSelectionProcessFromOffers, backfillPeriodsdispositiveId } = require('./periodoTransicionController');
 
@@ -20,6 +20,19 @@ async function getProvinceIdsFromDispositive(dispositiveId) {
   const d = await Dispositive.findById(toId(dispositiveId), { province: 1 }).lean();
   if (!d?.province) return [];
   return [toId(d.province)];
+}
+
+async function safeSyncWorkspaceOrgUnitForHiringUser(userId) {
+  if (!userId) return;
+
+  try {
+    await syncWorkspaceOrgUnitForUser(userId);
+  } catch (err) {
+    console.warn(
+      `⚠️ Error sincronizando OU Workspace para user ${userId}:`,
+      err.message
+    );
+  }
 }
 
 // === Cerrar Preferents coincidentes (post) ===
@@ -311,6 +324,8 @@ async function createHiring(req, res) {
   // 4) cierra Preferents coincidentes
   await closeMatchingPreferentsForPeriod(created);
 
+  //CAMBIA UNIDAD ORGANIZATIVA GOOGLE
+  await safeSyncWorkspaceOrgUnitForHiringUser(created.idUser);
   const out = await loadAndSerializeById(created._id);
   response(res, 201, out);
 }
@@ -326,13 +341,13 @@ async function updateHiring(req, res) {
   if (!current) throw new ClientError('Periodo no encontrado', 404);
 
   const patch = {};
-  if (req.body.position !== undefined)          patch.position = req.body.position ? toId(req.body.position) : undefined;
-  if (req.body.startDate !== undefined)         patch.startDate = req.body.startDate ? new Date(req.body.startDate) : undefined;
-  if (req.body.endDate !== undefined)           patch.endDate = req.body.endDate ? new Date(req.body.endDate) : undefined;
+  if (req.body.position !== undefined) patch.position = req.body.position ? toId(req.body.position) : undefined;
+  if (req.body.startDate !== undefined) patch.startDate = req.body.startDate ? new Date(req.body.startDate) : undefined;
+  if (req.body.endDate !== undefined) patch.endDate = req.body.endDate ? new Date(req.body.endDate) : undefined;
   // ⚠️ nuevo campo
-  if (req.body.dispositiveId !== undefined)     patch.dispositiveId = req.body.dispositiveId ? toId(req.body.dispositiveId) : undefined;
-  if (req.body.selectionProcess !== undefined)  patch.selectionProcess = req.body.selectionProcess ? toId(req.body.selectionProcess) : undefined;
-  if (req.body.active !== undefined)            patch.active = req.body.active;
+  if (req.body.dispositiveId !== undefined) patch.dispositiveId = req.body.dispositiveId ? toId(req.body.dispositiveId) : undefined;
+  if (req.body.selectionProcess !== undefined) patch.selectionProcess = req.body.selectionProcess ? toId(req.body.selectionProcess) : undefined;
+  if (req.body.active !== undefined) patch.active = req.body.active;
 
   if (req.body.replacement !== undefined || req.body.reason !== undefined) {
     const resolved = await buildReplacementFromInput(req.body);
@@ -373,6 +388,9 @@ async function updateHiring(req, res) {
     await closeMatchingPreferentsForPeriod(merged);
   }
 
+  //CAMBIA UNIDAD ORGANIZATIVA GOOGLE
+  await safeSyncWorkspaceOrgUnitForHiringUser(current.idUser);
+
   const out = await loadAndSerializeById(hiringId);
   response(res, 200, out);
 }
@@ -391,6 +409,8 @@ async function softDeleteHiring(req, res) {
   ).populate(replacementPopulate);
 
   if (!updated) throw new ClientError('Periodo no encontrado', 404);
+  await safeSyncWorkspaceOrgUnitForHiringUser(updated.idUser);
+
   response(res, 200, serializePeriod(updated));
 }
 
@@ -406,7 +426,7 @@ async function hardDeleteHiring(req, res) {
 
   await Leaves.deleteMany({ idPeriod: doc._id });
   await Periods.deleteOne({ _id: doc._id });
-
+  await safeSyncWorkspaceOrgUnitForHiringUser(doc.idUser);
   response(res, 200, { deleted: true });
 }
 
@@ -430,13 +450,13 @@ async function listHirings(req, res) {
 
   const filters = {};
 
-  if (idUser)    filters.idUser = toId(idUser);
-  if (position)  filters.position = toId(position);
+  if (idUser) filters.idUser = toId(idUser);
+  if (position) filters.position = toId(position);
   if (active !== undefined) filters.active = active;
 
   if (dispositiveId !== undefined && dispositiveId !== null && dispositiveId !== '') {
-  filters.dispositiveId = toId(dispositiveId);
-}
+    filters.dispositiveId = toId(dispositiveId);
+  }
 
 
   if (openOnly) {
@@ -456,7 +476,7 @@ async function listHirings(req, res) {
   if (dateFrom || dateTo) {
     filters.startDate = {};
     if (dateFrom) filters.startDate.$gte = new Date(dateFrom);
-    if (dateTo)   filters.startDate.$lte = new Date(dateTo);
+    if (dateTo) filters.startDate.$lte = new Date(dateTo);
   }
 
   const total = await Periods.countDocuments(filters);
@@ -536,6 +556,8 @@ async function closeHiring(req, res) {
     { $set: { endDate: end, active: active === false ? false : current.active } },
     { new: false }
   );
+  //CAMBIA UNIDAD ORGANIZATIVA GOOGLE
+  await safeSyncWorkspaceOrgUnitForHiringUser(current.idUser);
 
   const out = await loadAndSerializeById(hiringId);
   return response(res, 200, out);
@@ -612,9 +634,9 @@ async function relocateHirings(req, res) {
         active: true,
         replacement: p.replacement
           ? {
-              user: p.replacement.user ?? undefined,
-              leave: p.replacement.leave ?? undefined,
-            }
+            user: p.replacement.user ?? undefined,
+            leave: p.replacement.leave ?? undefined,
+          }
           : undefined,
       };
 
@@ -637,20 +659,23 @@ async function relocateHirings(req, res) {
         const users = await User.find({
           _id: { $in: Array.from(affectedUsers).map(toId) },
         })
-          .select('email')
+          .select('_id email')
           .lean();
 
         for (const u of users) {
-          if (!u.email) continue;
           try {
-            await moveUserBetweenDevicesWS({
-              email: u.email,
-              originDispositiveId: originId,
-              targetDispositiveId: targetId,
-            });
+            if (u.email) {
+              await moveUserBetweenDevicesWS({
+                email: u.email,
+                originDispositiveId: originId,
+                targetDispositiveId: targetId,
+              });
+            }
+
+            await syncWorkspaceOrgUnitForUser(u._id);
           } catch (err) {
             console.warn(
-              `⚠️ Error sincronizando Workspace para ${u.email}:`,
+              `⚠️ Error sincronizando Workspace para ${u.email || u._id}:`,
               err.message
             );
           }
@@ -691,5 +716,5 @@ module.exports = {
   listHirings: catchAsync(listHirings),
   getHiringById: catchAsync(getHiringById),
   getLastHiringForUser: catchAsync(getLastHiringForUser),
-  relocateHirings:catchAsync(relocateHirings)
+  relocateHirings: catchAsync(relocateHirings)
 };

@@ -2,6 +2,7 @@
 import mongoose from 'mongoose';
 import { User, Periods, Leaves, Offer, Jobs, Studies, Provinces, UserCv, Dispositive, Program } from '../models/indexModels.js';
 
+
 /* =========================
    Utils básicos
 ========================== */
