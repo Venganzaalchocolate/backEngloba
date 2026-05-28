@@ -9,52 +9,65 @@ const documentation = mongoose.Schema({
     },
     date: {
         type: Boolean,
-        default: false 
+        default: false
     },
-    model:{
-        type:String,
-        enum:['User', 'UserCv', 'Program', 'Finantial', 'Estadistics', 'Dispositive', 'VolunteerApplication', 'Workplace'],
+    model: {
+        type: String,
+        enum: ['User', 'UserCv', 'Program', 'Finantial', 'Estadistics', 'Dispositive', 'VolunteerApplication', 'Workplace'],
         required: true
     },
-    visible:{
-        type:Boolean,
-        default:true
+    visible: {
+        type: Boolean,
+        default: true
     },
-    duration:{
-        type:Number,
+    duration: {
+        type: Number,
         min: 0,
     },
-    categoryFiles:{
+    categoryFiles: {
         type: String
     },
-    requiresSignature:{
+    requiresSignature: {
         type: Boolean,
-        default:false
+        default: false
     },
-    modeloPDF:{
-        type:String
+    modeloPDF: {
+        type: String
     },
-    programs: { 
-        type: [Schema.Types.ObjectId], 
-        ref: 'Program', 
+    programs: {
+        type: [Schema.Types.ObjectId],
+        ref: 'Program',
         index: true,
-        default:[] 
+        default: []
     },
-    dispositives: { 
-        type: [Schema.Types.ObjectId], 
-        ref: 'Dispositive', 
+    dispositives: {
+        type: [Schema.Types.ObjectId],
+        ref: 'Dispositive',
         index: true,
-        default:[]  
+        default: []
     },
-    
-workplaces: { 
-  type: [Schema.Types.ObjectId], 
-  ref: 'Workplace', 
-  index: true,
-  default: []  
+    workplaces: {
+        type: [Schema.Types.ObjectId],
+        ref: 'Workplace',
+        index: true,
+        default: []
+    },
+
+   jobScope: {
+  positions: {
+    type: [Schema.Types.ObjectId],
+    index: true,
+    default: [],
+  },
+
+  autoKey: {
+    type: String,
+    trim: true,
+    index: true,
+  },
 },
 
 
 }, { timestamps: true });
 
-module.exports=mongoose.model('Documentation', documentation)
+module.exports = mongoose.model('Documentation', documentation)

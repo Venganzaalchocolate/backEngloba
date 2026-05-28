@@ -1743,6 +1743,4 @@ module.exports = {
   emailExiste,
   getWorkspaceGroupEmailByKey,
   syncWorkspaceOrgUnitForUser
-
-
 };

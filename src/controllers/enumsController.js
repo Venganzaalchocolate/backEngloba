@@ -24,6 +24,8 @@ const mongoose = require("mongoose");
 
 const { uploadFileToDrive, updateFileInDrive, deleteFileById } = require("./googleController");
 
+
+
 const sanitizeDriveName = (text) =>
   String(text || "")
     .normalize("NFD")
@@ -38,6 +40,113 @@ const parseSiNo = (v) => {
   const s = String(v || "").trim().toLowerCase();
   return s === "si" || s === "true" || s === "1";
 };
+
+//PRL
+const JOB_POSITION_DOCUMENTATION_TEMPLATES = [
+  {
+    key: "prl-info",
+    prefix: "Información PRL",
+    categoryFiles: "PRL",
+    model: "User",
+    date: false,
+    requiresSignature: true,
+  },
+];
+
+const buildJobPositionDocumentationName = (template, positionName) =>
+  `${template.prefix} - ${String(positionName || "").trim()}`;
+
+const ensureJobPositionDocumentation = async (positionId, positionName) => {
+  if (!positionId || !positionName) return [];
+
+  const cleanName = String(positionName).trim();
+  if (!cleanName) return [];
+
+  const results = [];
+
+  for (const template of JOB_POSITION_DOCUMENTATION_TEMPLATES) {
+    const filter = {
+      model: template.model || "User",
+      categoryFiles: template.categoryFiles,
+      "jobScope.positions": positionId,
+      "jobScope.autoKey": template.key,
+    };
+
+    const existing = await Documentation.findOne(filter).lean();
+
+    if (existing) {
+      results.push({
+        status: "exists",
+        positionId,
+        positionName: cleanName,
+        autoKey: template.key,
+        documentationId: existing._id,
+      });
+      continue;
+    }
+
+    const doc = await Documentation.create({
+      name: buildJobPositionDocumentationName(template, cleanName),
+      model: template.model || "User",
+      visible: true,
+      date: !!template.date,
+      duration: template.date ? template.duration : undefined,
+      requiresSignature: !!template.requiresSignature,
+      categoryFiles: template.categoryFiles,
+      jobScope: {
+        positions: [positionId],
+        autoKey: template.key,
+      },
+    });
+
+    results.push({
+      status: "created",
+      positionId,
+      positionName: cleanName,
+      autoKey: template.key,
+      documentationId: doc._id,
+    });
+  }
+
+  cache.del?.("enums");
+  return results;
+};
+
+const updateJobPositionDocumentationName = async (positionId, positionName) => {
+  if (!positionId || !positionName) return [];
+
+  const cleanName = String(positionName).trim();
+  if (!cleanName) return [];
+
+  const results = [];
+
+  for (const template of JOB_POSITION_DOCUMENTATION_TEMPLATES) {
+    const result = await Documentation.updateMany(
+      {
+        model: template.model || "User",
+        categoryFiles: template.categoryFiles,
+        "jobScope.positions": positionId,
+        "jobScope.autoKey": template.key,
+      },
+      {
+        $set: {
+          name: buildJobPositionDocumentationName(template, cleanName),
+        },
+      }
+    );
+
+    results.push({
+      autoKey: template.key,
+      matchedCount: result.matchedCount || 0,
+      modifiedCount: result.modifiedCount || 0,
+    });
+  }
+
+  cache.del?.("enums");
+  return results;
+};
+
+// FIN PRL
 
 const resolveModelsFolderId = () => {
   return process.env.GOOGLE_DRIVE_FILES || null;
@@ -120,6 +229,28 @@ function createDispositiveIndex(dispositives = []) {
 
   return out;
 }
+
+// PRL
+const getJobSubcategoryItemsForPrl = (jobs = []) => {
+  const items = [];
+
+  for (const job of jobs) {
+    for (const sub of job.subcategories || []) {
+      if (sub?._id && sub?.name) {
+        items.push({
+          _id: sub._id,
+          name: sub.name,
+          parent: job._id,
+          parentName: job.name || "",
+        });
+      }
+    }
+  }
+
+  return items;
+};
+
+
 
 const getEnums = async (req, res) => {
   const cached = cache.get("enums");
@@ -262,16 +393,30 @@ const postSubcategory = async (req, res) => {
     throw new ClientError("Los datos no son correctos", 400);
   }
 
-  const filter = { _id: req.body.id };
-  const subData = { name: req.body.name };
+  const Model = getModelByType(req.body.type);
+
+  const subData = {
+    _id: new mongoose.Types.ObjectId(),
+    name: req.body.name,
+  };
 
   if (req.body.type === "jobs") {
     subData.public = req.body.public === "si";
   }
 
-  const update = { $push: { subcategories: subData } };
-  const Model = getModelByType(req.body.type);
-  const updatedEnum = await Model.findOneAndUpdate(filter, update, { new: true });
+  const updatedEnum = await Model.findOneAndUpdate(
+    { _id: req.body.id },
+    { $push: { subcategories: subData } },
+    { new: true }
+  );
+
+  if (!updatedEnum) {
+    throw new ClientError("Elemento no encontrado", 404);
+  }
+
+  if (req.body.type === "jobs") {
+    await ensureJobPositionDocumentation(subData._id, subData.name);
+  }
 
   response(res, 200, updatedEnum);
 };
@@ -381,7 +526,10 @@ const putEnums = async (req, res) => {
       throw new ClientError("Documentation no tiene subcategorías", 400);
     }
 
-    const updateData = { "subcategories.$[elem].name": req.body.name };
+    const updateData = {
+      "subcategories.$[elem].name": req.body.name,
+    };
+
     if (type === "jobs") {
       updateData["subcategories.$[elem].public"] = req.body.public === "si";
     }
@@ -389,14 +537,27 @@ const putEnums = async (req, res) => {
     const updatedEnum = await Model.findOneAndUpdate(
       { _id: id },
       { $set: updateData },
-      { new: true, arrayFilters: [{ "elem._id": subId }] }
+      {
+        new: true,
+        arrayFilters: [{ "elem._id": subId }],
+      }
     );
 
-    if (!updatedEnum) throw new ClientError("Elemento no encontrado", 404);
+    if (!updatedEnum) {
+      throw new ClientError("Elemento no encontrado", 404);
+    }
+
+    if (type === "jobs") {
+      await ensureJobPositionDocumentation(subId, req.body.name);
+      await updateJobPositionDocumentationName(subId, req.body.name);
+    }
+
     return response(res, 200, updatedEnum);
   }
 
-  const updateData = { name: req.body.name };
+  const updateData = {
+    name: req.body.name,
+  };
 
   if (type === "documentation") {
     if (!req.body.model) {
@@ -407,7 +568,9 @@ const putEnums = async (req, res) => {
     updateData.date = parseSiNo(req.body.date);
     updateData.requiresSignature = parseSiNo(req.body.requiresSignature);
 
-    if (req.body.categoryFiles) updateData.categoryFiles = req.body.categoryFiles;
+    if (req.body.categoryFiles) {
+      updateData.categoryFiles = req.body.categoryFiles;
+    }
 
     if (updateData.date) {
       if (!req.body.duration) {
@@ -416,6 +579,7 @@ const putEnums = async (req, res) => {
           400
         );
       }
+
       updateData.duration = Number(req.body.duration);
     } else {
       updateData.duration = undefined;
@@ -423,6 +587,7 @@ const putEnums = async (req, res) => {
 
     if (req.file) {
       const folderId = resolveModelsFolderId();
+
       if (!folderId) {
         throw new ClientError("Falta GOOGLE_DRIVE_FILES para subir el modeloPDF", 500);
       }
@@ -431,7 +596,6 @@ const putEnums = async (req, res) => {
       if (!prev) throw new ClientError("Elemento no encontrado", 404);
 
       const driveName = `modelo_${sanitizeDriveName(req.body.name)}`;
-
       let newUploadedId = null;
 
       try {
@@ -440,12 +604,19 @@ const putEnums = async (req, res) => {
           updateData.modeloPDF = prev.modeloPDF;
         } else {
           const up = await uploadFileToDrive(req.file, folderId, driveName, false);
-          if (!up?.id) throw new ClientError("Error al subir modeloPDF a Drive", 500);
+
+          if (!up?.id) {
+            throw new ClientError("Error al subir modeloPDF a Drive", 500);
+          }
+
           newUploadedId = up.id;
           updateData.modeloPDF = newUploadedId;
         }
       } catch (err) {
-        if (newUploadedId) await deleteFileById(newUploadedId).catch(() => {});
+        if (newUploadedId) {
+          await deleteFileById(newUploadedId).catch(() => {});
+        }
+
         throw err;
       }
     }
@@ -456,7 +627,10 @@ const putEnums = async (req, res) => {
   }
 
   const updated = await Model.findByIdAndUpdate(id, updateData, { new: true });
-  if (!updated) throw new ClientError("Elemento no encontrado", 404);
+
+  if (!updated) {
+    throw new ClientError("Elemento no encontrado", 404);
+  }
 
   response(res, 200, updated);
 };
@@ -523,6 +697,7 @@ const getProgramsAndDispositiveEnums = async (req, res) => {
     provincesIndex: createCategoryAndSubcategoryIndex(provinces),
   });
 };
+
 
 
 

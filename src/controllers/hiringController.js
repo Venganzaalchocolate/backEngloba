@@ -511,10 +511,21 @@ async function getHiringById(req, res) {
 
 // Helper reutilizable
 async function findLastHiringForUser(idUser, { includeInactive = false } = {}) {
-  const filter = { idUser: toId(idUser) };
-  if (!includeInactive) filter.active = { $ne: false };
+  const userId = toId(idUser);
 
-  const doc = await Periods.findOne(filter)
+  if (includeInactive === false) {
+    const docs = await Periods.find({
+      idUser: userId,
+      active: { $ne: false },
+      $or: [{ endDate: { $exists: false } }, { endDate: null }],
+    })
+      .sort({ startDate: -1, _id: -1 })
+      .populate(replacementPopulate);
+
+    return docs.map(serializePeriod);
+  }
+
+  const doc = await Periods.findOne({ idUser: userId })
     .sort({ startDate: -1, _id: -1 })
     .populate(replacementPopulate);
 
@@ -523,16 +534,29 @@ async function findLastHiringForUser(idUser, { includeInactive = false } = {}) {
 
 // Endpoint: GET LAST BY USER
 async function getLastHiringForUser(req, res) {
-  const { idUser, includeInactive = true } = req.body;
+  const { idUser } = req.body;
+
+  const includeInactive =
+    req.body.includeInactive === false ||
+    String(req.body.includeInactive).toLowerCase() === "false"
+      ? false
+      : true;
 
   if (!idUser || !mongoose.Types.ObjectId.isValid(idUser)) {
-    throw new ClientError('idUser inválido', 400);
+    throw new ClientError("idUser inválido", 400);
   }
 
-  const last = await findLastHiringForUser(idUser, { includeInactive });
-  if (!last) throw new ClientError('El usuario no tiene periodos', 404);
+  const result = await findLastHiringForUser(idUser, { includeInactive });
 
-  response(res, 200, last);
+  if (includeInactive === false) {
+    return response(res, 200, result || []);
+  }
+
+  if (!result) {
+    throw new ClientError("El usuario no tiene periodos", 404);
+  }
+
+  response(res, 200, result);
 }
 
 // CLOSE
