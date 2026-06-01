@@ -35,6 +35,7 @@ const createDispositive = async (req, res) => {
       program,
       programId,
       coordinates,
+      serviceType,
     } = req.body;
 
     if (!name) {
@@ -68,6 +69,12 @@ const createDispositive = async (req, res) => {
       files: [],
       program: programDoc ? programDoc._id : undefined,
       coordinates: { lat: null, lng: null },
+      serviceTypeserviceType: {
+        residencial: !!serviceType?.residencial,
+        capacity: Number.isFinite(Number(serviceType?.capacity))
+          ? Number(serviceType.capacity)
+          : 0,
+      },
     };
 
     if (
@@ -241,7 +248,7 @@ const getDispositiveId = async (req, res) => {
  * - Si llega program = null/''/false: desvincula del programa y lo saca de devicesId
  */
 const updateDispositive = async (req, res) => {
-  const { dispositiveId, active, name, address, email, phone, province, program, cronology, type, coordinates } = req.body;
+  const { dispositiveId, active, name, address, email, phone, province, program, cronology, type, coordinates, serviceType } = req.body;
   if (!dispositiveId) throw new ClientError('Falta dispositiveId', 400);
 
   const current = await Dispositive.findById(dispositiveId);
@@ -276,6 +283,14 @@ const updateDispositive = async (req, res) => {
   if (phone !== undefined) update.phone = phone;
   if (province !== undefined) update.province = isValidId(province) ? province : null;
 
+  if (serviceType !== undefined) {
+  update.serviceType = {
+    residencial: !!serviceType?.residencial,
+    capacity: Number.isFinite(Number(serviceType?.capacity))
+      ? Number(serviceType.capacity)
+      : 0,
+  };
+}
   if (coordinates !== undefined) {
     if (
       coordinates &&
@@ -331,23 +346,23 @@ const updateDispositive = async (req, res) => {
     Object.assign(updateObj, { $unset: unset });
   }
 
-let updated;
+  let updated;
 
-if (Object.keys(updateObj).length) {
-  try {
-    updated = await Dispositive.findOneAndUpdate(query, updateObj, {
-      new: true,
-      runValidators: true,
-    });
-  } catch (err) {
-    if (isDupKey(err)) {
-      throw new ClientError('Ya existe un dispositivo con ese nombre en el programa', 409);
+  if (Object.keys(updateObj).length) {
+    try {
+      updated = await Dispositive.findOneAndUpdate(query, updateObj, {
+        new: true,
+        runValidators: true,
+      });
+    } catch (err) {
+      if (isDupKey(err)) {
+        throw new ClientError('Ya existe un dispositivo con ese nombre en el programa', 409);
+      }
+      throw err;
     }
-    throw err;
+  } else {
+    updated = await Dispositive.findById(dispositiveId);
   }
-} else {
-  updated = await Dispositive.findById(dispositiveId);
-}
 
 
   if (newProgramId && newProgramId !== oldProgramId) {
@@ -359,39 +374,39 @@ if (Object.keys(updateObj).length) {
     await Program.updateOne({ _id: oldProgramId }, { $pull: { devicesId: updated._id } });
   }
 
-if (name !== undefined || !updated.departamentSesame) {
-  await updateSesameDepartmentForDispositive(updated._id);
-}
+  if (name !== undefined || !updated.departamentSesame) {
+    await updateSesameDepartmentForDispositive(updated._id);
+  }
 
-updated = await Dispositive.findById(dispositiveId)
-  .populate([
-    {
-      path: "responsible",
-      select: "firstName lastName email phoneJob",
-    },
-    {
-      path: "coordinators",
-      select: "firstName lastName email phoneJob",
-    },
-    {
-      path: "program",
-      select: "name acronym area _id",
-    },
-    {
-      path: "supervisors",
-      select: "firstName lastName email phoneJob",
-    },
-    {
-      path: "workplaces",
-      select: "name address phone province coordinates resolvedAddress officeIdSesame active",
-      populate: {
-        path: "province",
-        select: "name",
+  updated = await Dispositive.findById(dispositiveId)
+    .populate([
+      {
+        path: "responsible",
+        select: "firstName lastName email phoneJob",
       },
-    },
-  ]);
+      {
+        path: "coordinators",
+        select: "firstName lastName email phoneJob",
+      },
+      {
+        path: "program",
+        select: "name acronym area _id",
+      },
+      {
+        path: "supervisors",
+        select: "firstName lastName email phoneJob",
+      },
+      {
+        path: "workplaces",
+        select: "name address phone province coordinates resolvedAddress officeIdSesame active",
+        populate: {
+          path: "province",
+          select: "name",
+        },
+      },
+    ]);
 
-response(res, 200, updated);
+  response(res, 200, updated);
 
 
 };

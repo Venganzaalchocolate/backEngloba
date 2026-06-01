@@ -12,6 +12,17 @@ const dispositiveSchema = new Schema({
   address: String,
   email: String,
   phone: String,
+  serviceType: {
+    residencial: {
+      type: Boolean,
+      default: false
+    },
+    capacity: {
+      type: Number,
+      default: 0,
+      min: 0
+    }
+},
 
   responsible: [{ type: Schema.Types.ObjectId, ref: 'User', default: [] }],
   supervisors: [{ type: Schema.Types.ObjectId, ref: 'User', default: [] }],
@@ -29,25 +40,25 @@ const dispositiveSchema = new Schema({
     default: null,
   },
   coordinates: {
-  lat: { type: Number, default: null },
-  lng: { type: Number, default: null },
-},
-resolvedAddress: {
-  formatted: { type: String, default: null },
-  province: { type: String, default: null },
-  city: { type: String, default: null },
-  postcode: { type: String, default: null },
-  country: { type: String, default: null },
-  source: { type: String, default: null },
-  resolvedAt: { type: Date, default: null },
-},
+    lat: { type: Number, default: null },
+    lng: { type: Number, default: null },
+  },
+  resolvedAddress: {
+    formatted: { type: String, default: null },
+    province: { type: String, default: null },
+    city: { type: String, default: null },
+    postcode: { type: String, default: null },
+    country: { type: String, default: null },
+    source: { type: String, default: null },
+    resolvedAt: { type: Date, default: null },
+  },
 
-departamentSesame:{
-  type: String,
-  index: true,
-},
+  departamentSesame: {
+    type: String,
+    index: true,
+  },
 
-workplaces: [{ type: Schema.Types.ObjectId, ref: 'Workplace', default: [] }],
+  workplaces: [{ type: Schema.Types.ObjectId, ref: 'Workplace', default: [] }],
 
 }, { timestamps: true });
 

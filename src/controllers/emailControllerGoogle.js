@@ -12,8 +12,9 @@ const {
   ScopedRoleRule,
   Provinces,
 } = require('../models/indexModels');
-const {   buildSesameInactiveByLeavePlainText, buildSesameInactiveByLeaveHtmlEmail, buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail, buildEqualityLgtbiqSurveyPlainText, buildEqualityLgtbiqSurveyHtmlEmail, buildMiniTutorialsOpsPlainText, buildMiniTutorialsOpsHtmlEmail, buildSignatureUpdateHtmlEmail, buildSignatureUpdatePlainText, buildLeaveExpectedEndReminderPlainText, buildLeaveExpectedEndReminderHtmlEmail, buildLeaveSyncInfoPlainText, buildLeaveSyncInfoHtmlEmail } = require('../templates/emailTemplates');
+const {   buildSesameInactiveByLeavePlainText, buildSesameInactiveByLeaveHtmlEmail, buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail, buildEqualityLgtbiqSurveyPlainText, buildEqualityLgtbiqSurveyHtmlEmail, buildMiniTutorialsOpsPlainText, buildMiniTutorialsOpsHtmlEmail, buildSignatureUpdateHtmlEmail, buildSignatureUpdatePlainText, buildLeaveExpectedEndReminderPlainText, buildLeaveExpectedEndReminderHtmlEmail, buildLeaveSyncInfoPlainText, buildLeaveSyncInfoHtmlEmail, buildExpenseControlInstallHtmlEmail, buildExpenseControlInstallPlainText } = require('../templates/emailTemplates');
 const { default: mongoose } = require('mongoose');
+
 
 
 /*OBETENER IDS DE LOS RESPONSABLES SINO COORDINADORES SINO RESPONSABLES DE PROGRAMA SINO COORDINADORES DE PROGRAMA SINO NINGUNO*/
@@ -79,15 +80,7 @@ const credentials = JSON.parse(
 );
 const { client_email, private_key } = credentials;
 
-function getGmailClient(asUser) {
-  const auth = new google.auth.JWT({
-    email:   client_email,
-    key:     private_key,
-    scopes:  ['https://www.googleapis.com/auth/gmail.send'],
-    subject: asUser                      // cuenta del dominio que enviará
-  });
-  return google.gmail({ version: 'v1', auth });
-}
+
 
 /* ────────────────────────────────────────────────────────────────────────────
    2. Plantilla HTML 
@@ -126,6 +119,16 @@ function generateEmailHTML({
       ${footerText ? `<div class="footer">${footerText}</div>` : ''}
     </body>
   </html>`;
+}
+
+function getGmailClient(asUser, scopes = ['https://www.googleapis.com/auth/gmail.modify']) {
+  const auth = new google.auth.JWT({
+    email:  client_email,
+    key:    private_key,
+    scopes,            
+    subject: asUser
+  });
+  return google.gmail({ version: 'v1', auth });
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -630,15 +633,9 @@ function buildBasicPayload(reqDoc, worker, deviceContexts, actionUrl, logoUrl, s
 
 
 
-function getGmailClient(asUser, scopes = ['https://www.googleapis.com/auth/gmail.modify']) {
-  const auth = new google.auth.JWT({
-    email:  client_email,
-    key:    private_key,
-    scopes,               // ← ahora configurable
-    subject: asUser
-  });
-  return google.gmail({ version: 'v1', auth });
-}
+
+
+
 async function moveAllToTrash(userEmail = 'archi@engloba.org.es', {
   query = 'in:anywhere -in:trash',
   batchSize = 1000,
@@ -1557,6 +1554,215 @@ async function notifyCurrentResponsibleManagersOfExpectedLeaveEnd({
     return { ok: false, error: err.message };
   }
 }
+
+//funciones enviar usuarios reutilizables
+async function sendEmailToUsers({
+  users = [],
+  subject = '',
+  buildPlainText,
+  buildHtmlEmail,
+  buildOptions = {},
+  getRecipientEmails = (user) => [user.email],
+  previewOnly = true,
+  previewToList = ['comunicacion@engloba.org.es'],
+  delayMs = 250,
+  logger = console.log,
+  errorLogger = console.error,
+} = {}) {
+  const normEmail = (email = '') => String(email || '').trim().toLowerCase();
+
+  const uniqueEmails = (emails = []) =>
+    Array.from(new Set(emails.map(normEmail).filter(e => e && e.includes('@'))));
+
+  const ts = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+  if (!subject) throw new Error('subject es obligatorio');
+  if (typeof buildPlainText !== 'function') throw new Error('buildPlainText debe ser una función');
+  if (typeof buildHtmlEmail !== 'function') throw new Error('buildHtmlEmail debe ser una función');
+
+  let queue = [];
+
+  if (previewOnly) {
+    const recipients = uniqueEmails(previewToList);
+
+    queue = recipients.map(email => ({
+      user: null,
+      to: email,
+      name: 'equipo',
+    }));
+  } else {
+    const byEmail = new Map();
+
+    for (const user of users) {
+      const emails = uniqueEmails(getRecipientEmails(user));
+
+      for (const email of emails) {
+        if (!byEmail.has(email)) {
+          const name = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'equipo';
+
+          byEmail.set(email, {
+            user,
+            to: email,
+            name,
+          });
+        }
+      }
+    }
+
+    queue = Array.from(byEmail.values());
+  }
+
+  const results = {
+    ok: true,
+    total: queue.length,
+    sent: 0,
+    skipped: 0,
+    errors: [],
+    recipients: queue.map(item => item.to),
+  };
+
+  if (!queue.length) {
+    logger(`[${ts()}] No hay destinatarios.`);
+    return { ...results, ok: false };
+  }
+
+  logger(`[${ts()}] Envío iniciado | modo ${previewOnly ? 'PREVIEW' : 'REAL'} | destinatarios: ${queue.length}`);
+
+  for (let i = 0; i < queue.length; i++) {
+    const item = queue[i];
+    const idx = `${i + 1}/${queue.length}`;
+
+    try {
+      const text = buildPlainText(item.name, buildOptions, item.user);
+      const html = buildHtmlEmail(item.name, buildOptions, item.user);
+
+      await sendEmail([item.to], subject, text, html);
+
+      results.sent += 1;
+      logger(`✅ [${ts()}] [${idx}] Enviado → ${item.to} (${item.name})`);
+    } catch (err) {
+      const msg = err?.message || String(err);
+
+      results.skipped += 1;
+      results.errors.push({
+        to: item.to,
+        name: item.name,
+        error: msg,
+      });
+
+      errorLogger(`❌ [${ts()}] [${idx}] Error → ${item.to}: ${msg}`);
+    }
+
+    if (delayMs) await new Promise(r => setTimeout(r, delayMs));
+  }
+
+  logger(`— Resumen: total ${results.total} | OK ${results.sent} | Errores ${results.skipped}`);
+
+  return results;
+}
+
+async function getManagersCoordinatorsAndSupervisors({
+  supervisorQuery = {},
+} = {}) {
+  const activeDispositives = await Dispositive.find(
+    { active: { $ne: false } },
+    { responsible: 1, coordinators: 1, program: 1 }
+  ).lean();
+
+  const dispositiveUserIds = activeDispositives.flatMap(d => [
+    ...((d.responsible || []).map(String)),
+    ...((d.coordinators || []).map(String)),
+  ]);
+
+  const programIds = Array.from(new Set(
+    activeDispositives
+      .map(d => String(d.program || ''))
+      .filter(Boolean)
+  ));
+
+  const programs = programIds.length
+    ? await Program.find(
+        { _id: { $in: programIds.map(id => new mongoose.Types.ObjectId(id)) } },
+        { responsible: 1, coordinators: 1 }
+      ).lean()
+    : [];
+
+  const programUserIds = programs.flatMap(p => [
+    ...((p.responsible || []).map(String)),
+    ...((p.coordinators || []).map(String)),
+  ]);
+
+  let supervisorUsers = [];
+
+  if (supervisorQuery && Object.keys(supervisorQuery).length) {
+    supervisorUsers = await User.find(
+      {
+        ...supervisorQuery,
+        email: { $exists: true, $ne: '' },
+      },
+      { email: 1, firstName: 1, lastName: 1 }
+    ).lean();
+  }
+
+  const userIds = Array.from(new Set([
+    ...dispositiveUserIds,
+    ...programUserIds,
+  ].filter(Boolean)));
+
+  const managerUsers = userIds.length
+    ? await User.find(
+        {
+          _id: { $in: userIds.map(id => new mongoose.Types.ObjectId(id)) },
+          email: { $exists: true, $ne: '' },
+        },
+        { email: 1, firstName: 1, lastName: 1 }
+      ).lean()
+    : [];
+
+  const byId = new Map();
+
+  for (const user of [...managerUsers, ...supervisorUsers]) {
+    byId.set(String(user._id), user);
+  }
+
+  return Array.from(byId.values());
+}
+
+//EJEMPLO DE REUTILIZACIÓN DE FUNCIÓN
+// async function sendExpenseControlInstallEmail({
+//   previewOnly = true,
+//   previewToList = ['comunicacion@engloba.org.es'],
+//   supervisorQuery = {},
+//   delayMs = 250,
+//   logger = console.log,
+//   errorLogger = console.error,
+
+//   logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
+//   supportEmail = 'comunicacion@engloba.org.es',
+//   includeCacheWarning = false,
+// } = {}) {
+//   const users = previewOnly
+//     ? []
+//     : await getManagersCoordinatorsAndSupervisors({ supervisorQuery });
+
+//   return sendEmailToUsers({
+//     users,
+//     subject: 'Instalación de la aplicación de Control de Gastos',
+//     buildPlainText: buildExpenseControlInstallPlainText,
+//     buildHtmlEmail: buildExpenseControlInstallHtmlEmail,
+//     buildOptions: {
+//       logoUrl,
+//       supportEmail,
+//       includeCacheWarning,
+//     },
+//     getRecipientEmails: user => [user.email],
+//     previewOnly,
+//     previewToList,
+//     delayMs,
+//     logger,
+//     errorLogger,
+//   });
+// }
 
 
 module.exports = {

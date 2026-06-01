@@ -2547,3 +2547,191 @@ export function buildPrlNewHiringHtmlEmail({
 </body>
 </html>`;
 }
+
+//BORRAR
+// ===================================================
+// CONTROL DE GASTOS · INSTALACIÓN / ACTUALIZACIÓN
+// ===================================================
+
+export function buildExpenseControlInstallPlainText(
+  name = 'equipo',
+  {
+    supportEmail = 'comunicacion@engloba.org.es',
+    includeCacheWarning = false,
+  } = {}
+) {
+  return (
+`Hola ${name || 'equipo'},
+
+Buenos días.
+
+Os escribimos para informaros de la actualización de la aplicación de Control de Gastos.
+
+INSTALACIÓN DE LA APLICACIÓN
+
+Por favor, seguid estos pasos:
+
+1) Eliminar la carpeta actual de Control de Gastos.
+   Podéis borrarla completa. No se pierden datos.
+
+2) Entrar en Drive:
+   Unidades Compartidas → Aplicación control de gastos
+
+3) Descargar el archivo:
+   Aplicación Control Gastos.zip
+
+4) Descomprimirlo en el escritorio o en otra carpeta que os resulte cómoda.
+
+5) Ejecutar el archivo cg.exe.
+   Si no aparece la extensión .exe, es el archivo que indica "Aplicación".
+
+6) Si aparece el mensaje "Windows protegió su PC":
+   Haced clic en "Más información" y después en "Ejecutar de todas formas".
+
+7) Sugerencia:
+   Podéis crear un acceso directo en el escritorio arrastrando CG.exe con el botón derecho del ratón y seleccionando "Crear acceso directo aquí".
+
+NOVEDADES DE LA VERSIÓN
+
+Subida de facturas y pagos en PDF:
+Al crear un registro de gasto, ahora aparecerán los campos "Factura", "Pago" y un botón de "Seleccionar".
+
+Servirá para subir los documentos correspondientes, siempre en formato PDF.
+
+BENEFICIO
+
+Esta mejora facilitará el trabajo del área de administración y ayudará a evitar que se pierdan facturas que después hay que volver a solicitar.
+
+CONSEJO PRÁCTICO
+
+Al escanear las facturas, guardadlas de forma ordenada en una carpeta de vuestro ordenador para que sean fáciles de identificar.
+
+Tip:
+Si configuráis el navegador para que os pregunte dónde guardar cada archivo, podréis cambiarle el nombre antes de descargarlo y os será más fácil encontrarlo.
+
+RESOLUCIÓN DE PROBLEMAS
+
+- Si no os deja instalar por el "Control de aplicaciones":
+  Hay que desactivarlo temporalmente.
+
+- Si la aplicación no conecta al servidor:
+  Poneos en contacto con el departamento de Comunicación.
+
+${includeCacheWarning ? `IMPORTANTE:
+Por favor, pulsad F5 varias veces al entrar en la aplicación para asegurar que se cargan los últimos cambios.
+En algunos casos el navegador conserva en caché una versión anterior y eso puede provocar fallos o que no se vean correctamente las actualizaciones.
+
+` : ''}Para cualquier duda, podéis escribirnos a ${supportEmail}.
+
+Un saludo,
+Departamento de Comunicación`
+  );
+}
+
+export function buildExpenseControlInstallHtmlEmail(
+  name = 'equipo',
+  {
+    logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
+    supportEmail = 'comunicacion@engloba.org.es',
+    includeCacheWarning = false,
+  } = {}
+) {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Actualización de la aplicación de Control de Gastos</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#f0f2f7;font-family:'Roboto',Arial,sans-serif;color:#2a2a2a;line-height:1.6}
+  .card{max-width:720px;margin:36px auto;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 10px 28px rgba(0,0,0,.08)}
+  .header{background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);color:#fff;text-align:center;padding:30px 24px}
+  .logo{max-width:130px;height:auto;margin:0 auto 10px;display:block}
+  .header h1{font-size:24px;margin:0}
+  .header p{font-size:14px;opacity:.92;margin-top:8px}
+  .content{padding:30px 34px;font-size:16px}
+  .content p{margin:14px 0}
+  h2{color:#4f529f;font-size:18px;margin:26px 0 12px}
+  ol,ul{margin:10px 0 16px 22px}
+  li{margin:8px 0}
+  .block{background:#f8f9ff;border:1px solid #e4e7ff;border-radius:12px;padding:16px 18px;margin:12px 0 20px}
+  .warning{background:#fff8e8;border:1px solid #f5dc98;border-radius:12px;padding:16px 18px;margin:16px 0}
+  .error{background:#fff1f1;border:1px solid #f1c7c7;border-radius:12px;padding:16px 18px;margin:16px 0}
+  .tag{display:inline-block;background:#eef0ff;color:#4f529f;border:1px solid #dfe2ff;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;margin-left:6px}
+  .kbd{font-family:ui-monospace,Menlo,Consolas,monospace;background:#f3f3f3;border:1px solid #e5e5e5;border-radius:6px;padding:2px 6px}
+  .footer{background:#bec3f4;text-align:center;padding:18px 16px;font-size:13px;color:#333}
+  a{color:#4f529f;font-weight:700;text-decoration:none}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      ${logoUrl ? `<img src="${logoUrl}" alt="Asociación Engloba" class="logo">` : ''}
+      <h1>Instalación de la aplicación de Control de Gastos</h1>
+      <p>Actualización de herramienta y subida de facturas/pagos en PDF</p>
+    </div>
+
+    <div class="content">
+      <p>Hola ${name || 'equipo'},</p>
+
+      <p>Os escribimos para informaros de la actualización de la aplicación de <strong>Control de Gastos</strong>.</p>
+
+      <h2>📞 Instalación de la aplicación</h2>
+      <div class="block">
+        <ol>
+          <li>Eliminar la carpeta actual de <strong>Control de Gastos</strong>. Podéis borrarla completa, <strong>no se pierden datos</strong>.</li>
+          <li>Entrar en Drive: <span class="kbd">Unidades Compartidas → Aplicación control de gastos</span>.</li>
+          <li>Descargar el archivo <strong>“Aplicación Control Gastos.zip”</strong>.</li>
+          <li>Descomprimirlo en el escritorio o en otra carpeta que os resulte cómoda.</li>
+          <li>Ejecutar <strong>cg.exe</strong>. Si no aparece la extensión <em>.exe</em>, es el archivo que indica <strong>“Aplicación”</strong>.</li>
+          <li>Si aparece el mensaje <strong>“Windows protegió su PC”</strong>, haced clic en <strong>“Más información”</strong> y después en <strong>“Ejecutar de todas formas”</strong>.</li>
+          <li>Podéis crear un acceso directo en el escritorio arrastrando <strong>CG.exe</strong> con el botón derecho y seleccionando <strong>“Crear acceso directo aquí”</strong>.</li>
+        </ol>
+      </div>
+
+      <h2>✨ Novedades de la versión</h2>
+      <div class="block">
+        <p><strong>📝 Subida de facturas y pagos en PDF</strong></p>
+        <p>Al crear un registro de gasto, ahora aparecerán los campos <strong>“Factura”</strong>, <strong>“Pago”</strong> y un botón de <strong>“Seleccionar”</strong>.</p>
+        <p>Servirá para subir los documentos correspondientes, siempre en <strong>formato PDF</strong>.</p>
+      </div>
+
+      <h2>💼 Beneficio</h2>
+      <div class="block">
+        <p>Esta mejora facilitará el trabajo del área de administración y ayudará a evitar que se pierdan facturas que después hay que volver a solicitar.</p>
+      </div>
+
+      <h2>💡 Consejo práctico</h2>
+      <div class="warning">
+        <p>Al escanear las facturas, guardadlas de forma ordenada en una carpeta de vuestro ordenador para que sean fáciles de identificar.</p>
+        <p><strong>Tip:</strong> si configuráis el navegador para que os pregunte dónde guardar cada archivo, podréis cambiarle el nombre antes de descargarlo y os será más fácil encontrarlo.</p>
+      </div>
+
+      <h2>⚠️ Resolución de problemas</h2>
+      <div class="error">
+        <ul>
+          <li><strong>Si no os deja instalar por el “Control de aplicaciones”:</strong> hay que desactivarlo temporalmente.</li>
+          <li><strong>Si la aplicación no conecta al servidor:</strong> poneos en contacto con el departamento de Comunicación.</li>
+        </ul>
+      </div>
+
+      ${includeCacheWarning ? `
+      <div class="warning">
+        <p><strong>Importante:</strong> pulsad F5 varias veces al entrar en la aplicación para asegurar que se cargan los últimos cambios.</p>
+        <p>En algunos casos el navegador conserva en caché una versión anterior y eso puede provocar fallos o que no se vean correctamente las actualizaciones.</p>
+      </div>` : ''}
+
+      <p>Para cualquier duda, podéis escribirnos a <a href="mailto:${supportEmail}">${supportEmail}</a>.</p>
+
+      <p>Un saludo,<br></p>
+    </div>
+
+    <div class="footer">
+      Asociación Engloba · Gustavo
+    </div>
+  </div>
+</body>
+</html>`;
+}
+//FIN BORRAR

@@ -215,6 +215,12 @@ function createDispositiveIndex(dispositives = []) {
         lat: typeof d.coordinates?.lat === "number" ? d.coordinates.lat : null,
         lng: typeof d.coordinates?.lng === "number" ? d.coordinates.lng : null,
       },
+      serviceType: {
+        residencial: Boolean(d.serviceType?.residencial),
+        capacity: Number.isFinite(Number(d.serviceType?.capacity))
+          ? Number(d.serviceType.capacity)
+          : 0,
+      },
 
       workplaces: Array.isArray(d.workplaces)
         ? d.workplaces.map((workplace) => ({
@@ -264,7 +270,7 @@ const [jobs, provinces, work_schedule, studies, finantial, programs, dispositive
     Studies.find().lean(),
     Finantial.find().lean(),
     Program.find({ active: true }, { name: 1, acronym: 1, entity:1 }).lean(),
-    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1, departamentSesame: 1, workplaces: 1 })
+    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1, departamentSesame: 1, workplaces: 1, serviceType:1 })
   .populate("workplaces", "_id name active officeIdSesame address")
   .lean(),
     Entity.find().lean(),
@@ -329,7 +335,7 @@ const getEnumEmployers = async (req, res) => {
     Studies.find({}, { name: 1, subcategories: 1 }).lean(),
     Finantial.find({}).lean(),
     Documentation.find({}).lean(),
-    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1, departamentSesame: 1, workplaces: 1 })
+    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1, departamentSesame: 1, workplaces: 1, serviceType:1 })
   .populate("workplaces", "_id name active officeIdSesame address")
   .lean(),
     Documentation.distinct("categoryFiles").catch(() => []),
@@ -685,7 +691,7 @@ const deleteFileEnums = async (req, res) => {
 const getProgramsAndDispositiveEnums = async (req, res) => {
   const [programs, dispositives, provinces] = await Promise.all([
     Program.find({}, { name: 1, acronym: 1, active: 1, entity: 1, area: 1 }).lean(),
-    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1, departamentSesame: 1, workplaces: 1, coordinates: 1, })
+    Dispositive.find({}, { name: 1, program: 1, province: 1, active: 1, departamentSesame: 1, workplaces: 1, coordinates: 1, serviceType:1 })
   .populate("workplaces", "_id name active officeIdSesame address")
   .lean(),
     Provinces.find({}, { name: 1, subcategories: 1 }).lean(),
