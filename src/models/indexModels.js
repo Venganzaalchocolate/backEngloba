@@ -24,6 +24,7 @@ const ScopedRoleRule=require('./scopedRoleRuleSchema')
 const Workplace = require('./workplace');
 const AttendedUser = require('./attendedUser');
 const ModuleScopeAccess = require("./moduleScopeAccess");
+const DocumentationReceiptTemplate=require("./documentationReceiptTemplateSchema")
 
 module.exports = {
     User,
@@ -50,5 +51,6 @@ module.exports = {
     ScopedRoleRule,
     Workplace,
     AttendedUser,
-    ModuleScopeAccess
+    ModuleScopeAccess,
+    DocumentationReceiptTemplate
 }

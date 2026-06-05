@@ -203,6 +203,11 @@ const UserSchema = new Schema({
         index: true,
         default: null,
     },
+    userIdOhs:{
+        type: String,
+        index: true,
+        default: null,
+    }
 
 }, { timestamps: true });
 //

@@ -120,7 +120,7 @@ const {
 } = require("./documentationController");
 
 // ----------------------------- PDF SIGN -------------------------------------
-const { confirmSignature, requestSignature } = require("./pdfSignController");
+const { confirmSignature, requestSignature, previewReceiptTemplate } = require("./pdfSignController");
 
 // ----------------------------- AUDITS ---------------------------------------
 const {
@@ -327,7 +327,24 @@ const {
   getUserModuleScopeAccess 
 } = require("./moduleScopeAccessController");
 
+// ----------------------------- MODULE OHS -------------------------------
+const {
+testOhsGetWorkersLocal
+} = require("./ohsController");
 
+// ----------------------------- TEMPLATE CONTROLLER -------------------------------
+const {
+  listDocumentationReceiptTemplates,
+  getDocumentationReceiptTemplateById,
+  getDocumentationReceiptTemplateByDocumentation,
+  getActiveReceiptQuestionsByDocumentation,
+  createDocumentationReceiptTemplate,
+  upsertDocumentationReceiptTemplate,
+  updateDocumentationReceiptTemplate,
+  toggleDocumentationReceiptTemplate,
+  deleteDocumentationReceiptTemplate,
+  postValidateReceiptAnswers,
+} = require('./documentationReceiptTemplateController');
 // ============================================================================
 // EXPORTS (sin duplicados, sin comas raras)
 // ============================================================================
@@ -450,6 +467,7 @@ module.exports = {
   // PDF Sign
   requestSignature,
   confirmSignature,
+  previewReceiptTemplate,
 
   // Audits
   auditDocsUser,
@@ -610,6 +628,18 @@ postSesameGetOfficeManagers,
   listModuleScopeAccess,
   updateModuleScopeAccess,
   deleteModuleScopeAccess,
-  getUserModuleScopeAccess
+  getUserModuleScopeAccess,
+
+  // ----------------------------- TEMPLATE CONTROLLER -------------------------------
+  listDocumentationReceiptTemplates,
+  getDocumentationReceiptTemplateById,
+  getDocumentationReceiptTemplateByDocumentation,
+  getActiveReceiptQuestionsByDocumentation,
+  createDocumentationReceiptTemplate,
+  upsertDocumentationReceiptTemplate,
+  updateDocumentationReceiptTemplate,
+  toggleDocumentationReceiptTemplate,
+  deleteDocumentationReceiptTemplate,
+  postValidateReceiptAnswers,
 };
 

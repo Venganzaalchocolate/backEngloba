@@ -26,6 +26,7 @@ const scopedRoleRoutes=require('./routes/scopedRolesRoutes')
 const workplaceRoutes=require('./routes/workplaceRoutes')
 const attendedUserRoutes=require('./routes/attendedUserRoutes')
 const moduleScopeRoutes=require('./routes/moduleScopeRoutes')
+const documentationReceiptTemplaterRoutes=require('./routes/documentationReceiptTemplaterRoutes')
 
 const { connectToDatabase } = require('./database/connect');
 require('./controllers/cronScheduleController');
@@ -85,6 +86,7 @@ app.use('/api', userDocumentationAudit)
 app.use('/api', scopedRoleRoutes)
 app.use('/api', attendedUserRoutes)
 app.use('/api', moduleScopeRoutes)
+app.use('/api', documentationReceiptTemplaterRoutes)
 
 
 

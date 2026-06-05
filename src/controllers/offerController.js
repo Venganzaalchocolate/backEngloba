@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const { Offer, Jobs, Program} = require('../models/indexModels');
 // IMPORTAMOS DESDE TUS UTILS
 const { catchAsync, response, ClientError, validateRequiredFields, toId } = require('../utils/indexUtils');
+const ohsService = require('../services/ohsServices');
 
 
 // -------------------- Helpers --------------------
@@ -445,6 +446,9 @@ async function offerId(req, res) {
 
   response(res, 200, doc);
 }
+
+
+
 
 
 module.exports = {

@@ -110,6 +110,7 @@ const toTitleCase = (str = "") =>
   // siempre comparamos por YYYY-MM-DD en UTC
   return dt.toISOString().slice(0, 10);
 };
+
 // get/set de rutas con dot-notation (sin lodash)
 const getByPath = (obj, path) => {
   if (!path) return undefined;
