@@ -150,3 +150,5 @@ sent_missing_dni.json
 datos/
 
 .xlsx
+
+exports/ 
