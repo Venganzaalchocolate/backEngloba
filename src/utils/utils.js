@@ -2,50 +2,63 @@ const { Periods } = require("../models/indexModels");
 const { ClientError } = require("./clientError");
 const mongoose = require("mongoose");
 
-const dateAndHour = () => {
-    const currentDate = new Date();
-    const formattedDate = currentDate.getDate() + '-' +
-        (currentDate.getMonth() + 1) + '-' +
-        currentDate.getFullYear() + '_' +
-        currentDate.getHours() + '-' +
-        currentDate.getMinutes() + '-' +
-        currentDate.getSeconds();
-    return formattedDate
-}
+const TIME_ZONE_SPAIN = "Europe/Madrid";
 
-const getSpainCurrentDate = () => {
-    const currentDate = new Date();
-    const year = currentDate.getFullYear();
-    
-    // Horario de verano empieza el último domingo de marzo
-    const startDST = new Date(year, 2, 31 - (new Date(year, 2, 31).getDay()));
-    // Horario de verano termina el último domingo de octubre
-    const endDST = new Date(year, 9, 31 - (new Date(year, 9, 31).getDay()));
+const formatDateSpain = (date = new Date()) =>
+  new Date(date).toLocaleDateString("es-ES", {
+    timeZone: TIME_ZONE_SPAIN,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 
-    let spainOffset = 1; // UTC+1 para horario de invierno
+const formatTimeSpain = (date = new Date()) =>
+  new Date(date).toLocaleTimeString("es-ES", {
+    timeZone: TIME_ZONE_SPAIN,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 
-    // Si estamos en horario de verano, UTC+2
-    if (currentDate >= startDST && currentDate < endDST) {
-        spainOffset = 2;
-    }
+const formatDateTimeSpain = (date = new Date()) =>
+  `${formatDateSpain(date)} ${formatTimeSpain(date)}`;
 
-    const spainDate = new Date(currentDate.getTime() + spainOffset * 60 * 60 * 1000);
-    
-    // Obtener día, mes y año
-    const day = spainDate.getDate();
-    const month = spainDate.getMonth() + 1; // Los meses son de 0 a 11, por eso sumamos 1
-    const yearFormatted = spainDate.getFullYear();
-    
-    // Obtener horas, minutos y segundos
-    const hours = spainDate.getHours();
-    const minutes = spainDate.getMinutes();
-    const seconds = spainDate.getSeconds();
-    
-    // Formatear en día_mes_año_hh:minuto:segundo
-    const formattedDate = `${day}_${month}_${yearFormatted} ${hours}:${minutes}:${seconds}`;
-    
-    return formattedDate;
+// Para nombres de archivo: 05-06-2026_09-42-13
+const dateAndHour = (date = new Date()) => {
+  const parts = new Intl.DateTimeFormat("es-ES", {
+    timeZone: TIME_ZONE_SPAIN,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const get = (type) => parts.find((p) => p.type === type)?.value || "";
+
+  return `${get("day")}-${get("month")}-${get("year")}_${get("hour")}-${get("minute")}-${get("second")}`;
 };
+
+// Mantengo el nombre antiguo para no romper llamadas existentes
+const getSpainCurrentDate = (date = new Date()) => {
+  const parts = new Intl.DateTimeFormat("es-ES", {
+    timeZone: TIME_ZONE_SPAIN,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const get = (type) => parts.find((p) => p.type === type)?.value || "";
+
+  return `${get("day")}_${get("month")}_${get("year")} ${get("hour")}:${get("minute")}:${get("second")}`;
+};
+
 
 function createAccentInsensitiveRegex(str) {
     const accentMap = {
@@ -155,13 +168,16 @@ async function getAllPeriods(userId) {
     .lean();
 }
 module.exports = {
-    dateAndHour,
-    getSpainCurrentDate,
-    createAccentInsensitiveRegex,
-    parseAndValidateDates,
-    validateRequiredFields,
-    toId,
-    getCurrentPeriod,
-    getCurrentPeriods,
-    getAllPeriods
+  dateAndHour,
+  getSpainCurrentDate,
+  formatDateSpain,
+  formatTimeSpain,
+  formatDateTimeSpain,
+  createAccentInsensitiveRegex,
+  parseAndValidateDates,
+  validateRequiredFields,
+  toId,
+  getCurrentPeriod,
+  getCurrentPeriods,
+  getAllPeriods
 };

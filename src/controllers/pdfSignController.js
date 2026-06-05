@@ -6,8 +6,8 @@ const {
   Periods,
   Dispositive,
   Jobs,
-  Workplace,
 } = require("../models/indexModels");
+
 const OneTimeCode = require("../models/OneTimeCode");
 const { ClientError, response, catchAsync } = require("../utils/indexUtils");
 const { sendEmail, generateEmailHTML } = require("./emailControllerGoogle");
@@ -37,10 +37,24 @@ const {
 } = require("./documentationReceiptTemplateController");
 
 /* ======================================================
-   HELPERS
+   CONFIGURACIÓN GENERAL
+====================================================== */
+
+const docTypeConfig = {
+  payroll: { emailTitle: "nómina", emailSubject: "Tu código para firmar nómina" },
+  contract: { emailTitle: "contrato", emailSubject: "Tu código para firmar contrato" },
+  recibi: { emailTitle: "recibí", emailSubject: "Tu código para firmar el recibí" },
+};
+
+/* ======================================================
+   Genera un código temporal de 6 dígitos para la firma
 ====================================================== */
 
 const generarCodigoTemporal = () => ("" + Math.floor(Math.random() * 999999)).padStart(6, "0");
+
+/* ======================================================
+   Convierte un stream de Drive a Buffer
+====================================================== */
 
 const streamToBuffer = (stream) =>
   new Promise((resolve, reject) => {
@@ -50,16 +64,9 @@ const streamToBuffer = (stream) =>
     stream.on("error", reject);
   });
 
-const docTypeConfig = {
-  payroll: { emailTitle: "nómina", emailSubject: "Tu código para firmar nómina" },
-  contract: { emailTitle: "contrato", emailSubject: "Tu código para firmar contrato" },
-  recibi: { emailTitle: "recibí", emailSubject: "Tu código para firmar el recibí" },
-};
-
-
-
 /* ======================================================
-   SOLICITAR OTP
+   Busca el nombre de una subcategoría de puesto
+   El puesto del periodo siempre apunta a Jobs.subcategories._id
 ====================================================== */
 
 const findSubcategoryName = (jobs = [], positionId) => {
@@ -74,6 +81,12 @@ const findSubcategoryName = (jobs = [], positionId) => {
 
   return null;
 };
+
+/* ======================================================
+   Obtiene contexto laboral actual del trabajador:
+   dispositivo, puesto de trabajo y centro de trabajo.
+   Solo usa el periodo activo vigente en este momento.
+====================================================== */
 
 const getEmployeeReceiptContext = async ({ userId, email }) => {
   let user = null;
@@ -137,6 +150,12 @@ const getEmployeeReceiptContext = async ({ userId, email }) => {
     workplaceName,
   };
 };
+
+/* ======================================================
+   Solicita código OTP para firmar.
+   Si el documento es un recibí con plantilla activa,
+   valida y guarda las respuestas en meta.
+====================================================== */
 
 const requestSignature = async (req, res) => {
   const { userId, docType, docId, meta } = req.body || {};
@@ -212,7 +231,10 @@ const requestSignature = async (req, res) => {
 };
 
 /* ======================================================
-   CONFIRMAR OTP Y FIRMAR
+   Confirma el código OTP y genera/sube el documento firmado.
+   - payroll/contract: firma sobre PDF existente.
+   - recibi sin plantilla: genera recibí normal.
+   - recibi con plantilla: genera recibí personalizado.
 ====================================================== */
 
 const confirmSignature = async (req, res) => {
@@ -261,21 +283,21 @@ const confirmSignature = async (req, res) => {
 
     if (!documentationAux) throw new ClientError("Documento de documentación no encontrado", 404);
     if (!documentationAux.requiresSignature) throw new ClientError("Este documento no requiere firma de recibí", 400);
-const fechaRecibi = new Date();
-const documentName = documentationAux.name;
-const template = await getActiveReceiptTemplateForDocumentation(otp.docId);
 
-// Si NO hay plantilla, es el flujo antiguo y exige descarga previa.
-if (!template) {
-  const canSignResult = await canUserSignDocumentationReceipt({
-    userId,
-    documentationId: otp.docId,
-  });
+    const fechaRecibi = new Date();
+    const documentName = documentationAux.name;
+    const template = await getActiveReceiptTemplateForDocumentation(otp.docId);
 
-  if (!canSignResult?.canSign) {
-    throw new ClientError("No puedes firmar el recibí sin haber descargado antes el documento oficial.", 400);
-  }
-}
+    if (!template) {
+      const canSignResult = await canUserSignDocumentationReceipt({
+        userId,
+        documentationId: otp.docId,
+      });
+
+      if (!canSignResult?.canSign) {
+        throw new ClientError("No puedes firmar el recibí sin haber descargado antes el documento oficial.", 400);
+      }
+    }
 
     let pdfDocRecibi;
 
@@ -309,9 +331,12 @@ if (!template) {
         documentName,
         description,
         fechaRecibi,
+        includePrlExtraText: documentationAux?.categoryFiles === "PRL",
       });
 
-      await addSignatureToRecibiPdf(pdfDocRecibi, userAux);
+      await addSignatureToRecibiPdf(pdfDocRecibi, userAux, {
+        y: documentationAux?.categoryFiles === "PRL" ? 98 : 136,
+      });
     }
 
     signedBuffer = Buffer.from(await pdfDocRecibi.save());
@@ -395,7 +420,7 @@ if (!template) {
     ).populate({ path: "files.filesId", model: "Filedrive" });
 
     if (!updatedUser) {
-      await deleteFileById(uploaded.id).catch(() => { });
+      await deleteFileById(uploaded.id).catch(() => {});
       throw new ClientError("No se pudo actualizar la nómina firmada en el usuario", 500);
     }
 
@@ -444,7 +469,8 @@ if (!template) {
 };
 
 /* ======================================================
-   PREVIEW PLANTILLA DE RECIBÍ
+   Genera una vista previa PDF de una plantilla de recibí.
+   Usa como usuario de prueba a hermes.conrad@engloba.org.es.
 ====================================================== */
 
 const previewReceiptTemplate = async (req, res) => {
@@ -460,9 +486,9 @@ const previewReceiptTemplate = async (req, res) => {
   const fakeAnswers = Array.isArray(answers) && answers.length
     ? answers
     : (template.questions || []).map((q) => ({
-      key: q.key,
-      answer: q.blocksSignatureIfAnswer === "yes" ? "no" : "yes",
-    }));
+        key: q.key,
+        answer: q.blocksSignatureIfAnswer === "yes" ? "no" : "yes",
+      }));
 
   validateReceiptAnswers({
     template,

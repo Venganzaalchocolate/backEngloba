@@ -1,6 +1,8 @@
+// services/pdfGeneratorService.js
 const fs = require("fs");
 const path = require("path");
 const { rgb, PDFDocument, StandardFonts } = require("pdf-lib");
+const { formatDateTimeSpain, formatDateSpain, formatTimeSpain } = require("../utils/utils");
 
 let createCanvas;
 try { ({ createCanvas } = require("canvas")); } catch { createCanvas = null; }
@@ -15,14 +17,38 @@ const COLOR_TEXT = rgb(0, 0, 0);
 const COLOR_MUTED = hexToRgb("#6f7395");
 const COLOR_WHITE = rgb(1, 1, 1);
 
+const PRL_RECIBI_EXTRA_TEXT = `La empresa, en cumplimiento de las obligaciones expresadas en los artículos 18 y 20 de la Ley 31/1995 de Prevención de Riesgos Laborales, “información, consulta y participación de los trabajadores” y “medidas de emergencia”, le ha entregado la información sobre los riesgos para la Seguridad y la Salud, las medidas y actividades de protección y prevención aplicables y las medidas de emergencia y primeros auxilios que afectan a su puesto de trabajo.
+
+Se le recuerda que, entre las obligaciones de los trabajadores en materia de Prevención de Riesgos definidas por la Ley, están las siguientes:
+
+• Velar por su propia Seguridad y Salud en el trabajo y por la de aquellas otras personas a las que pueda afectar su actividad profesional.
+• Usar adecuadamente máquinas, aparatos, herramientas, sustancias peligrosas y equipos de transporte.
+• Utilizar correctamente los medios y equipos de protección facilitados por la empresa de acuerdo con las instrucciones recibidas.
+• No poner fuera de funcionamiento y utilizar correctamente los dispositivos de seguridad.
+• Informar de inmediato a sus superiores ante cualquier situación que entrañe riesgo para la Seguridad y Salud.`;
+
+
+
+/* ======================================================
+   Convierte un color HEX a rgb de pdf-lib
+====================================================== */
+
 function hexToRgb(hex) {
   const clean = String(hex).replace("#", "");
   const n = parseInt(clean, 16);
   return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
 }
 
+/* ======================================================
+   Limpia textos para generar nombres de archivo seguros
+====================================================== */
+
 const sanitizeFileName = (text = "") =>
   String(text).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_");
+
+/* ======================================================
+   Genera el nombre final del recibí firmado
+====================================================== */
 
 const buildRecibiFileName = ({ documentName, dni, date = new Date() }) => {
   const safeName = sanitizeFileName(documentName || "documento");
@@ -30,7 +56,89 @@ const buildRecibiFileName = ({ documentName, dni, date = new Date() }) => {
   return `${safeName}_${safeDni}_${date.toISOString().slice(0, 10)}_recibi_signed.pdf`;
 };
 
+/* ======================================================
+   Comprueba si el usuario tiene rúbrica dibujada
+====================================================== */
+
 const hasUserSignature = (user) => Array.isArray(user?.signature?.strokes) && user.signature.strokes.length > 0;
+
+/* ======================================================
+   Parte un texto en líneas según el ancho disponible
+====================================================== */
+
+const wrapTextLines = (text, font, size, maxWidth) => {
+  if (!text) return [""];
+  const words = String(text).split(/\s+/);
+  const lines = [];
+  let line = "";
+
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+
+    if (font.widthOfTextAtSize(test, size) <= maxWidth) {
+      line = test;
+    } else {
+      if (line) lines.push(line);
+      line = word;
+    }
+  }
+
+  if (line) lines.push(line);
+  return lines;
+};
+
+/* ======================================================
+   Pinta texto con salto de línea manual
+====================================================== */
+
+const drawWrappedText = ({ page, text, x, y, maxWidth, font, size, color, lineGap = 4 }) => {
+  const lines = wrapTextLines(text, font, size, maxWidth);
+  let currentY = y;
+
+  for (const line of lines) {
+    page.drawText(line, { x, y: currentY, size, font, color });
+    currentY -= size + lineGap;
+  }
+
+  return currentY;
+};
+
+const drawWrappedParagraphText = ({
+  page,
+  text,
+  x,
+  y,
+  maxWidth,
+  font,
+  size,
+  color,
+  lineGap = 2,
+  paragraphGap = 4,
+}) => {
+  const paragraphs = String(text || "")
+    .split(/\n+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  let currentY = y;
+
+  for (const paragraph of paragraphs) {
+    const lines = wrapTextLines(paragraph, font, size, maxWidth);
+
+    for (const line of lines) {
+      page.drawText(line, { x, y: currentY, size, font, color });
+      currentY -= size + lineGap;
+    }
+
+    currentY -= paragraphGap;
+  }
+
+  return currentY;
+};
+
+/* ======================================================
+   Pinta texto con salto y límite opcional de líneas
+====================================================== */
 
 const drawWrappedTextBlock = ({
   page,
@@ -56,48 +164,27 @@ const drawWrappedTextBlock = ({
   return currentY;
 };
 
-const wrapTextLines = (text, font, size, maxWidth) => {
-  if (!text) return [""];
-  const words = String(text).split(/\s+/);
-  const lines = [];
-  let line = "";
-
-  for (const word of words) {
-    const test = line ? `${line} ${word}` : word;
-
-    if (font.widthOfTextAtSize(test, size) <= maxWidth) {
-      line = test;
-    } else {
-      if (line) lines.push(line);
-      line = word;
-    }
-  }
-
-  if (line) lines.push(line);
-  return lines;
-};
-
-const drawWrappedText = ({ page, text, x, y, maxWidth, font, size, color, lineGap = 4 }) => {
-  const lines = wrapTextLines(text, font, size, maxWidth);
-  let currentY = y;
-
-  for (const line of lines) {
-    page.drawText(line, { x, y: currentY, size, font, color });
-    currentY -= size + lineGap;
-  }
-
-  return currentY;
-};
+/* ======================================================
+   Pinta una caja rectangular
+====================================================== */
 
 const drawBox = ({ page, x, y, width, height, color, borderColor, borderWidth = 1 }) => {
   page.drawRectangle({ x, y, width, height, color, borderColor, borderWidth });
 };
+
+/* ======================================================
+   Inserta imagen JPG o PNG desde ruta local
+====================================================== */
 
 const embedImageByPath = async (pdfDoc, imgPath) => {
   const buf = fs.readFileSync(imgPath);
   const lower = imgPath.toLowerCase();
   return lower.endsWith(".jpg") || lower.endsWith(".jpeg") ? pdfDoc.embedJpg(buf) : pdfDoc.embedPng(buf);
 };
+
+/* ======================================================
+   Renderiza la rúbrica guardada en strokes a PNG
+====================================================== */
 
 const renderStrokesToPngBuffer = (strokes, opts = {}) => {
   if (!createCanvas || !Array.isArray(strokes) || !strokes.length) return null;
@@ -174,8 +261,7 @@ const renderStrokesToPngBuffer = (strokes, opts = {}) => {
 };
 
 /* ======================================================
-   FIRMA GENÉRICA PARA PDFS EXISTENTES
-   Nóminas / contratos / otros documentos
+   Pinta cajetín genérico de firma sobre PDF existente
 ====================================================== */
 
 const addSignatureBox = async (pdfDoc, text, o = {}, apafa = false) => {
@@ -233,9 +319,8 @@ const addSignatureBox = async (pdfDoc, text, o = {}, apafa = false) => {
       p.split(" ").forEach((word) => {
         const test = line ? `${line} ${word}` : word;
 
-        if (font.widthOfTextAtSize(test, size) <= innerW) {
-          line = test;
-        } else {
+        if (font.widthOfTextAtSize(test, size) <= innerW) line = test;
+        else {
           out.push(line);
           line = word;
         }
@@ -267,6 +352,10 @@ const addSignatureBox = async (pdfDoc, text, o = {}, apafa = false) => {
   return { x, y, boxWidth, boxHeight, margin, font };
 };
 
+/* ======================================================
+   Firma genérica para nóminas, contratos u otros PDFs
+====================================================== */
+
 const addSignatureToPdf = async (pdfDoc, userAux, opts = {}) => {
   const {
     boxWidth = 260,
@@ -287,10 +376,14 @@ const addSignatureToPdf = async (pdfDoc, userAux, opts = {}) => {
 
   const fecha = new Date();
   const line1 = `Firmado por: ${userAux.firstName} ${userAux.lastName} · DNI: ${userAux.dni}`;
-  const line2 = `${fecha.toLocaleDateString("es-ES")} ${fecha.toLocaleTimeString("es-ES")}`;
+  const line2 = formatDateTimeSpain(fecha);
 
   if (!hasUserSignature(userAux)) {
-    const signText = `Firmado digitalmente por:\nNombre: ${userAux.firstName} ${userAux.lastName}\nDNI: ${userAux.dni}\nFecha: ${fecha.toLocaleDateString("es-ES")}\nHora: ${fecha.toLocaleTimeString("es-ES")}`;
+    const signText = `Firmado digitalmente por:
+Nombre: ${userAux.firstName} ${userAux.lastName}
+DNI: ${userAux.dni}
+Fecha: ${formatDateSpain(fecha)}
+Hora: ${formatTimeSpain(fecha)}`;
 
     await addSignatureBox(pdfDoc, signText, {
       boxWidth,
@@ -367,11 +460,84 @@ const addSignatureToPdf = async (pdfDoc, userAux, opts = {}) => {
 };
 
 /* ======================================================
-   RECIBÍ SIMPLE ACTUAL
-   Se mantiene para no romper lo que ya funciona.
+   Pinta pie de página para recibí simple
 ====================================================== */
 
-const generateRecibiPdf = async ({ userAux, documentName, description, fechaRecibi = new Date() }) => {
+const drawRecibiFooter = async ({ pdfDoc, page, pageNumber, totalPages, marginX = 55 }) => {
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const { width } = page.getSize();
+
+  page.drawLine({
+    start: { x: marginX, y: 58 },
+    end: { x: width - marginX, y: 58 },
+    thickness: 1,
+    color: COLOR_SOFT_BORDER,
+  });
+
+  page.drawText(`Página ${pageNumber} de ${totalPages}`, {
+    x: width - 95,
+    y: 42,
+    size: 9,
+    font,
+    color: COLOR_MUTED,
+  });
+};
+
+/* ======================================================
+   Añade página adicional al recibí simple
+====================================================== */
+
+const addRecibiTextPage = async ({ pdfDoc, title = "INFORMACIÓN ADICIONAL" }) => {
+  const page = pdfDoc.addPage([595.28, 841.89]);
+  const { width, height } = page.getSize();
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const marginX = 55;
+
+  try {
+    const logo = await embedImageByPath(pdfDoc, RECIBI_LOGO_PATH);
+    const logoW = 105;
+    const logoH = logo.height * logoW / logo.width;
+    page.drawImage(logo, { x: marginX, y: height - 82, width: logoW, height: logoH, opacity: 0.95 });
+  } catch {}
+
+  let infoY = height - 38;
+
+  ["Asociación Engloba", "Paraje la Solana, 1", "Chirivel (Almería) 04825", "G04747614", "rrhh@engloba.org.es"].forEach((line) => {
+    page.drawText(line, { x: width - 190, y: infoY, size: 9, font: fontBold, color: COLOR_PRIMARY });
+    infoY -= 12;
+  });
+
+  page.drawLine({
+    start: { x: marginX, y: height - 96 },
+    end: { x: width - marginX, y: height - 96 },
+    thickness: 1,
+    color: COLOR_SOFT_BORDER,
+  });
+
+  page.drawText(title, {
+    x: marginX,
+    y: height - 140,
+    size: 12,
+    font: fontBold,
+    color: COLOR_PRIMARY,
+  });
+
+  return { page, y: height - 170 };
+};
+
+/* ======================================================
+   Genera el recibí simple.
+   Si includePrlExtraText es true, añade texto PRL
+   antes del bloque de firma.
+====================================================== */
+
+const generateRecibiPdf = async ({
+  userAux,
+  documentName,
+  description,
+  fechaRecibi = new Date(),
+  includePrlExtraText = false,
+}) => {
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([595.28, 841.89]);
   const { width, height } = page.getSize();
@@ -420,8 +586,8 @@ const generateRecibiPdf = async ({ userAux, documentName, description, fechaReci
   [
     ["Nombre y apellidos:", fullName],
     ["DNI:", userAux.dni || "—"],
-    ["Fecha:", fechaRecibi.toLocaleDateString("es-ES")],
-    ["Hora:", fechaRecibi.toLocaleTimeString("es-ES")],
+    ["Fecha:", formatDateSpain(fechaRecibi)],
+["Hora:", formatTimeSpain(fechaRecibi)],
   ].forEach(([label, value]) => {
     page.drawText(label, { x: marginX + 14, y: rowY, size: 10.5, font: fontBold, color: COLOR_PRIMARY });
     page.drawText(String(value), { x: marginX + 18 + fontBold.widthOfTextAtSize(label, 10.5), y: rowY, size: 10.5, font, color: COLOR_TEXT });
@@ -462,52 +628,96 @@ const generateRecibiPdf = async ({ userAux, documentName, description, fechaReci
     textY -= 14;
   });
 
-  drawBox({ page, x: marginX, y: 130, width: contentW, height: 115, color: COLOR_SOFT, borderColor: COLOR_SOFT });
+const extraTextBeforeSignature = includePrlExtraText ? PRL_RECIBI_EXTRA_TEXT : "";
+let signaturePage = page;
 
-  page.drawText("En prueba de conformidad, se firma este documento en la fecha indicada.", {
-    x: marginX + 14,
-    y: 216,
-    size: 10.5,
-    font,
-    color: COLOR_PRIMARY,
-  });
+if (extraTextBeforeSignature) {
+  const prlTitleY = textY - 2;
 
-  page.drawLine({
-    start: { x: marginX + 14, y: 204 },
-    end: { x: width - marginX - 14, y: 204 },
-    thickness: 1,
-    color: COLOR_WHITE,
-  });
-
-  page.drawText("Firma electrónica de recepción", {
-    x: marginX + 14,
-    y: 178,
-    size: 11,
+  page.drawText("INFORMACIÓN DE PREVENCIÓN DE RIESGOS LABORALES", {
+    x: marginX,
+    y: prlTitleY,
+    size: 8.5,
     font: fontBold,
     color: COLOR_PRIMARY,
   });
 
   page.drawLine({
-    start: { x: marginX, y: 58 },
-    end: { x: width - marginX, y: 58 },
+    start: { x: marginX, y: prlTitleY - 5 },
+    end: { x: width - marginX, y: prlTitleY - 5 },
     thickness: 1,
     color: COLOR_SOFT_BORDER,
   });
 
-  page.drawText("Página 1 de 1", {
-    x: width - 95,
-    y: 42,
-    size: 9,
+  drawWrappedParagraphText({
+    page,
+    text: extraTextBeforeSignature,
+    x: marginX,
+    y: prlTitleY - 16,
+    maxWidth: contentW,
     font,
-    color: COLOR_MUTED,
+    size: 7,
+    color: COLOR_TEXT,
+    lineGap: 1.5,
+    paragraphGap: 3,
   });
+}
+
+  const signatureBoxY = includePrlExtraText ? 92 : 130;
+const signatureTextY = includePrlExtraText ? 178 : 216;
+const signatureLineY = includePrlExtraText ? 166 : 204;
+const signatureLabelY = includePrlExtraText ? 140 : 178;
+
+drawBox({
+  page: signaturePage,
+  x: marginX,
+  y: signatureBoxY,
+  width: contentW,
+  height: 115,
+  color: COLOR_SOFT,
+  borderColor: COLOR_SOFT,
+});
+
+signaturePage.drawText("En prueba de conformidad, se firma este documento en la fecha indicada.", {
+  x: marginX + 14,
+  y: signatureTextY,
+  size: 10,
+  font,
+  color: COLOR_PRIMARY,
+});
+
+signaturePage.drawLine({
+  start: { x: marginX + 14, y: signatureLineY },
+  end: { x: width - marginX - 14, y: signatureLineY },
+  thickness: 1,
+  color: COLOR_WHITE,
+});
+
+signaturePage.drawText("Firma electrónica de recepción", {
+  x: marginX + 14,
+  y: signatureLabelY,
+  size: 10.5,
+  font: fontBold,
+  color: COLOR_PRIMARY,
+});
+
+  const pages = pdfDoc.getPages();
+
+  for (let i = 0; i < pages.length; i++) {
+    await drawRecibiFooter({
+      pdfDoc,
+      page: pages[i],
+      pageNumber: i + 1,
+      totalPages: pages.length,
+      marginX,
+    });
+  }
 
   return pdfDoc;
 };
 
 /* ======================================================
-   FIRMA ESPECÍFICA DEL RECIBÍ
-   Misma firma, pero ahora firma siempre en la última página.
+   Añade la firma concreta del recibí en la última página
 ====================================================== */
 
 const addSignatureToRecibiPdf = async (pdfDoc, userAux, opts = {}) => {
@@ -525,7 +735,7 @@ const addSignatureToRecibiPdf = async (pdfDoc, userAux, opts = {}) => {
 
   const fecha = new Date();
   const line1 = `${userAux.firstName || ""} ${userAux.lastName || ""}`.trim();
-  const line2 = `${fecha.toLocaleDateString("es-ES")} ${fecha.toLocaleTimeString("es-ES")}`;
+const line2 = formatDateTimeSpain(fecha);
 
   page.drawRectangle({
     x,
@@ -585,7 +795,7 @@ const addSignatureToRecibiPdf = async (pdfDoc, userAux, opts = {}) => {
 };
 
 /* ======================================================
-   NUEVO PDF PARA PLANTILLAS LARGAS
+   Pinta cabecera para recibís generados por plantilla
 ====================================================== */
 
 const drawTemplateHeader = async ({ pdfDoc, page, isPreview }) => {
@@ -602,7 +812,7 @@ const drawTemplateHeader = async ({ pdfDoc, page, isPreview }) => {
 
   let infoY = height - 34;
 
-  ["Asociación Engloba", "Paraje la Solana, 1","Chirivel (Almería) 04825","G04747614", "rrhh@engloba.org.es"].forEach((line) => {
+  ["Asociación Engloba", "Paraje la Solana, 1", "Chirivel (Almería) 04825", "G04747614", "rrhh@engloba.org.es"].forEach((line) => {
     page.drawText(line, { x: width - 175, y: infoY, size: 9, font: fontBold, color: COLOR_PRIMARY });
     infoY -= 12;
   });
@@ -625,6 +835,10 @@ const drawTemplateHeader = async ({ pdfDoc, page, isPreview }) => {
   }
 };
 
+/* ======================================================
+   Pinta pie para recibís generados por plantilla
+====================================================== */
+
 const drawTemplateFooter = async ({ pdfDoc, page, pageNumber, totalPages }) => {
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const { width } = page.getSize();
@@ -645,16 +859,28 @@ const drawTemplateFooter = async ({ pdfDoc, page, pageNumber, totalPages }) => {
   });
 };
 
+/* ======================================================
+   Crea nueva página para recibí por plantilla
+====================================================== */
+
 const addTemplatePage = async ({ pdfDoc, isPreview }) => {
   const page = pdfDoc.addPage([595.28, 841.89]);
   await drawTemplateHeader({ pdfDoc, page, isPreview });
   return { page, y: isPreview ? 710 : 725 };
 };
 
+/* ======================================================
+   Asegura espacio vertical en recibí por plantilla
+====================================================== */
+
 const ensureTemplateSpace = async ({ pdfDoc, page, y, needed = 20, isPreview }) => {
   if (y - needed >= 80) return { page, y };
   return addTemplatePage({ pdfDoc, isPreview });
 };
+
+/* ======================================================
+   Pinta texto con paginación para recibí por plantilla
+====================================================== */
 
 const drawTemplateText = async ({
   pdfDoc,
@@ -699,6 +925,10 @@ const drawTemplateText = async ({
   return { page: currentPage, y: currentY };
 };
 
+/* ======================================================
+   Pinta título de sección para recibí por plantilla
+====================================================== */
+
 const drawTemplateSectionTitle = async ({ pdfDoc, page, title, x, y, fontBold, isPreview }) => {
   const checked = await ensureTemplateSpace({ pdfDoc, page, y, needed: 30, isPreview });
   page = checked.page;
@@ -715,6 +945,10 @@ const drawTemplateSectionTitle = async ({ pdfDoc, page, title, x, y, fontBold, i
 
   return { page, y: y - 22 };
 };
+
+/* ======================================================
+   Pinta datos del trabajador en recibí por plantilla
+====================================================== */
 
 const drawTemplateInfoBox = async ({
   page,
@@ -737,7 +971,7 @@ const drawTemplateInfoBox = async ({
   const rows = [
     ["Nombre y apellidos:", fullName],
     ["DNI:", userAux.dni || "—"],
-    ["Fecha y hora:", `${fechaRecibi.toLocaleDateString("es-ES")} ${fechaRecibi.toLocaleTimeString("es-ES")}`],
+    ["Fecha y hora:", `${formatDateSpain(fechaRecibi)} ${formatTimeSpain(fechaRecibi)}`],
     ["Dispositivo:", employeeContext.dispositiveName || "—"],
     ["Puesto de trabajo:", employeeContext.positionName || "—"],
     ["Centro de trabajo:", employeeContext.workplaceName || "—"],
@@ -774,6 +1008,10 @@ const drawTemplateInfoBox = async ({
   });
 };
 
+/* ======================================================
+   Genera recibí desde plantilla con preguntas/respuestas
+====================================================== */
+
 const generateReceiptTemplatePdf = async ({
   userAux,
   documentName,
@@ -791,35 +1029,35 @@ const generateReceiptTemplatePdf = async ({
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const marginX = 45;
   const contentW = width - marginX * 2;
- const title = (template?.title || "Declaración de recepción").toUpperCase();
-const titleSize = title.length > 70 ? 12.5 : title.length > 48 ? 13.5 : 15;
-let titleY = height - 132;
+  const title = (template?.title || "Declaración de recepción").toUpperCase();
+  const titleSize = title.length > 70 ? 12.5 : title.length > 48 ? 13.5 : 15;
+  let titleY = height - 132;
 
-const titleLines = wrapTextLines(title, fontBold, titleSize, contentW);
+  const titleLines = wrapTextLines(title, fontBold, titleSize, contentW);
 
-titleLines.slice(0, 3).forEach((line) => {
-  page.drawText(line, {
-    x: marginX,
-    y: titleY,
-    size: titleSize,
-    font: fontBold,
-    color: COLOR_PRIMARY,
+  titleLines.slice(0, 3).forEach((line) => {
+    page.drawText(line, {
+      x: marginX,
+      y: titleY,
+      size: titleSize,
+      font: fontBold,
+      color: COLOR_PRIMARY,
+    });
+
+    titleY -= titleSize + 5;
   });
 
-  titleY -= titleSize + 5;
-});
+  await drawTemplateInfoBox({
+    page,
+    userAux,
+    documentName,
+    fechaRecibi,
+    font,
+    fontBold,
+    employeeContext,
+  });
 
-await drawTemplateInfoBox({
-  page,
-  userAux,
-  documentName,
-  fechaRecibi,
-  font,
-  fontBold,
-  employeeContext,
-});
-
-y = 520;
+  y = 520;
 
   let result = await drawTemplateSectionTitle({ pdfDoc, page, title: "DECLARA", x: marginX, y, fontBold, isPreview });
   page = result.page;
@@ -849,63 +1087,63 @@ y = 520;
   for (let i = 0; i < validAnswers.length; i++) {
     const item = validAnswers[i];
 
-    result = await ensureTemplateSpace({ pdfDoc, page, y, needed: 80, isPreview });
+    result = await ensureTemplateSpace({ pdfDoc, page, y, needed: 110, isPreview });
     page = result.page;
     y = result.y;
 
-result = await drawTemplateText({
-  pdfDoc,
-  page,
-  text: `${i + 1}. ${item.question || "Pregunta"}`,
-  x: marginX,
-  y,
-  maxWidth: contentW,
-  font: fontBold,
-  size: 10,
-  color: COLOR_PRIMARY,
-  lineGap: 4,
-  paragraphGap: 4,
-  isPreview,
-});
+    result = await drawTemplateText({
+      pdfDoc,
+      page,
+      text: `${i + 1}. ${item.question || "Pregunta"}`,
+      x: marginX,
+      y,
+      maxWidth: contentW,
+      font: fontBold,
+      size: 10,
+      color: COLOR_PRIMARY,
+      lineGap: 4,
+      paragraphGap: 4,
+      isPreview,
+    });
 
-page = result.page;
-y = result.y;
+    page = result.page;
+    y = result.y;
 
-result = await drawTemplateText({
-  pdfDoc,
-  page,
-  text: `Respuesta: ${item.answer === "yes" ? "Sí" : "No"}`,
-  x: marginX + 12,
-  y,
-  maxWidth: contentW - 12,
-  font: fontBold,
-  size: 9.5,
-  color: COLOR_MUTED,
-  lineGap: 3,
-  paragraphGap: 4,
-  isPreview,
-});
+    result = await drawTemplateText({
+      pdfDoc,
+      page,
+      text: `Respuesta: ${item.answer === "yes" ? "Sí" : "No"}`,
+      x: marginX + 12,
+      y,
+      maxWidth: contentW - 12,
+      font: fontBold,
+      size: 9.5,
+      color: COLOR_MUTED,
+      lineGap: 3,
+      paragraphGap: 4,
+      isPreview,
+    });
 
-page = result.page;
-y = result.y;
+    page = result.page;
+    y = result.y;
 
-result = await drawTemplateText({
-  pdfDoc,
-  page,
-  text: item.textApplied,
-  x: marginX + 12,
-  y,
-  maxWidth: contentW - 12,
-  font,
-  size: 10,
-  color: COLOR_TEXT,
-  lineGap: 4,
-  paragraphGap: 10,
-  isPreview,
-});
+    result = await drawTemplateText({
+      pdfDoc,
+      page,
+      text: item.textApplied,
+      x: marginX + 12,
+      y,
+      maxWidth: contentW - 12,
+      font,
+      size: 10,
+      color: COLOR_TEXT,
+      lineGap: 4,
+      paragraphGap: 10,
+      isPreview,
+    });
 
-page = result.page;
-y = result.y;
+    page = result.page;
+    y = result.y;
   }
 
   if (template?.finalText) {
@@ -998,4 +1236,5 @@ module.exports = {
   generateRecibiPdf,
   addSignatureToRecibiPdf,
   generateReceiptTemplatePdf,
+  
 };

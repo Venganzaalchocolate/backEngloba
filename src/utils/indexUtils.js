@@ -4,7 +4,7 @@ const {catchAsync} =require('./catchAsync')
 const {response}=require('./response')
 const {ClientError}=require('./clientError')
 const {resError}= require('./resError');
-const {  validateRequiredFields, toId } = require("./utils");
+const {  validateRequiredFields, toId, formatDateSpain, formatTimeSpain, formatDateTimeSpain } = require("./utils");
 const { generarToken, verifyToken } = require("./jwt");
 const { NATIONALITIES, normalizeNationality, getNationalityLabel, normalizeText } = require("./nationalities");
 
@@ -34,4 +34,7 @@ module.exports  = {
     normalizeText,
     normalizeNationality,
     getNationalityLabel,
+    formatDateSpain,
+  formatTimeSpain,
+  formatDateTimeSpain,
 }
