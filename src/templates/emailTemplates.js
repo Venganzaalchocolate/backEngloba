@@ -867,7 +867,8 @@ export function buildWelcomeWorkerPlainText(
   corpEmail = '',
   {
     supportEmail = 'comunicacion@engloba.org.es',
-    signatureTutorialUrl = 'https://drive.google.com/file/d/1GdrepisAPPiW9eAl8-S2t3-knKceC6ia/view?usp=sharing'
+    signatureTutorialUrl = 'https://drive.google.com/file/d/1GdrepisAPPiW9eAl8-S2t3-knKceC6ia/view?usp=sharing',
+    appUrl = 'https://app.engloba.org.es'
   } = {}
 ) {
   return (
@@ -877,15 +878,46 @@ export function buildWelcomeWorkerPlainText(
 
 — Tu cuenta de acceso —
 • Correo corporativo: ${corpEmail}
-• Contraseña (solo la primera vez que incies sesión): Temporal123*
+• Contraseña (solo la primera vez que inicies sesión): Temporal123*
 • Acceso a Gmail: https://mail.google.com
 
-
 — Primeros pasos —
-1) Entra en Gmail con tu cuenta (${corpEmail}).
-2) Cambia tu contraseña cuando el sistema te lo pida.
-3) Activa la verificación en dos pasos:
+1) Cierra sesión en Gmail si tienes otra cuenta abierta.
+2) Entra en Gmail con tu cuenta (${corpEmail}).
+3) Cambia tu contraseña cuando el sistema te lo pida.
+4) Activa la verificación en dos pasos:
    https://myaccount.google.com/security
+
+— Acceso a tu panel de empleado —
+Además del correo corporativo, tendrás acceso a tu panel de empleado en la aplicación interna de Asociación Engloba:
+
+${appUrl}
+
+Dentro del panel “Mis Datos” podrás consultar y gestionar tu información personal, documentación, nóminas, vacaciones/asuntos propios y firma.
+
+— Documentación y firma en la plataforma —
+Si tienes documentación pendiente, deberás revisarla desde tu panel de empleado.
+
+Es especialmente importante que firmes, cuanto antes, los documentos de Prevención de Riesgos Laborales:
+
+• Información PRL - puesto de trabajo (Deben tener un botón que ponga FIRMAR)
+• Consentimiento / renuncia del reconocimiento médico (Deben tener un botón que ponga FIRMAR)
+
+Estos documentos se firman directamente desde la plataforma de Engloba.
+
+IMPORTANTE:
+Antes de firmar cualquier documento, primero debes subir la rúbrica de tu firma desde:
+
+Mis Datos → Firma
+
+Pasos:
+1) Entra en la app: ${appUrl}
+2) Ve a “Mis Datos”
+3) Abre el apartado “Firma”
+4) Dibuja tu firma y pulsa “Guardar”
+5) Después vuelve al apartado de documentación y firma los documentos pendientes
+
+Si no guardas antes tu firma, la plataforma no podrá generar correctamente la firma de los documentos.
 
 — Firma de correo electrónico —
 Para mantener la imagen corporativa unificada, configura tu firma en Gmail.
@@ -924,7 +956,8 @@ export function buildWelcomeWorkerHtmlEmail(
   {
     logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
     supportEmail = 'comunicacion@engloba.org.es',
-    signatureTutorialUrl = 'https://drive.google.com/file/d/1GdrepisAPPiW9eAl8-S2t3-knKceC6ia/view?usp=sharing'
+    signatureTutorialUrl = 'https://drive.google.com/file/d/1GdrepisAPPiW9eAl8-S2t3-knKceC6ia/view?usp=sharing',
+    appUrl = 'https://app.engloba.org.es'
   } = {}
 ) {
   return `<!DOCTYPE html>
@@ -1070,6 +1103,103 @@ export function buildWelcomeWorkerHtmlEmail(
       <a href="https://mail.google.com" target="_blank" class="btn-primary">
         Acceder a Gmail ▸
       </a>
+    </div>
+
+        <!-- BLOQUE PANEL DE EMPLEADO / DOCUMENTACIÓN / FIRMA -->
+    <div style="padding:8px 24px 24px">
+      <h2 style="margin:0 0 8px;font-size:20px;color:#333333">
+        Acceso a tu panel de empleado
+      </h2>
+
+      <p style="margin:8px 0 0;font-size:16px;color:#666666">
+        Además del correo corporativo, tendrás acceso a tu <b>panel de empleado</b> en la aplicación interna de
+        <b>Asociación Engloba</b>.
+      </p>
+
+      <p style="margin:12px 0 0;font-size:16px;color:#666666">
+        Desde el apartado <b>“Mis Datos”</b> podrás consultar y gestionar tu información personal,
+        documentación, nóminas, vacaciones/asuntos propios y firma.
+      </p>
+
+      <div style="text-align:center;margin:20px 0 8px">
+        <a href="${appUrl}" target="_blank" class="btn-primary">
+          Acceder a la app ▸
+        </a>
+      </div>
+
+     <div style="background:#f8f9ff;border:1px solid #e4e7ff;border-radius:10px;padding:18px;margin:20px 0 0">
+  <h2 style="margin:0 0 10px;font-size:18px;color:#4f529f">
+    Documentación y firma en la plataforma
+  </h2>
+
+  <p style="margin:8px 0 0;font-size:15px;color:#555555">
+    Si tienes documentación pendiente, deberás revisarla desde tu panel de empleado.
+  </p>
+
+<p style="margin:10px 0 0;font-size:15px;color:#555555">
+  Es especialmente importante que revises el apartado de documentación y firmes los siguientes documentos de
+  <b>Prevención de Riesgos Laborales</b>. Ambos deberán aparecer con el botón
+  <span style="
+    display:inline-block;
+    background:#4f529f;
+    color:#ffffff;
+    font-size:12px;
+    font-weight:700;
+    padding:4px 10px;
+    border-radius:4px;
+    margin:0 3px;
+  ">Firmar</span>
+  en la plataforma:
+</p>
+
+<ul style="margin:10px 0 0 20px;font-size:15px;color:#555555;line-height:1.6">
+  <li><b>Información PRL - puesto de trabajo</b></li>
+  <li><b>Consentimiento / renuncia del reconocimiento médico</b></li>
+</ul>
+
+<p style="margin:12px 0 0;font-size:15px;color:#555555">
+  Para completarlos, entra en cada documento y pulsa el botón
+  <span style="
+    display:inline-block;
+    background:#4f529f;
+    color:#ffffff;
+    font-size:12px;
+    font-weight:700;
+    padding:4px 10px;
+    border-radius:4px;
+    margin:0 3px;
+  ">Firmar</span>.
+</p>
+
+  <p style="margin:12px 0 0;font-size:15px;color:#555555">
+    Estos documentos se firman directamente desde la plataforma de Engloba.
+  </p>
+</div>
+      <div style="background:#fff8e8;border:1px solid #f5dc98;border-radius:10px;padding:18px;margin:18px 0 0">
+        <h2 style="margin:0 0 10px;font-size:18px;color:#8a5a00">
+          Importante: sube primero la rúbrica de tu firma
+        </h2>
+
+        <p style="margin:8px 0 0;font-size:15px;color:#6f4b00">
+          Antes de firmar cualquier documento, primero debes subir la rúbrica de tu firma desde:
+        </p>
+
+        <p style="margin:10px 0;font-size:15px;color:#333333">
+          <b>Mis Datos → Firma</b>
+        </p>
+
+        <ol style="margin:10px 0 0 20px;font-size:15px;color:#555555;line-height:1.6">
+          <li>Entra en la app de Asociación Engloba.</li>
+          <li>Ve al apartado <b>“Mis Datos”</b>.</li>
+          <li>Abre el panel <b>“Firma”</b>.</li>
+          <li>Dibuja tu firma y pulsa <b>“Guardar”</b>.</li>
+          <li>Después vuelve al apartado de documentación y firma los documentos pendientes.</li>
+        </ol>
+
+        <p style="margin:12px 0 0;font-size:14px;color:#6f4b00">
+          Si no guardas antes tu firma, la plataforma no podrá generar correctamente la firma de los documentos.
+        </p>
+      </div>
     </div>
 
     <!-- BLOQUE FIRMA: INTRO -->

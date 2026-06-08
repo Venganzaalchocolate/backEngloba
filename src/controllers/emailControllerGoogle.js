@@ -225,6 +225,8 @@ async function sendWelcomeEmail(user, emailCorp='', delayMs = 5 * 60 * 1000) {
 }
 
 
+
+
 /* ────────────────────────────────────────────────────────────────────────────
    Plantilla SESAME · TEXTO PLANO
    ──────────────────────────────────────────────────────────────────────── */
@@ -1727,43 +1729,6 @@ async function getManagersCoordinatorsAndSupervisors({
 
   return Array.from(byId.values());
 }
-
-//EJEMPLO DE REUTILIZACIÓN DE FUNCIÓN
-// async function sendExpenseControlInstallEmail({
-//   previewOnly = true,
-//   previewToList = ['comunicacion@engloba.org.es'],
-//   supervisorQuery = {},
-//   delayMs = 250,
-//   logger = console.log,
-//   errorLogger = console.error,
-
-//   logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
-//   supportEmail = 'comunicacion@engloba.org.es',
-//   includeCacheWarning = false,
-// } = {}) {
-//   const users = previewOnly
-//     ? []
-//     : await getManagersCoordinatorsAndSupervisors({ supervisorQuery });
-
-//   return sendEmailToUsers({
-//     users,
-//     subject: 'Instalación de la aplicación de Control de Gastos',
-//     buildPlainText: buildExpenseControlInstallPlainText,
-//     buildHtmlEmail: buildExpenseControlInstallHtmlEmail,
-//     buildOptions: {
-//       logoUrl,
-//       supportEmail,
-//       includeCacheWarning,
-//     },
-//     getRecipientEmails: user => [user.email],
-//     previewOnly,
-//     previewToList,
-//     delayMs,
-//     logger,
-//     errorLogger,
-//   });
-// }
-
 
 module.exports = {
   sendEmail,          // firma idéntica a tu antiguo SMTP

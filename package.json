@@ -62,6 +62,6 @@
   "homepage": "https://github.com/Venganzaalchocolate/backEngloba#readme",
   "description": "",
   "devDependencies": {
-    "nodemon": "^3.1.10"
+    "nodemon": "^3.1.14"
   }
 }
