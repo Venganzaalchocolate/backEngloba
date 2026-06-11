@@ -2,13 +2,17 @@ const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
 const SubcategorySchema = new Schema({
-    name: {
-        type: String,
-    },
-    public:{
-        type: Boolean,
-        default: true
-    }
+  name: {
+    type: String,
+  },
+  codTipoPuestoOhs: {
+    type: String,
+    default: null,
+  },
+  public: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const jobs = mongoose.Schema({

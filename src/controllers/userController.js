@@ -1200,33 +1200,38 @@ const rehireUser = async (req, res) => {
   }
 
   // Asegurar email corporativo y grupo + Preferents por provincia del dispositive
+  // 1) El estado de recontratación debe actualizarse siempre
+  await User.updateOne(
+    { _id: userDoc._id },
+    { $set: { employmentStatus: 'en proceso de contratación' } }
+  );
+
+  // 2) Workspace no debe bloquear el estado ni el periodo
   try {
     if (!userDoc.email) {
       const ws = await createUserWS(userDoc._id);
+
       if (ws?.email) {
         await User.updateOne(
           { _id: userDoc._id },
-          { $set: { email: ws.email, employmentStatus: 'en proceso de contratación' } }
+          { $set: { email: String(ws.email).toLowerCase() } }
         );
-        userDoc.email = ws.email;
-      } else {
-        await User.updateOne(
-          { _id: userDoc._id },
-          { $set: { employmentStatus: 'en proceso de contratación' } }
-        );
-      }
-    } else {
-      await User.updateOne(
-        { _id: userDoc._id },
-        { $set: { employmentStatus: 'en proceso de contratación' } }
-      );
-    }
 
+        userDoc.email = String(ws.email).toLowerCase();
+      }
+    }
+  } catch (e) {
+    console.log('[rehireUser] No se pudo crear email corporativo:', e?.message || e);
+  }
+
+  // 3) Grupo Workspace y Preferents tampoco deben bloquear
+  try {
     const dsp = await Dispositive.findById(hiringDoc.dispositiveId)
       .select('groupWorkspace province')
       .lean();
 
     const groupWorkspaceId = dsp?.groupWorkspace;
+
     if (groupWorkspaceId) {
       await addUserToGroup(userDoc._id, groupWorkspaceId);
     }
@@ -1237,13 +1242,13 @@ const rehireUser = async (req, res) => {
           user: userDoc._id,
           active: true,
           jobs: hiringDoc.position,
-          provinces: dsp.province
+          provinces: dsp.province,
         },
         { $set: { active: false, moveDone: true } }
       );
     }
-  } catch {
-    // non-blocking
+  } catch (e) {
+    console.log('[rehireUser] Workspace/Preferents non-blocking:', e?.message || e);
   }
 
   const updatedUser = await User.findById(userDoc._id);
@@ -1843,6 +1848,8 @@ const userSignatureGet = async (req, res) => {
     signature: user.signature || { format: "signature_pad_v1", strokes: [] },
   });
 };
+
+
 const userSignatureUpsert = async (req, res) => {
   const { userId, strokes, format } = req.body || {};
   if (!userId) throw new ClientError("El campo userId es requerido", 400);

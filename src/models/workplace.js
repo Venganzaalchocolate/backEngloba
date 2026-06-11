@@ -47,7 +47,12 @@ const workplaceSchema = new Schema({
     type:String,
     enum:['Engloba', 'Quiron'],
     default:'Engloba'
-  }
+  },
+  codCentroOhs: {
+  type: String,
+  index: true,
+  default: null,
+}
 }, { timestamps: true });
 
 workplaceSchema.index(

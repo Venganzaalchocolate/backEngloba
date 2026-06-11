@@ -1,6 +1,7 @@
 // controllers/workplaceController.js
 const mongoose = require('mongoose');
 const { Workplace, Dispositive, Provinces } = require('../models/indexModels');
+
 const { catchAsync, response, ClientError, toId } = require('../utils/indexUtils');
 const {
   syncSesameOfficeForWorkplace,
