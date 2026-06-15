@@ -2864,4 +2864,449 @@ export function buildExpenseControlInstallHtmlEmail(
 </body>
 </html>`;
 }
-//FIN BORRAR
+
+
+
+
+export function buildRefugeeDaySpecialInvitationPlainText() {
+  return `Buenos días,
+
+Desde Asociación Engloba nos gustaría invitaros a compartir un encuentro muy especial con motivo del Día Mundial del Refugiado.
+
+Caminos cruzados, futuros compartidos
+
+Una invitación a reconocer trayectorias, tender puentes y construir futuro desde lo común.
+
+El encuentro reunirá a personas participantes en programas de Protección Internacional, entidades sociales, empresas colaboradoras y agentes del territorio, con el objetivo de visibilizar la importancia de la acogida, la convivencia y la colaboración.
+
+Datos del encuentro:
+
+Lugar: Plaza de las Monjas, Huelva
+Fecha: viernes, 19 de junio de 2026
+Hora: 11:00 h
+Duración aproximada: 45 minutos
+
+Contenido del acto:
+
+1. Lectura de manifiestos por parte de personas participantes en programas de Protección Internacional.
+2. Entrega de reconocimientos a empresas colaboradoras que han acompañado procesos de inserción sociolaboral.
+3. Lectura de manifiesto final como cierre compartido del encuentro.
+
+Será un espacio sencillo, cercano y significativo para poner en valor las historias, capacidades y proyectos de vida de las personas refugiadas, así como el papel fundamental del tejido asociativo, los agentes sociales y las empresas colaboradoras.
+
+Nos encantaría contar con vuestra presencia.
+
+Un cordial saludo,
+
+Asociación Engloba`;
+}
+
+
+export function buildRefugeeDaySpecialInvitationHtmlEmail({
+  logoUrl = "https://app.engloba.org.es/graphic/logotipo_blanco.png",
+  contactEmail = "ivan.floresbenavides@engloba.org.es",
+} = {}) {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Invitación · Caminos cruzados, futuros compartidos</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+
+    body{
+      background:#f1f1f6;
+      font-family:'Roboto',Arial,Helvetica,sans-serif;
+      color:#333333;
+      line-height:1.6;
+      -webkit-text-size-adjust:100%;
+    }
+
+    .wrapper{
+      max-width:720px;
+      margin:36px auto;
+      padding:0 14px;
+    }
+
+    .card{
+      background:#ffffff;
+      border-radius:22px;
+      overflow:hidden;
+      box-shadow:0 14px 36px rgba(47,50,114,.16);
+    }
+
+    .hero{
+      position:relative;
+      background:
+        radial-gradient(circle at top left, rgba(245,177,54,.55) 0, rgba(245,177,54,0) 34%),
+        radial-gradient(circle at bottom right, rgba(224,143,167,.55) 0, rgba(224,143,167,0) 36%),
+        linear-gradient(135deg,#2d3272 0%,#4f529f 52%,#8f96d0 100%);
+      color:#ffffff;
+      text-align:center;
+      padding:36px 30px 44px;
+    }
+
+    .logo{
+      max-width:155px;
+      height:auto;
+      display:block;
+      margin:0 auto 20px;
+    }
+
+    .label{
+      display:inline-block;
+      background:rgba(255,255,255,.16);
+      border:1px solid rgba(255,255,255,.35);
+      color:#ffffff;
+      font-size:13px;
+      font-weight:700;
+      letter-spacing:.5px;
+      text-transform:uppercase;
+      padding:7px 14px;
+      border-radius:999px;
+      margin-bottom:18px;
+    }
+
+    .hero h1{
+      font-size:38px;
+      line-height:1.12;
+      font-weight:900;
+      letter-spacing:-.6px;
+      margin:0 auto;
+      max-width:560px;
+    }
+
+    .hero .subtitle{
+      max-width:560px;
+      margin:18px auto 0;
+      font-size:17px;
+      color:rgba(255,255,255,.92);
+    }
+
+    .content{
+      padding:34px 38px 36px;
+      font-size:16px;
+    }
+
+    .intro{
+      text-align:center;
+      font-size:17px;
+      color:#444444;
+      max-width:590px;
+      margin:0 auto 26px;
+    }
+
+    .motto-card{
+      background:#fff8e8;
+      border:1px solid #f5dc98;
+      border-radius:18px;
+      padding:24px 22px;
+      text-align:center;
+      margin:26px 0;
+    }
+
+    .motto-card .small-title{
+      color:#8a5a00;
+      font-size:13px;
+      font-weight:800;
+      text-transform:uppercase;
+      letter-spacing:.6px;
+      margin-bottom:8px;
+    }
+
+    .motto-card .motto{
+      color:#4f529f;
+      font-size:25px;
+      line-height:1.25;
+      font-weight:900;
+    }
+
+    .motto-card .text{
+      color:#5d4b20;
+      font-size:15px;
+      margin-top:10px;
+    }
+
+    .details{
+      margin:28px 0;
+      border-radius:18px;
+      overflow:hidden;
+      border:1px solid #e4e7ff;
+      background:#f8f9ff;
+    }
+
+    .details-title{
+      background:#4f529f;
+      color:#ffffff;
+      padding:14px 18px;
+      font-size:16px;
+      font-weight:800;
+      text-align:center;
+    }
+
+    .details-body{
+      padding:18px 22px;
+    }
+
+    .detail-row{
+      display:flex;
+      gap:14px;
+      padding:12px 0;
+      border-bottom:1px solid #e5e7ff;
+      align-items:flex-start;
+    }
+
+    .detail-row:last-child{
+      border-bottom:0;
+    }
+
+    .icon{
+      width:34px;
+      height:34px;
+      min-width:34px;
+      border-radius:50%;
+      background:#ffffff;
+      color:#4f529f;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:18px;
+      box-shadow:0 4px 12px rgba(79,82,159,.12);
+    }
+
+    .detail-text strong{
+      display:block;
+      color:#4f529f;
+      font-size:14px;
+      margin-bottom:2px;
+    }
+
+    .detail-text span{
+      color:#333333;
+      font-size:15px;
+    }
+
+    .section-title{
+      color:#2d3272;
+      font-size:20px;
+      font-weight:900;
+      margin:30px 0 14px;
+      text-align:center;
+    }
+
+    .program-box{
+      background:#ffffff;
+      border:1px solid #e5e7ff;
+      border-radius:18px;
+      padding:20px;
+      box-shadow:0 8px 22px rgba(79,82,159,.07);
+    }
+
+    .program-item{
+      display:flex;
+      gap:12px;
+      margin:0 0 14px;
+      color:#444444;
+      font-size:15px;
+    }
+
+    .program-item:last-child{
+      margin-bottom:0;
+    }
+
+    .bullet{
+      width:24px;
+      height:24px;
+      min-width:24px;
+      border-radius:50%;
+      background:#bec3f4;
+      color:#2d3272;
+      font-size:13px;
+      font-weight:900;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+
+    .closing{
+      margin:28px 0 0;
+      text-align:center;
+      color:#444444;
+      font-size:16px;
+    }
+
+    .highlight{
+      color:#4f529f;
+      font-weight:800;
+    }
+
+    .btn-wrap{
+      text-align:center;
+      margin:28px 0 12px;
+    }
+
+    .btn{
+      display:inline-block;
+      background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);
+      color:#ffffff !important;
+      text-decoration:none !important;
+      font-weight:800;
+      padding:14px 30px;
+      border-radius:999px;
+      font-size:15px;
+      box-shadow:0 8px 18px rgba(79,82,159,.22);
+    }
+
+    .contact{
+      text-align:center;
+      color:#666666;
+      font-size:13px;
+      margin-top:12px;
+    }
+
+    .contact a{
+      color:#4f529f;
+      font-weight:700;
+      text-decoration:none;
+    }
+
+    .footer{
+      background:#eef0ff;
+      text-align:center;
+      padding:22px 18px;
+      font-size:13px;
+      color:#555555;
+    }
+
+    .footer strong{
+      color:#2d3272;
+    }
+
+    @media(max-width:700px){
+      .wrapper{margin:18px auto;padding:0 10px}
+      .hero{padding:30px 20px 36px}
+      .hero h1{font-size:30px}
+      .content{padding:28px 22px 30px}
+      .detail-row{display:block}
+      .icon{margin-bottom:8px}
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrapper">
+    <div class="card">
+
+      <div class="hero">
+        ${logoUrl ? `<img src="${logoUrl}" alt="Asociación Engloba" class="logo">` : ""}
+        <div class="label">Invitación especial</div>
+        <h1>Caminos cruzados,<br>futuros compartidos</h1>
+        <p class="subtitle">
+          Encuentro con motivo del Día Mundial del Refugiado
+        </p>
+      </div>
+
+      <div class="content">
+        <p class="intro">
+          Desde <strong>Asociación Engloba</strong> nos gustaría invitaros a compartir un encuentro muy especial en torno a la acogida, la convivencia y las oportunidades que nacen cuando personas, entidades y empresas caminan juntas.
+        </p>
+
+        <div class="motto-card">
+          <div class="small-title">Lema del encuentro</div>
+          <div class="motto">“Caminos cruzados, futuros compartidos”</div>
+          <div class="text">
+            Una invitación a reconocer trayectorias, tender puentes y construir futuro desde lo común.
+          </div>
+        </div>
+
+        <div class="details">
+          <div class="details-title">Datos del encuentro</div>
+
+          <div class="details-body">
+            <div class="detail-row">
+              <div class="icon">📍</div>
+              <div class="detail-text">
+                <strong>Lugar</strong>
+                <span>Plaza de las Monjas, Huelva</span>
+              </div>
+            </div>
+
+            <div class="detail-row">
+              <div class="icon">📅</div>
+              <div class="detail-text">
+                <strong>Fecha</strong>
+                <span>Viernes, 19 de junio de 2026</span>
+              </div>
+            </div>
+
+            <div class="detail-row">
+              <div class="icon">🕚</div>
+              <div class="detail-text">
+                <strong>Hora</strong>
+                <span>11:00 h</span>
+              </div>
+            </div>
+
+            <div class="detail-row">
+              <div class="icon">⏱</div>
+              <div class="detail-text">
+                <strong>Duración aproximada</strong>
+                <span>45 minutos</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <h2 class="section-title">Un acto para encontrarnos, escuchar y reconocer</h2>
+
+        <div class="program-box">
+          <div class="program-item">
+            <div class="bullet">1</div>
+            <div>
+              Lectura de manifiestos por parte de personas participantes en programas de <strong>Protección Internacional</strong>.
+            </div>
+          </div>
+
+          <div class="program-item">
+            <div class="bullet">2</div>
+            <div>
+              Entrega de reconocimientos a empresas colaboradoras que han acompañado procesos de <strong>inserción sociolaboral</strong>.
+            </div>
+          </div>
+
+          <div class="program-item">
+            <div class="bullet">3</div>
+            <div>
+              Lectura de manifiesto final como cierre compartido del encuentro.
+            </div>
+          </div>
+        </div>
+
+        <p class="closing">
+          Será un espacio sencillo, cercano y significativo para poner en valor las historias, capacidades y proyectos de vida de las personas refugiadas, así como el papel fundamental del <span class="highlight">tejido asociativo, los agentes sociales y las empresas colaboradoras</span>.
+        </p>
+
+        <div class="btn-wrap">
+          <a href="mailto:${contactEmail}?subject=Confirmación%20asistencia%20-%20Caminos%20cruzados%2C%20futuros%20compartidos" class="btn">
+            Confirmar asistencia ▸
+          </a>
+        </div>
+
+        <p class="contact">
+          Para cualquier consulta:
+          <a href="mailto:${contactEmail}">${contactEmail}</a>
+        </p>
+      </div>
+
+      <div class="footer">
+        <strong>Asociación Engloba</strong><br>
+        Día Mundial del Refugiado · Protección Internacional
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>`;
+}

@@ -373,6 +373,9 @@ const {
   postValidateReceiptAnswers,
 } = require('./documentationReceiptTemplateController');
 
+// ----------------------------- ANIDE CONTROLLER -------------------------------
+const { anideCentroManager, anideUsuariaManager, anideCentroOccupancy } = require("./anideController");
+
 // ============================================================================
 // EXPORTS (sin duplicados, sin comas raras)
 // ============================================================================
@@ -699,5 +702,11 @@ postSesameGetOfficeManagers,
 
   postOhsGetUnidadesOrganizativas,
   postOhsGetUnidadesRegionales,
+
+
+  // ----------------------------- ANIDE CONTROLLER -------------------------------
+    anideCentroManager,
+    anideUsuariaManager,
+    anideCentroOccupancy,
 };
 

@@ -12,7 +12,7 @@ const {
   ScopedRoleRule,
   Provinces,
 } = require('../models/indexModels');
-const {   buildSesameInactiveByLeavePlainText, buildSesameInactiveByLeaveHtmlEmail, buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail, buildEqualityLgtbiqSurveyPlainText, buildEqualityLgtbiqSurveyHtmlEmail, buildMiniTutorialsOpsPlainText, buildMiniTutorialsOpsHtmlEmail, buildSignatureUpdateHtmlEmail, buildSignatureUpdatePlainText, buildLeaveExpectedEndReminderPlainText, buildLeaveExpectedEndReminderHtmlEmail, buildLeaveSyncInfoPlainText, buildLeaveSyncInfoHtmlEmail, buildExpenseControlInstallHtmlEmail, buildExpenseControlInstallPlainText } = require('../templates/emailTemplates');
+const {   buildSesameInactiveByLeavePlainText, buildSesameInactiveByLeaveHtmlEmail, buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail, buildEqualityLgtbiqSurveyPlainText, buildEqualityLgtbiqSurveyHtmlEmail, buildMiniTutorialsOpsPlainText, buildMiniTutorialsOpsHtmlEmail, buildSignatureUpdateHtmlEmail, buildSignatureUpdatePlainText, buildLeaveExpectedEndReminderPlainText, buildLeaveExpectedEndReminderHtmlEmail, buildLeaveSyncInfoPlainText, buildLeaveSyncInfoHtmlEmail, buildExpenseControlInstallHtmlEmail, buildExpenseControlInstallPlainText, buildRefugeeDaySpecialInvitationPlainText, buildRefugeeDaySpecialInvitationHtmlEmail } = require('../templates/emailTemplates');
 const { default: mongoose } = require('mongoose');
 
 
@@ -1729,6 +1729,84 @@ async function getManagersCoordinatorsAndSupervisors({
 
   return Array.from(byId.values());
 }
+
+//borrar
+async function sendRefugeeDayInvitationFinal({
+  logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
+  contactEmail = 'ivan.floresbenavides@engloba.org.es',
+  logger = console.log,
+  errorLogger = console.error,
+} = {}) {
+  const subject = 'Invitación · Caminos cruzados, futuros compartidos';
+
+  const recipients = Array.from(new Set([
+    'comunicacion@engloba.org.es',
+    'jerusalen.capillaperez@engloba.org.es',
+    'web@engloba.org.es',
+    'jesus.olmedopolonio@engloba.org.es',
+    'roque.correagonzalez@engloba.org.es',
+    'inmaculada.sanchezhidalgo@engloba.org.es',
+    'miguelangel.antoniogomez@engloba.org.es',
+    'graciamaria.garciacaro@engloba.org.es',
+    'isabelmaria.caceresperez@engloba.org.es',
+    'rafaelamaria.furtadoeleuterioleitao@engloba.org.es',
+    'centros.hu.cisjufi@juntadeandalucia.es',
+    'sofiamojarro@anide-engloba.es',
+    'huelva.asilos@policia.es',
+    'huelva.menas@policia.es',
+    'carmendelrocio.bravoalvarez@engloba.org.es',
+    'concepcion.pastorfuentes@engloba.org.es',
+    'carmenmaria.rodriguezperez@engloba.org.es',
+    'huelva@acoge.org',
+    'santiago.rodriguezmuriel@engloba.org.es',
+    'pastora.lopezrojas@engloba.org.es',
+    'sara.ortizmarquez@engloba.org.es',
+    'monica.montano@dedu.uh.es',
+    'huelva@cepaim.org',
+    'informa@cruzroja.es',
+    'mariat.serrano.suarezsspa@juntadeandalucia.es',
+    'mercedes.ramos.fernandez.sspa@juntadeandalucia.es',
+    'agromolinillo@agromolinillo.com',
+    'glassonuba@hotmail.com',
+    'centrosecundaria@fundacionsantamariadebelen.com',
+    '21001922.edu@juntadeandalucia.es',
+    'direccion@iesppg.net',
+    '21001922.administracion@g.educaand.es',
+  ].map(email => String(email).trim().toLowerCase()).filter(Boolean)));
+
+  const text = buildRefugeeDaySpecialInvitationPlainText();
+
+  const html = buildRefugeeDaySpecialInvitationHtmlEmail({
+    logoUrl,
+    contactEmail,
+  });
+
+  try {
+    await sendEmail(recipients, subject, text, html);
+
+    logger(`✅ Invitación final enviada a ${recipients.length} destinatarios`);
+
+    return {
+      ok: true,
+      total: recipients.length,
+      recipients,
+      subject,
+    };
+  } catch (err) {
+    const msg = err?.message || String(err);
+
+    errorLogger(`❌ Error enviando invitación final: ${msg}`);
+
+    return {
+      ok: false,
+      total: recipients.length,
+      recipients,
+      error: msg,
+    };
+  }
+}
+//finborrar
+
 
 module.exports = {
   sendEmail,          // firma idéntica a tu antiguo SMTP
