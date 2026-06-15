@@ -27,6 +27,7 @@ const ModuleScopeAccess = require("./moduleScopeAccess");
 const DocumentationReceiptTemplate=require("./documentationReceiptTemplateSchema");
 const AnideUsuariaAtendida = require('./anide/anideUsuariaAtendida');
 const AnideCentro = require('./anide/anideCentro');
+const PeriodEndReason = require('./periodEndReason');
 
 module.exports = {
     User,
@@ -56,5 +57,6 @@ module.exports = {
     ModuleScopeAccess,
     DocumentationReceiptTemplate,
     AnideUsuariaAtendida,
-    AnideCentro
+    AnideCentro,
+    PeriodEndReason
 }

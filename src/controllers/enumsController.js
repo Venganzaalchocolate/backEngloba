@@ -12,6 +12,7 @@ const {
   Filedrive,
   Dispositive,
   Entity,
+  PeriodEndReason,
 } = require("../models/indexModels");
 const leavetype = require("../models/leavetype");
 const { default: cache } = require("../utils/cache");
@@ -152,7 +153,20 @@ const resolveModelsFolderId = () => {
   return process.env.GOOGLE_DRIVE_FILES || null;
 };
 
+function createSimpleIndex(list = []) {
+  const out = {};
 
+  for (const item of list) {
+    out[String(item._id)] = {
+      _id: item._id,
+      name: item.name || "",
+      description: item.description || "",
+      active: item.active,
+    };
+  }
+
+  return out;
+}
 
 // utils de índice
 function createCategoryAndSubcategoryIndex(list = []) {
@@ -325,6 +339,7 @@ const getEnumEmployers = async (req, res) => {
     docCats,
     fileCats,
     entity,
+    periodEndReasons,
   ] = await Promise.all([
     Work_schedule.find({}).lean(),
     Offer.find({ active: true }).lean(),
@@ -341,6 +356,7 @@ const getEnumEmployers = async (req, res) => {
     Documentation.distinct("categoryFiles").catch(() => []),
     Filedrive.schema.path("category").enumValues,
     Entity.find({}, { name: 1 }).lean(),
+    PeriodEndReason.find({}, { name: 1, description: 1, active: 1 }).lean()
   ]);
 
   const jobsIndex = createCategoryAndSubcategoryIndex(jobs);
@@ -350,6 +366,7 @@ const getEnumEmployers = async (req, res) => {
   const dispositiveIndex = createDispositiveIndex(dispositives);
   const studiesIndex = createCategoryAndSubcategoryIndex(studies);
   const entityIndex=createCategoryAndSubcategoryIndex(entity);
+  const periodEndReasonsIndex = createSimpleIndex(periodEndReasons);
 
   const categoryFiles = Array.from(
     new Set([...(docCats || []), ...(fileCats || [])].filter(Boolean))
@@ -370,7 +387,8 @@ const getEnumEmployers = async (req, res) => {
     documentation,
     categoryFiles,
     entity,
-    entityIndex
+    entityIndex,
+    periodEndReasonsIndex,
   });
 };
 
@@ -384,6 +402,7 @@ const validTypes = {
   documentation: Documentation,
   leavetype: leavetype,
   entity: Entity,
+  periodEndReason: PeriodEndReason,
 };
 
 // Función auxiliar para obtener el modelo según el tipo
@@ -470,10 +489,15 @@ const postEnums = async (req, res) => {
   }
 
   if (type === "jobs") {
-    newData.public = pub === "si";
-  }
+  newData.public = pub === "si";
+}
 
-  const savedEnum = await new Model(newData).save();
+if (type === "periodEndReason") {
+  newData.description = req.body.description || "";
+  newData.active = req.body.active !== false;
+}
+
+const savedEnum = await new Model(newData).save();
 
   if (type === "documentation" && req.file) {
     const folderId = resolveModelsFolderId();
@@ -514,7 +538,9 @@ const putEnums = async (req, res) => {
     "documentation",
     "leavetype",
     "entity",
+    "periodEndReason",
   ];
+
 
   if (!req.body.id || !req.body.name || !req.body.type) {
     throw new ClientError("Los datos no son correctos", 400);
@@ -632,7 +658,16 @@ const putEnums = async (req, res) => {
     updateData.public = req.body.public === "si";
   }
 
-  const updated = await Model.findByIdAndUpdate(id, updateData, { new: true });
+  if (type === "periodEndReason") {
+    updateData.description = req.body.description || "";
+    updateData.active = req.body.active !== false;
+  }
+
+  const updated = await Model.findByIdAndUpdate(
+    id,
+    { $set: updateData },
+    { new: true }
+  );
 
   if (!updated) {
     throw new ClientError("Elemento no encontrado", 404);

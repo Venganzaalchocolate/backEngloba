@@ -1,18 +1,26 @@
 // controllers/hiringController.js (CommonJS)
 const mongoose = require('mongoose');
-const { User, Periods, Leaves, Preferents, Dispositive, Jobs } = require('../models/indexModels');
+const { User, Periods, Leaves, Preferents, Dispositive, Jobs, PeriodEndReason } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
-const { actualizacionHiringyLeave, backfillSelectionProcessFromOffers, repairExistingPeriods, fullFreshMigration, migrateOffersNewdispositiveId, migrateUserCvNameFieldsToRefs, backfillPeriodsFromEmbedded, getAllManagerEmails } = require('./periodoTransicionController');
 const { moveUserBetweenDevicesWS, syncWorkspaceOrgUnitForUser } = require('./workspaceController');
-// Opcional si lo usas en un script aparte:
-// const { backfillSelectionProcessFromOffers, backfillPeriodsdispositiveId } = require('./periodoTransicionController');
 
 /* ---------------------------------------------------------
    Helpers
 --------------------------------------------------------- */
-
+const PERIOD_END_REASON_TRANSFER_ID = '6a2fd354f8de01705621fe93';
 const toId = (v) => (v ? new mongoose.Types.ObjectId(v) : v);
 const isOpen = (p) => p.active !== false && (p.endDate === null || p.endDate === undefined);
+
+async function validateEndReason(endReason) {
+  if (!endReason || !mongoose.Types.ObjectId.isValid(endReason)) {
+    throw new ClientError('Debes indicar una razón válida para cerrar el periodo', 400);
+  }
+
+  const exists = await PeriodEndReason.exists({ _id: toId(endReason), active: { $ne: false } });
+  if (!exists) throw new ClientError('La razón de fin del periodo no existe o no está activa', 400);
+
+  return true;
+}
 
 // === Provincias desde Dispositive ===
 async function getProvinceIdsFromDispositive(dispositiveId) {
@@ -59,12 +67,10 @@ async function closeMatchingPreferentsForPeriod(periodLike, session = null) {
   await Preferents.updateMany(query, update, options);
 }
 
-
 // === Libera espacio cerrando periodos de Preferents antes de validar ===
 async function ensureSpaceWithPreferents(periodLike, { excludePeriodId = null } = {}) {
   const userId = toId(periodLike?.idUser);
   const jobId = toId(periodLike?.position);
-  // ⚠️ ahora usamos dispositiveId
   const dispId = toId(periodLike?.dispositiveId);
 
   if (!userId || !jobId || !dispId) return { closedCount: 0 };
@@ -72,7 +78,6 @@ async function ensureSpaceWithPreferents(periodLike, { excludePeriodId = null } 
   const provinceIds = await getProvinceIdsFromDispositive(dispId);
   if (!provinceIds.length) return { closedCount: 0 };
 
-  // Preferents activos que coincidan
   const preferents = await Preferents.find({
     user: userId,
     active: true,
@@ -82,7 +87,6 @@ async function ensureSpaceWithPreferents(periodLike, { excludePeriodId = null } 
 
   if (!preferents.length) return { closedCount: 0 };
 
-  // Reunir hiringsId y filtrar abiertos
   const ids = [...new Set(preferents.flatMap(p => Array.isArray(p.hiringsId) ? p.hiringsId : []).map(toId))]
     .filter(Boolean);
 
@@ -97,17 +101,27 @@ async function ensureSpaceWithPreferents(periodLike, { excludePeriodId = null } 
 
   if (!openTargets.length) return { closedCount: 0 };
 
-  // Cierra esos periodos con endDate = startDate propuesto (o hoy si no hubiera)
   const endDateSafe = periodLike?.startDate instanceof Date
     ? periodLike.startDate
     : new Date();
 
+  const defaultEndReason = await PeriodEndReason.findOne({
+    active: { $ne: false },
+    $or: [
+      { name: /^cambio de dispositivo$/i },
+      { name: /^traslado$/i },
+      { name: /^otros$/i }
+    ]
+  }, { _id: 1 }).lean();
+
+  const setData = { endDate: endDateSafe };
+  if (defaultEndReason?._id) setData.endReason = defaultEndReason._id;
+
   const res = await Periods.updateMany(
     { _id: { $in: openTargets.map(p => p._id) } },
-    { $set: { endDate: endDateSafe } }
+    { $set: setData }
   );
 
-  // Nota: el Preferent en sí se marcará como moveDone/active:false después de crear/editar
   return { closedCount: res.modifiedCount || 0 };
 }
 
@@ -115,7 +129,6 @@ async function ensureSpaceWithPreferents(periodLike, { excludePeriodId = null } 
 async function validateOpenConstraints(idUser, candidate, excludeId = null) {
   const userId = new mongoose.Types.ObjectId(idUser);
 
-  // 1) Cargar todos los periodos ABIERTOS del usuario (excepto el que actualizamos)
   const openNow = await Periods.find({
     idUser: userId,
     active: { $ne: false },
@@ -124,18 +137,15 @@ async function validateOpenConstraints(idUser, candidate, excludeId = null) {
 
   const openList = openNow.filter(p => String(p._id) !== String(excludeId || ''));
 
-  // 2) Si el "candidate" también va a quedar abierto, añadirlo a la lista
   const willBeOpen =
     candidate.active !== false &&
     (candidate.endDate === null || candidate.endDate === undefined);
 
   if (willBeOpen) openList.push(candidate);
 
-  // 3) Contar completos y parciales abiertos
   const fullOpens = openList.filter(p => p?.workShift?.type === 'completa').length;
   const partOpens = openList.filter(p => p?.workShift?.type === 'parcial').length;
 
-  // 4) Reglas
   if (fullOpens > 1) {
     throw new ClientError(
       'Máximo 1 periodo abierto a jornada completa por usuario',
@@ -177,17 +187,21 @@ async function buildReplacementFromInput(input) {
     if (!user) throw new ClientError('El trabajador al que sustituye no existe', 400);
     userId = user._id;
   }
+
   if (!userId) return undefined;
 
   let leaveId = repl.leave ? toId(repl.leave) : null;
+
   if (!leaveId) {
     const openPeriods = await Periods.find(
       { idUser: userId, active: { $ne: false }, $or: [{ endDate: { $exists: false } }, { endDate: null }] },
       { _id: 1 }
     ).lean();
+
     const openIds = openPeriods.map(p => p._id);
 
     let activeLeave = null;
+
     if (openIds.length) {
       activeLeave = await Leaves.findOne({
         idUser: userId,
@@ -196,6 +210,7 @@ async function buildReplacementFromInput(input) {
         $or: [{ actualEndLeaveDate: { $exists: false } }, { actualEndLeaveDate: null }],
       }).sort({ startLeaveDate: -1 }).lean();
     }
+
     if (!activeLeave) {
       activeLeave = await Leaves.findOne({
         idUser: userId,
@@ -203,25 +218,27 @@ async function buildReplacementFromInput(input) {
         $or: [{ actualEndLeaveDate: { $exists: false } }, { actualEndLeaveDate: null }],
       }).sort({ startLeaveDate: -1 }).lean();
     }
+
     if (activeLeave) leaveId = activeLeave._id;
   }
 
   return { user: userId, leave: leaveId || null };
 }
 
-// Construye payload base del Period (⚠️ ahora requiere dispositiveId)
-function buildPeriodPayload(body) {
+// Construye payload base del Period
+async function buildPeriodPayload(body) {
   const {
-    idUser,              // canónico
+    idUser,
     position,
     startDate,
     endDate,
-    dispositiveId,       // ← NUEVO nombre en body
-    workShift,           // { type: 'completa'|'parcial', nota? }
-    selectionProcess,    // opcional
-    active,              // default true
-    replacement,         // NUEVO
-    reason,              // legacy compat: mapeado internamente a replacement
+    endReason,
+    dispositiveId,
+    workShift,
+    selectionProcess,
+    active,
+    replacement,
+    reason,
   } = body;
 
   if (!idUser) throw new ClientError('idUser es requerido', 400);
@@ -234,26 +251,31 @@ function buildPeriodPayload(body) {
 
   const start = new Date(startDate);
   const end = endDate ? new Date(endDate) : null;
+
   if (Number.isNaN(start.getTime())) throw new ClientError('startDate no válida', 400);
   if (end && Number.isNaN(end.getTime())) throw new ClientError('endDate no válida', 400);
   if (end && start > end) throw new ClientError('startDate no puede ser posterior a endDate', 400);
+
+  if (end) await validateEndReason(endReason);
+  if (!end && endReason) throw new ClientError('No puedes indicar una razón de fin si el periodo no tiene fecha de fin', 400);
 
   return {
     idUser: toId(idUser),
     position: toId(position),
     startDate: start,
     endDate: end ?? undefined,
-    dispositiveId: toId(dispositiveId),                 // ← guardamos aquí
+    endReason: endReason ? toId(endReason) : undefined,
+    dispositiveId: toId(dispositiveId),
     workShift: { type: workShift.type, nota: workShift.nota ?? undefined },
     selectionProcess: selectionProcess ? toId(selectionProcess) : undefined,
     active: active === false ? false : true,
-    // replacement se resuelve aparte (buildReplacementFromInput)
     replacement: replacement ?? reason ?? undefined,
   };
 }
 
 // Población y serialización de replacement para salida
-const replacementPopulate = [
+const periodPopulate = [
+  { path: 'endReason', select: 'name description' },
   { path: 'replacement.user', select: 'firstName lastName dni' },
   {
     path: 'replacement.leave',
@@ -264,6 +286,7 @@ const replacementPopulate = [
 
 function serializePeriod(doc) {
   const p = doc.toObject ? doc.toObject() : doc;
+
   if (p.replacement && (p.replacement.user || p.replacement.leave)) {
     const u = p.replacement.user || {};
     const l = p.replacement.leave || null;
@@ -271,9 +294,11 @@ function serializePeriod(doc) {
     const personName = (u.firstName || u.lastName)
       ? `${u.firstName || ''} ${u.lastName || ''}`.trim()
       : undefined;
+
     const personDni = u.dni ? String(u.dni).replace(/\s+/g, '') : undefined;
 
     let leave = undefined;
+
     if (l) {
       leave = {
         typeName: (l.leaveType && l.leaveType.name) ? l.leaveType.name : undefined,
@@ -291,11 +316,12 @@ function serializePeriod(doc) {
   } else {
     delete p.replacement;
   }
+
   return p;
 }
 
 async function loadAndSerializeById(id) {
-  const doc = await Periods.findById(id).populate(replacementPopulate);
+  const doc = await Periods.findById(id).populate(periodPopulate);
   return serializePeriod(doc);
 }
 
@@ -305,27 +331,20 @@ async function loadAndSerializeById(id) {
 
 // CREATE
 async function createHiring(req, res) {
-  const payloadBase = buildPeriodPayload(req.body);
+  const payloadBase = await buildPeriodPayload(req.body);
 
-  // resolver replacement si llega
   const resolvedRepl = await buildReplacementFromInput({ replacement: payloadBase.replacement });
   if (resolvedRepl) payloadBase.replacement = resolvedRepl;
   else delete payloadBase.replacement;
 
-  // 1) libera espacio cerrando periodos vinculados a Preferent coincidente
   await ensureSpaceWithPreferents(payloadBase);
-
-  // 2) valida reglas de solape
   await validateOpenConstraints(payloadBase.idUser, payloadBase);
 
-  // 3) crea
   const created = await Periods.create(payloadBase);
 
-  // 4) cierra Preferents coincidentes
   await closeMatchingPreferentsForPeriod(created);
-
-  //CAMBIA UNIDAD ORGANIZATIVA GOOGLE
   await safeSyncWorkspaceOrgUnitForHiringUser(created.idUser);
+
   const out = await loadAndSerializeById(created._id);
   response(res, 201, out);
 }
@@ -333,6 +352,7 @@ async function createHiring(req, res) {
 // UPDATE
 async function updateHiring(req, res) {
   const { hiringId } = req.body;
+
   if (!hiringId || !mongoose.Types.ObjectId.isValid(hiringId)) {
     throw new ClientError('hiringId inválido', 400);
   }
@@ -341,10 +361,11 @@ async function updateHiring(req, res) {
   if (!current) throw new ClientError('Periodo no encontrado', 404);
 
   const patch = {};
+
   if (req.body.position !== undefined) patch.position = req.body.position ? toId(req.body.position) : undefined;
   if (req.body.startDate !== undefined) patch.startDate = req.body.startDate ? new Date(req.body.startDate) : undefined;
-  if (req.body.endDate !== undefined) patch.endDate = req.body.endDate ? new Date(req.body.endDate) : undefined;
-  // ⚠️ nuevo campo
+  if (req.body.endDate !== undefined) patch.endDate = req.body.endDate ? new Date(req.body.endDate) : null;
+  if (req.body.endReason !== undefined) patch.endReason = req.body.endReason ? toId(req.body.endReason) : null;
   if (req.body.dispositiveId !== undefined) patch.dispositiveId = req.body.dispositiveId ? toId(req.body.dispositiveId) : undefined;
   if (req.body.selectionProcess !== undefined) patch.selectionProcess = req.body.selectionProcess ? toId(req.body.selectionProcess) : undefined;
   if (req.body.active !== undefined) patch.active = req.body.active;
@@ -356,25 +377,40 @@ async function updateHiring(req, res) {
 
   if (req.body.workShift) {
     const t = req.body.workShift?.type;
+
     if (!t || !['completa', 'parcial'].includes(t)) {
       throw new ClientError('workShift.type debe ser "completa" o "parcial"', 400);
     }
+
     patch.workShift = { type: t, nota: req.body.workShift?.nota ?? undefined };
   }
 
   const merged = { ...current.toObject(), ...patch };
 
-  if (merged.startDate && merged.endDate && merged.startDate > merged.endDate) {
+  if (merged.startDate && Number.isNaN(new Date(merged.startDate).getTime())) {
+    throw new ClientError('startDate no válida', 400);
+  }
+
+  if (merged.endDate && Number.isNaN(new Date(merged.endDate).getTime())) {
+    throw new ClientError('endDate no válida', 400);
+  }
+
+  if (merged.startDate && merged.endDate && new Date(merged.startDate) > new Date(merged.endDate)) {
     throw new ClientError('startDate no puede ser posterior a endDate', 400);
   }
 
-  // si el update NO cierra el periodo, intenta liberar espacio
-  const isClosingUpdate = (req.body.endDate !== undefined) || (req.body.active === false);
+  if (merged.endDate) await validateEndReason(merged.endReason);
+
+  if (!merged.endDate && merged.endReason) {
+    throw new ClientError('No puedes indicar una razón de fin si el periodo no tiene fecha de fin', 400);
+  }
+
+  const isClosingUpdate = (req.body.endDate !== undefined && req.body.endDate) || req.body.active === false;
+
   if (!isClosingUpdate) {
     await ensureSpaceWithPreferents(merged, { excludePeriodId: current._id });
   }
 
-  // Valida con el espacio liberado
   await validateOpenConstraints(current.idUser, merged, current._id);
 
   await Periods.findByIdAndUpdate(
@@ -383,12 +419,10 @@ async function updateHiring(req, res) {
     { new: false, runValidators: true }
   );
 
-  // Si sigue abierto, cierra Preferents coincidentes
   if (!isClosingUpdate) {
     await closeMatchingPreferentsForPeriod(merged);
   }
 
-  //CAMBIA UNIDAD ORGANIZATIVA GOOGLE
   await safeSyncWorkspaceOrgUnitForHiringUser(current.idUser);
 
   const out = await loadAndSerializeById(hiringId);
@@ -398,6 +432,7 @@ async function updateHiring(req, res) {
 // SOFT DELETE
 async function softDeleteHiring(req, res) {
   const { hiringId } = req.body;
+
   if (!hiringId || !mongoose.Types.ObjectId.isValid(hiringId)) {
     throw new ClientError('hiringId inválido', 400);
   }
@@ -406,9 +441,10 @@ async function softDeleteHiring(req, res) {
     hiringId,
     { $set: { active: false } },
     { new: true }
-  ).populate(replacementPopulate);
+  ).populate(periodPopulate);
 
   if (!updated) throw new ClientError('Periodo no encontrado', 404);
+
   await safeSyncWorkspaceOrgUnitForHiringUser(updated.idUser);
 
   response(res, 200, serializePeriod(updated));
@@ -417,6 +453,7 @@ async function softDeleteHiring(req, res) {
 // HARD DELETE
 async function hardDeleteHiring(req, res) {
   const { hiringId } = req.body;
+
   if (!hiringId || !mongoose.Types.ObjectId.isValid(hiringId)) {
     throw new ClientError('hiringId inválido', 400);
   }
@@ -427,23 +464,25 @@ async function hardDeleteHiring(req, res) {
   await Leaves.deleteMany({ idPeriod: doc._id });
   await Periods.deleteOne({ _id: doc._id });
   await safeSyncWorkspaceOrgUnitForHiringUser(doc.idUser);
+
   response(res, 200, { deleted: true });
 }
 
 // LIST
 async function listHirings(req, res) {
   let {
-    idUser,       // canónico
-    dispositiveId,         // ← NUEVO filtro
+    idUser,
+    dispositiveId,
     position,
+    endReason,
     openOnly,
     active,
     dateFrom,
     dateTo,
     page = 1,
     limit = 20,
-    userId,               // legacy compat
-    selectionProcess,     // ← NUEVO
+    userId,
+    selectionProcess,
   } = req.body;
 
   if (!idUser && userId) idUser = userId;
@@ -452,18 +491,17 @@ async function listHirings(req, res) {
 
   if (idUser) filters.idUser = toId(idUser);
   if (position) filters.position = toId(position);
+  if (endReason) filters.endReason = toId(endReason);
   if (active !== undefined) filters.active = active;
 
   if (dispositiveId !== undefined && dispositiveId !== null && dispositiveId !== '') {
     filters.dispositiveId = toId(dispositiveId);
   }
 
-
   if (openOnly) {
     filters.$or = [{ endDate: { $exists: false } }, { endDate: null }];
   }
 
-  // Filtro por selectionProcess
   if (selectionProcess !== undefined && selectionProcess !== null && selectionProcess !== '') {
     if (Array.isArray(selectionProcess)) {
       const arr = selectionProcess.filter(Boolean).map(v => toId(v));
@@ -485,9 +523,10 @@ async function listHirings(req, res) {
     .sort({ startDate: -1 })
     .skip((Number(page) - 1) * Number(limit))
     .limit(Number(limit))
-    .populate(replacementPopulate);
+    .populate(periodPopulate);
 
   const out = docs.map(serializePeriod);
+
   response(res, 200, {
     total,
     page: Number(page),
@@ -499,11 +538,12 @@ async function listHirings(req, res) {
 // GET ONE
 async function getHiringById(req, res) {
   const { hiringId } = req.body;
+
   if (!hiringId || !mongoose.Types.ObjectId.isValid(hiringId)) {
     throw new ClientError('hiringId inválido', 400);
   }
 
-  const doc = await Periods.findById(hiringId).populate(replacementPopulate);
+  const doc = await Periods.findById(hiringId).populate(periodPopulate);
   if (!doc) throw new ClientError('Periodo no encontrado', 404);
 
   response(res, 200, serializePeriod(doc));
@@ -520,14 +560,14 @@ async function findLastHiringForUser(idUser, { includeInactive = false } = {}) {
       $or: [{ endDate: { $exists: false } }, { endDate: null }],
     })
       .sort({ startDate: -1, _id: -1 })
-      .populate(replacementPopulate);
+      .populate(periodPopulate);
 
     return docs.map(serializePeriod);
   }
 
   const doc = await Periods.findOne({ idUser: userId })
     .sort({ startDate: -1, _id: -1 })
-    .populate(replacementPopulate);
+    .populate(periodPopulate);
 
   return doc ? serializePeriod(doc) : null;
 }
@@ -561,7 +601,8 @@ async function getLastHiringForUser(req, res) {
 
 // CLOSE
 async function closeHiring(req, res) {
-  const { hiringId, endDate, active } = req.body;
+  const { hiringId, endDate, endReason, active } = req.body;
+
   if (!hiringId || !mongoose.Types.ObjectId.isValid(hiringId)) {
     throw new ClientError('hiringId inválido', 400);
   }
@@ -570,24 +611,32 @@ async function closeHiring(req, res) {
   if (!current) throw new ClientError('Periodo no encontrado', 404);
 
   const end = endDate ? new Date(endDate) : new Date();
+
   if (Number.isNaN(end.getTime())) throw new ClientError('endDate no válida', 400);
+
   if (current.startDate > end) {
     throw new ClientError('endDate no puede ser anterior a startDate', 400);
   }
 
+  await validateEndReason(endReason);
+
   await Periods.findByIdAndUpdate(
     hiringId,
-    { $set: { endDate: end, active: active === false ? false : current.active } },
+    {
+      $set: {
+        endDate: end,
+        endReason: toId(endReason),
+        active: active === false ? false : current.active
+      }
+    },
     { new: false }
   );
-  //CAMBIA UNIDAD ORGANIZATIVA GOOGLE
+
   await safeSyncWorkspaceOrgUnitForHiringUser(current.idUser);
 
   const out = await loadAndSerializeById(hiringId);
   return response(res, 200, out);
 }
-
-
 
 // REUBICAR PERSONAL (mass transfer)
 async function relocateHirings(req, res) {
@@ -612,7 +661,12 @@ async function relocateHirings(req, res) {
     throw new ClientError('startDateNewPeriod no válida', 400);
   }
 
-  // 1) Buscar periodos abiertos en el dispositivo origen (solo lectura)
+  if (!mongoose.Types.ObjectId.isValid(PERIOD_END_REASON_TRANSFER_ID)) {
+    throw new ClientError('PERIOD_END_REASON_TRANSFER_ID inválido', 500);
+  }
+
+  const endReasonId = toId(PERIOD_END_REASON_TRANSFER_ID);
+
   const openPeriods = await Periods.find({
     dispositiveId: originId,
     active: { $ne: false },
@@ -633,20 +687,17 @@ async function relocateHirings(req, res) {
     session.startTransaction();
 
     const createdList = [];
-    const affectedUsers = new Set(); // usuarios afectados por la reubicación
+    const affectedUsers = new Set();
 
-    // 2) Cerrar periodos en origen y crear los nuevos en destino (TODO dentro de la transacción)
     for (const p of openPeriods) {
       const periodId = p._id;
 
-      // 2.1) Cerrar el periodo actual en el dispositivo origen
       await Periods.findByIdAndUpdate(
         periodId,
-        { $set: { endDate: startNew } },
+        { $set: { endDate: startNew, endReason: endReasonId } },
         { new: false, session }
       );
 
-      // 2.2) Construir el nuevo periodo en el dispositivo destino
       const newPayload = {
         idUser: p.idUser,
         position: p.position,
@@ -664,20 +715,17 @@ async function relocateHirings(req, res) {
           : undefined,
       };
 
-      // 2.3) Crear nuevo hiring en destino
       const createdArr = await Periods.create([newPayload], { session });
       const created = Array.isArray(createdArr) ? createdArr[0] : createdArr;
+
       createdList.push(created._id);
       affectedUsers.add(String(p.idUser));
 
-      // 2.4) Cerrar Preferents coincidentes con el nuevo periodo (DENTRO de la transacción)
       await closeMatchingPreferentsForPeriod(newPayload, session);
     }
 
-    // 2.5) Commit de la transacción → si algo de lo anterior falla, se hará abort en el catch
     await session.commitTransaction();
 
-    // Sincronización Workspace en background (no esperamos)
     void (async () => {
       try {
         const users = await User.find({
@@ -712,21 +760,18 @@ async function relocateHirings(req, res) {
       }
     })();
 
-    // 4) Respuesta final
     return response(res, 200, {
       moved: openPeriods.length,
       created: createdList,
       msg: 'Reubicación completada',
     });
   } catch (err) {
-    // Si algo falla en la parte de "añadir y cerrar periodos" o en Preferents, se revierte todo
     await session.abortTransaction();
     throw err;
   } finally {
     session.endSession();
   }
 }
-
 
 
 
