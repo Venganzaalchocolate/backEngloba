@@ -1,6 +1,9 @@
 const { User, Dispositive, Workplace, SesameResponsibility, Leaves, Periods } = require("../models/indexModels");
 const sesameService = require("../services/sesameServices");
 const { catchAsync, response, ClientError } = require("../utils/indexUtils");
+const {
+  queueSyncOhsTrabajadorForUser,
+} = require("./ohsController");
 
 const SESAME_COMPANY_ID = process.env.SESAME_COMPANY_ID;
 
@@ -10,6 +13,27 @@ const SESAME_ROLE_IDS = {
   DEPARTMENT_ADMIN: "42340bb4-3355-4b12-90f9-70cf7ad86d88",
   WORKPLACE_ADMIN: "65009a48-73ca-413c-a1ac-e98ecc00da09",
   ADMIN: "d4e27835-80e2-4967-89b0-eceab254915c",
+};
+const queueSyncOhsAfterSesameOfficeChange = (userId, label = "cambio centro Sesame") => {
+  if (!userId) return;
+
+  setImmediate(async () => {
+    const activeLeave = await Leaves.exists({
+      idUser: userId,
+      active: { $ne: false },
+      $or: [
+        { actualEndLeaveDate: { $exists: false } },
+        { actualEndLeaveDate: null },
+      ],
+    });
+
+    if (activeLeave) {
+      console.log(`[OHS SKIP] ${label}: usuario con baja activa`, String(userId));
+      return;
+    }
+
+    queueSyncOhsTrabajadorForUser(userId, {}, { createIfMissing: false });
+  });
 };
 
 const isValidSesameCoordinateValue = (value) => {
@@ -757,7 +781,16 @@ const postSesameAssignEmployeeOffice = async (req, res) => {
   if (!employeeId || !officeId) throw new ClientError("employeeId y officeId son obligatorios", 400);
 
 
-  response(res, 200, await assignEmployeeToScope({ scopeType: "office", scopeId: officeId, userId: employeeId, isMainOffice }));
+  const result = await assignEmployeeToScope({
+    scopeType: "office",
+    scopeId: officeId,
+    userId: employeeId,
+    isMainOffice,
+  });
+
+  queueSyncOhsAfterSesameOfficeChange(employeeId, "asignar oficina");
+
+  return response(res, 200, result);
 };
 
 const postSesameDeleteEmployeeOfficeAssignation = async (req, res) => {
@@ -853,6 +886,8 @@ const postSesameDeleteEmployeeOfficeAssignation = async (req, res) => {
     });
   }
 
+  queueSyncOhsAfterSesameOfficeChange(employeeId, "quitar oficina");
+
   response(res, 200, {
     ok: true,
     employeeId,
@@ -873,12 +908,29 @@ const postSesameDeleteEmployeeOfficeAssignation = async (req, res) => {
 
 const postSesameAssignOfficeEmployee = async (req, res) => {
   const { officeId, userId, isMainOffice } = req.body || {};
-  response(res, 200, await assignEmployeeToScope({ scopeType: "office", scopeId: officeId, userId, isMainOffice }));
+  const result = await assignEmployeeToScope({
+    scopeType: "office",
+    scopeId: officeId,
+    userId,
+    isMainOffice,
+  });
+
+  queueSyncOhsAfterSesameOfficeChange(userId, "asignar oficina");
+
+  return response(res, 200, result);
 };
 
 const postSesameDeleteOfficeEmployee = async (req, res) => {
   const { officeId, userId } = req.body || {};
-  response(res, 200, await deleteEmployeeFromScope({ scopeType: "office", scopeId: officeId, userId }));
+  const result = await deleteEmployeeFromScope({
+    scopeType: "office",
+    scopeId: officeId,
+    userId,
+  });
+
+  queueSyncOhsAfterSesameOfficeChange(userId, "quitar oficina");
+
+  return response(res, 200, result);
 };
 
 const postSesameGetOfficeEmployees = async (req, res) => {
@@ -1835,7 +1887,9 @@ const postSesameAssignEmployeeToDispositiveScopes = async (req, res) => {
     isMainOffice,
   });
 
-  response(res, 200, data);
+  queueSyncOhsAfterSesameOfficeChange(userId, "asignar dispositivo/oficina");
+
+  return response(res, 200, data);
 };
 
 const getAllSesameEmployeesLocal = async () => {

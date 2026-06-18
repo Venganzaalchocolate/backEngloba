@@ -327,37 +327,7 @@ const {
   getUserModuleScopeAccess 
 } = require("./moduleScopeAccessController");
 
-// ----------------------------- MODULE OHS -------------------------------
-const {
-  postOhsTestWorkingGets,
 
-  postOhsGetAgrupacionesCentros,
-
-  postOhsGetCentros,
-  postOhsCreateCentroFromWorkplace,
-  postOhsUpdateCentroFromWorkplace,
-  postOhsSyncCentroFromWorkplace,
-
-  postOhsGetContratos,
-  postOhsGetEmpresas,
-
-  postOhsGetIrlTrabajador,
-  postOhsUpdateIrlTrabajador,
-  postOhsDeleteIrlTrabajador,
-
-  postOhsGetPuestoModelo,
-  postOhsGetReconocimientosMedicos,
-  postOhsGetTipoEpi,
-
-  postOhsGetTrabajadores,
-  postOhsGetTrabajadorByDni,
-  postOhsCreateTrabajadorFromUser,
-  postOhsUpdateTrabajadorFromUser,
-  postOhsSyncTrabajadorFromUser,
-
-  postOhsGetUnidadesOrganizativas,
-  postOhsGetUnidadesRegionales,
-} = require("./ohsController");
 
 // ----------------------------- TEMPLATE CONTROLLER -------------------------------
 const {
@@ -673,35 +643,6 @@ postSesameGetOfficeManagers,
   deleteDocumentationReceiptTemplate,
   postValidateReceiptAnswers,
 
-    // ----------------------------- OHS CONTROLLER -------------------------------
-     postOhsTestWorkingGets,
-
-  postOhsGetAgrupacionesCentros,
-
-  postOhsGetCentros,
-  postOhsCreateCentroFromWorkplace,
-  postOhsUpdateCentroFromWorkplace,
-  postOhsSyncCentroFromWorkplace,
-
-  postOhsGetContratos,
-  postOhsGetEmpresas,
-
-  postOhsGetIrlTrabajador,
-  postOhsUpdateIrlTrabajador,
-  postOhsDeleteIrlTrabajador,
-
-  postOhsGetPuestoModelo,
-  postOhsGetReconocimientosMedicos,
-  postOhsGetTipoEpi,
-
-  postOhsGetTrabajadores,
-  postOhsGetTrabajadorByDni,
-  postOhsCreateTrabajadorFromUser,
-  postOhsUpdateTrabajadorFromUser,
-  postOhsSyncTrabajadorFromUser,
-
-  postOhsGetUnidadesOrganizativas,
-  postOhsGetUnidadesRegionales,
 
 
   // ----------------------------- ANIDE CONTROLLER -------------------------------

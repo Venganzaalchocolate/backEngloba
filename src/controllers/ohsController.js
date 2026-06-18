@@ -1,4 +1,4 @@
-const { User, Workplace, Jobs, Periods } = require("../models/indexModels");
+const { User, Workplace, Jobs, Periods, Dispositive, Leaves } = require("../models/indexModels");
 
 const {
   getOhsCentros,
@@ -11,23 +11,44 @@ const {
   updateOhsPuesto,
   deleteOhsPuesto,
 
-  getOhsTrabajadores,
-  getOhsTrabajadorByDni,
+  getOhsTrabajadorByDniIncludingDeleted,
+  getOhsTrabajadorByCodIncludingDeleted,
   createOhsTrabajador,
   updateOhsTrabajador,
-  deleteOhsTrabajador,
+  deleteOhsTrabajador
 } = require("../services/ohsServices");
 
 const sesameService = require("../services/sesameServices");
-const { catchAsync, response, ClientError } = require("../utils/indexUtils");
+const { ClientError, catchAsync, response } = require("../utils/indexUtils");
 
 /* ==========================================================================
    Helpers generales
 ========================================================================== */
 
-/**
- * Normaliza un DNI/NIE para búsquedas y envíos a OHS.
- */
+const hasActiveLeaveForUser = async (userId) => {
+  if (!userId) return false;
+
+  const activeLeave = await Leaves.exists({
+    idUser: userId,
+    active: { $ne: false },
+    $or: [
+      { actualEndLeaveDate: { $exists: false } },
+      { actualEndLeaveDate: null },
+    ],
+  });
+
+  return !!activeLeave;
+};
+
+const mapGenderToOhs = (gender) => {
+  const value = String(gender || "").trim().toLowerCase();
+
+  if (value === "male" || value === "h" || value === "hombre") return "H";
+  if (value === "female" || value === "m" || value === "mujer") return "M";
+
+  return "M";
+};
+
 const normalizeDniOhs = (value = "") =>
   String(value || "")
     .trim()
@@ -35,9 +56,6 @@ const normalizeDniOhs = (value = "") =>
     .replace(/\s+/g, "")
     .replace(/-/g, "");
 
-/**
- * Convierte una fecha local en formato ISO válido para OHS.
- */
 const formatDateOhs = (date) => {
   if (!date) return undefined;
 
@@ -47,29 +65,24 @@ const formatDateOhs = (date) => {
   return parsed.toISOString();
 };
 
+const cleanUndefined = (obj = {}) => {
+  const clean = {};
 
-/**
- * Separa los apellidos locales en apellido1 y apellido2 para OHS.
- */
+  Object.entries(obj).forEach(([key, value]) => {
+    if (value !== undefined) clean[key] = value;
+  });
+
+  return clean;
+};
+
 const splitLastName = (lastName = "") => {
   const parts = String(lastName || "")
     .trim()
     .split(/\s+/)
     .filter(Boolean);
 
-  if (!parts.length) {
-    return {
-      apellido1Trabajador: "",
-      apellido2Trabajador: "",
-    };
-  }
-
-  if (parts.length === 1) {
-    return {
-      apellido1Trabajador: parts[0],
-      apellido2Trabajador: "",
-    };
-  }
+  if (!parts.length) return { apellido1Trabajador: "", apellido2Trabajador: "" };
+  if (parts.length === 1) return { apellido1Trabajador: parts[0], apellido2Trabajador: "" };
 
   return {
     apellido1Trabajador: parts[0],
@@ -77,17 +90,11 @@ const splitLastName = (lastName = "") => {
   };
 };
 
-/**
- * Comprueba que un código OHS sea numérico y mayor que cero.
- */
 const isValidOhsCode = (value) => {
   const numberValue = Number(value);
   return Number.isFinite(numberValue) && numberValue > 0;
 };
 
-/**
- * Normaliza texto para comparar nombres entre Mongo/OHS.
- */
 const normalizeTextOhs = (value = "") =>
   String(value || "")
     .trim()
@@ -97,51 +104,38 @@ const normalizeTextOhs = (value = "") =>
     .replace(/\s+/g, " ");
 
 /* ==========================================================================
-   Helpers de respuestas OHS
+   Helpers respuestas OHS
 ========================================================================== */
 
-/**
- * Extrae centros desde la respuesta de OHS.
- */
-const getOhsCentrosItems = (data) => {
-  return data?.listaCentrosCompletos || data?.listaCentros || [];
-};
+const getOhsCentrosItems = (data) => data?.listaCentrosCompletos || data?.listaCentros || [];
 
-/**
- * Extrae puestos desde la respuesta de OHS.
- */
-const getOhsPuestosItems = (data) => {
-  return (
-    data?.listaPuestosCompletos ||
-    data?.listaPuestos ||
-    data?.listaTiposPuesto ||
-    []
-  );
-};
+const getOhsPuestosItems = (data) =>
+  data?.listaPuestosCompletos || data?.listaPuestos || data?.listaTiposPuesto || [];
 
-/**
- * Extrae trabajadores desde la respuesta de OHS.
- */
-const getOhsTrabajadoresItems = (data) => {
-  return (
-    data?.listaTrabajadorCompletos ||
-    data?.listaTrabajadoresCompletos ||
-    data?.listaTrabajadores ||
-    []
-  );
-};
+const getOhsTrabajadoresItems = (data) =>
+  data?.listaTrabajadorCompletos ||
+  data?.listaTrabajadoresCompletos ||
+  data?.listaTrabajadores ||
+  [];
 
-/**
- * Obtiene codCentro desde un objeto centro de OHS.
- */
 const getCodCentroFromOhsCentro = (centro) => {
-  const value = centro?.codCentro || null;
+  const value = centro?.codCentro || centro?.CodCentro || null;
   return isValidOhsCode(value) ? Number(value) : null;
 };
 
-/**
- * Obtiene codTipoPuesto desde un objeto puesto de OHS.
- */
+const getCodCentroFromOhsResponse = (data) => {
+  const value =
+    data?.codCentro ||
+    data?.CodCentro ||
+    data?.listaCentros?.[0]?.codCentro ||
+    data?.listaCentros?.[0]?.CodCentro ||
+    data?.listaCentrosCompletos?.[0]?.codCentro ||
+    data?.listaCentrosCompletos?.[0]?.CodCentro ||
+    null;
+
+  return isValidOhsCode(value) ? Number(value) : null;
+};
+
 const getCodTipoPuestoFromOhsPuesto = (puesto) => {
   const value =
     puesto?.codTipoPuesto ||
@@ -157,206 +151,49 @@ const getCodTipoPuestoFromOhsPuesto = (puesto) => {
   return isValidOhsCode(value) ? Number(value) : null;
 };
 
-/**
- * Obtiene codCentro desde una respuesta de creación de centro.
- */
-const getCodCentroFromOhsResponse = (data) => {
-  const value = data?.codCentro || data?.listaCentros?.[0]?.codCentro || null;
-  return isValidOhsCode(value) ? Number(value) : null;
-};
-
-/**
- * Obtiene codTrabajador desde una respuesta de creación o consulta.
- */
 const getCodTrabajadorFromOhsResponse = (data) => {
   const value =
     data?.codTrabajador ||
+    data?.CodTrabajador ||
     data?.listaTrabajadorCompletos?.[0]?.codTrabajador ||
+    data?.listaTrabajadorCompletos?.[0]?.CodTrabajador ||
     data?.listaTrabajadoresCompletos?.[0]?.codTrabajador ||
+    data?.listaTrabajadoresCompletos?.[0]?.CodTrabajador ||
     data?.listaTrabajadores?.[0]?.codTrabajador ||
+    data?.listaTrabajadores?.[0]?.CodTrabajador ||
     null;
 
   return isValidOhsCode(value) ? Number(value) : null;
 };
 
 /* ==========================================================================
-   Builders de payload
+   Centros OHS
+   Nota: NO enviamos población/provincia ni sus códigos internos.
+   OHS no los sincroniza correctamente si no son sus códigos internos.
 ========================================================================== */
 
-/**
- * Construye el payload de trabajador OHS desde un usuario local.
- */
-const buildOhsTrabajadorFromUser = (user, extra = {}) => {
-  if (!user) throw new ClientError("Usuario no encontrado", 404);
-  if (!user.firstName) throw new ClientError("El usuario no tiene nombre", 400);
-  if (!user.dni) throw new ClientError("El usuario no tiene DNI/NIE", 400);
-
-  const { apellido1Trabajador, apellido2Trabajador } = splitLastName(user.lastName);
-
-  const payload = {
-    nomTrabajador: String(user.firstName || "").trim(),
-    apellido1Trabajador,
-    apellido2Trabajador,
-    codIdentificador: normalizeDniOhs(user.dni),
-  };
-
-  if (user.birthday) payload.fecNacimiento = formatDateOhs(user.birthday);
-  if (user.email) payload.desEmail = String(user.email).trim().toLowerCase();
-
-  const gender = (!!user.gender) ? user.gender : 'noIdentificado';
-
-
-  return {
-    ...payload,
-    ...extra,
-  };
-};
-
-/**
- * Construye el payload de centro OHS desde un Workplace local.
- */
 const buildOhsCentroFromWorkplace = (workplace, extra = {}) => {
   if (!workplace) throw new ClientError("Centro de trabajo no encontrado", 404);
   if (!workplace.name) throw new ClientError("El centro de trabajo no tiene nombre", 400);
 
-  const provinceName = workplace.province?.name || workplace.resolvedAddress?.province || "";
-  const city = workplace.resolvedAddress?.city || "";
   const postcode = workplace.resolvedAddress?.postcode || "";
   const address = workplace.address || workplace.resolvedAddress?.formatted || "";
 
-  return {
+  return cleanUndefined({
     nomCentro: String(workplace.name || "").trim(),
     domicilioAlta: {
-      codDomicilio: null,
-      desPoblacion: String(city || "").trim(),
-      desProvincia: String(provinceName || "").trim(),
-      codPoblacion: null,
       codPostal: String(postcode || "").trim(),
-      codProvincia: null,
       desDomicilio: String(address || "").trim(),
     },
+    codExternoCentro: String(workplace._id),
+    listaTrabajadoresResponsablesSoporteInternosNIFs: [],
+    listaTrabajadoresResponsablesSoporteExternos: [],
+    listaTrabajadoresResponsablesVsNIFs: [],
+    listaTrabajadoresResponsablesTecnicosNIFs: [],
     ...extra,
-  };
-};
-
-/**
- * Construye el payload de puesto OHS.
- */
-const buildOhsPuestoPayload = ({ name, description, codTipoPuesto } = {}) => {
-  if (!name) throw new ClientError("Falta el nombre del puesto", 400);
-
-  const payload = {
-    nomTipoPuesto: String(name).trim(),
-    desTipoPuesto: String(description || name).trim(),
-  };
-
-  if (isValidOhsCode(codTipoPuesto)) {
-    payload.codTipoPuesto = Number(codTipoPuesto);
-  }
-
-  return payload;
-};
-
-/**
- * Construye la lista de puestos del trabajador para OHS.
- */
-const buildOhsPuestosTrabajador = (codTipoPuesto) => {
-  if (!isValidOhsCode(codTipoPuesto)) return [];
-
-  return [
-    {
-      codTipoPuesto: Number(codTipoPuesto),
-    },
-  ];
-};
-
-/* ==========================================================================
-   Búsquedas OHS
-========================================================================== */
-
-/**
- * Busca un trabajador en OHS usando el DNI local.
- */
-const findOhsTrabajadorByUser = async (user) => {
-  if (!user?.dni) return null;
-
-  const data = await getOhsTrabajadorByDni(normalizeDniOhs(user.dni));
-  const items = getOhsTrabajadoresItems(data);
-
-  if (!items.length) return null;
-
-  if (items.length > 1) {
-    throw new ClientError(`Hay más de un trabajador en OHS con el DNI ${user.dni}`, 409);
-  }
-
-  return items[0];
-};
-
-/**
- * Busca un centro en OHS por nombre exacto normalizado.
- */
-const findOhsCentroByName = async (workplaceName) => {
-  if (!workplaceName) return null;
-
-  const data = await getOhsCentros({
-    nomCentro: String(workplaceName).trim(),
   });
-
-  const items = getOhsCentrosItems(data);
-  if (!items.length) return null;
-
-  const normalizedName = normalizeTextOhs(workplaceName);
-
-  const matches = items.filter((item) => {
-    return normalizeTextOhs(item.nomCentro) === normalizedName;
-  });
-
-  if (matches.length === 1) return matches[0];
-
-  if (matches.length > 1) {
-    throw new ClientError(`Hay más de un centro en OHS con el nombre exacto "${workplaceName}"`, 409);
-  }
-
-  if (items.length === 1) return items[0];
-
-  throw new ClientError(`Hay varios centros en OHS parecidos a "${workplaceName}". No se enlaza automáticamente.`, 409);
 };
 
-/**
- * Busca un puesto en OHS por nombre exacto normalizado.
- */
-const findOhsPuestoByName = async (name) => {
-  if (!name) return null;
-
-  const data = await getOhsPuestos({
-    nomTipoPuesto: String(name).trim(),
-  });
-
-  const items = getOhsPuestosItems(data);
-  if (!items.length) return null;
-
-  const normalizedName = normalizeTextOhs(name);
-
-  const matches = items.filter((item) => {
-    return normalizeTextOhs(item.nomTipoPuesto) === normalizedName;
-  });
-
-  if (matches.length === 1) return matches[0];
-
-  if (matches.length > 1) {
-    throw new ClientError(`Hay más de un puesto en OHS con el nombre exacto "${name}"`, 409);
-  }
-
-  return null;
-};
-
-/* ==========================================================================
-   Centros OHS
-========================================================================== */
-
-/**
- * Obtiene un Workplace preparado para operar con OHS.
- */
 const getWorkplaceForOhs = async (workplaceId) => {
   if (!workplaceId) throw new ClientError("Falta workplaceId", 400);
 
@@ -369,21 +206,58 @@ const getWorkplaceForOhs = async (workplaceId) => {
   return workplace;
 };
 
-/**
- * Crea un centro en OHS desde un Workplace y guarda codCentroOhs.
- */
-const createOhsCentroFromWorkplaceAndSave = async (workplaceId, extraPayload = {}) => {
+const findOhsCentroByName = async (workplaceName) => {
+  if (!workplaceName) return null;
+
+  const data = await getOhsCentros({ nomCentro: String(workplaceName).trim() });
+  const items = getOhsCentrosItems(data);
+  if (!items.length) return null;
+
+  const normalizedName = normalizeTextOhs(workplaceName);
+
+  const matches = items.filter((item) => {
+    const itemName = item?.nomCentro || item?.NomCentro || "";
+    return normalizeTextOhs(itemName) === normalizedName;
+  });
+
+  if (matches.length === 1) return matches[0];
+
+  if (matches.length > 1) {
+    throw new ClientError(`Hay más de un centro en OHS con el nombre exacto "${workplaceName}"`, 409);
+  }
+
+  return null;
+};
+
+const createOhsCentroForWorkplace = async (workplaceId, extraPayload = {}) => {
   const workplace = await getWorkplaceForOhs(workplaceId);
 
   if (isValidOhsCode(workplace.codCentroOhs)) {
     throw new ClientError("El centro de trabajo ya tiene codCentroOhs", 409);
   }
 
+  const existingCentro = await findOhsCentroByName(workplace.name);
+  const existingCodCentro = getCodCentroFromOhsCentro(existingCentro);
+
+  if (existingCodCentro) {
+    await Workplace.updateOne(
+      { _id: workplace._id },
+      { $set: { codCentroOhs: String(existingCodCentro) } }
+    );
+
+    return updateOhsCentroForWorkplace(workplace._id, extraPayload);
+  }
+
   const payload = buildOhsCentroFromWorkplace(workplace, extraPayload);
   const created = await createOhsCentro(payload);
   const codCentro = getCodCentroFromOhsResponse(created);
 
-  if (!codCentro) throw new ClientError("OHS no devolvió un codCentro válido", 500);
+  if (!codCentro) {
+    const error = new ClientError("OHS no devolvió un codCentro válido", 500);
+    error.payload = payload;
+    error.data = created;
+    throw error;
+  }
 
   await Workplace.updateOne(
     { _id: workplace._id },
@@ -393,225 +267,91 @@ const createOhsCentroFromWorkplaceAndSave = async (workplaceId, extraPayload = {
   return {
     action: "created",
     workplaceId: String(workplace._id),
+    workplaceName: workplace.name,
     codCentro: String(codCentro),
     payload,
     data: created,
   };
 };
 
-/**
- * Actualiza en OHS un centro ya enlazado con un Workplace.
- */
-const updateOhsCentroFromWorkplaceSaved = async (workplaceId, extraPayload = {}) => {
+const updateOhsCentroForWorkplace = async (workplaceId, extraPayload = {}) => {
   const workplace = await getWorkplaceForOhs(workplaceId);
 
-  if (!isValidOhsCode(workplace.codCentroOhs)) {
-    throw new ClientError("El centro de trabajo no tiene codCentroOhs válido", 400);
+  let codCentro = isValidOhsCode(workplace.codCentroOhs) ? Number(workplace.codCentroOhs) : null;
+
+  if (!codCentro) {
+    const existingCentro = await findOhsCentroByName(workplace.name);
+    codCentro = getCodCentroFromOhsCentro(existingCentro);
+
+    if (!codCentro) {
+      return createOhsCentroForWorkplace(workplace._id, extraPayload);
+    }
+
+    await Workplace.updateOne(
+      { _id: workplace._id },
+      { $set: { codCentroOhs: String(codCentro) } }
+    );
   }
 
   const payload = buildOhsCentroFromWorkplace(workplace, extraPayload);
-  const updated = await updateOhsCentro(workplace.codCentroOhs, payload);
+  const updated = await updateOhsCentro(codCentro, payload);
 
   return {
     action: "updated",
     workplaceId: String(workplace._id),
-    codCentro: String(workplace.codCentroOhs),
+    workplaceName: workplace.name,
+    codCentro: String(codCentro),
     payload,
     data: updated,
   };
 };
 
-/**
- * Sincroniza un Workplace con OHS: actualiza si tiene código, enlaza si existe o crea si no existe.
- */
-const syncOhsCentroForWorkplace = async (workplaceId, extraPayload = {}) => {
+const deleteOhsCentroForWorkplace = async (workplaceId) => {
   const workplace = await getWorkplaceForOhs(workplaceId);
 
-  if (isValidOhsCode(workplace.codCentroOhs)) {
-    return updateOhsCentroFromWorkplaceSaved(workplaceId, extraPayload);
-  }
-
-  const existingCentro = await findOhsCentroByName(workplace.name);
-  const existingCodCentro = getCodCentroFromOhsCentro(existingCentro);
-
-  if (existingCodCentro) {
-    const payload = buildOhsCentroFromWorkplace(workplace, extraPayload);
-    const updated = await updateOhsCentro(existingCodCentro, payload);
-
-    await Workplace.updateOne(
-      { _id: workplace._id },
-      { $set: { codCentroOhs: String(existingCodCentro) } }
-    );
-
+  if (!isValidOhsCode(workplace.codCentroOhs)) {
     return {
-      action: "linked-and-updated",
+      action: "skip-without-codCentroOhs",
       workplaceId: String(workplace._id),
-      codCentro: String(existingCodCentro),
-      payload,
-      data: updated,
+      workplaceName: workplace.name,
+      reason: "El centro no tiene codCentroOhs válido",
     };
   }
 
-  return createOhsCentroFromWorkplaceAndSave(workplaceId, extraPayload);
-};
+  const deleted = await deleteOhsCentro(workplace.codCentroOhs);
 
-/**
- * Sincroniza todos los centros activos con OHS.
- */
-/**
- * Sincroniza todos los centros activos con OHS.
- */
-const syncActiveWorkplacesWithOhsLocal = async ({ dryRun = true, limit = 0, verbose = false } = {}) => {
-  let workplacesQuery = Workplace.find({
-    active: true,
-    name: { $exists: true, $ne: "" },
-  })
-    .select("_id name address province resolvedAddress codCentroOhs active entity")
-    .populate("province", "name")
-    .sort({ name: 1 });
-
-  if (limit > 0) workplacesQuery = workplacesQuery.limit(limit);
-
-  const workplaces = await workplacesQuery;
-
-  logOhs(verbose, `Centros encontrados en Mongo: ${workplaces.length}`);
-
-  const results = {
-    dryRun,
-    total: workplaces.length,
-    created: [],
-    updated: [],
-    linkedAndUpdated: [],
-    errors: [],
+  return {
+    action: "deleted",
+    workplaceId: String(workplace._id),
+    workplaceName: workplace.name,
+    codCentro: String(workplace.codCentroOhs),
+    data: deleted,
   };
-
-  for (const workplace of workplaces) {
-    try {
-      logOhs(verbose, `Centro: ${workplace.name}`);
-
-      const payload = buildOhsCentroFromWorkplace(workplace);
-
-      if (isValidOhsCode(workplace.codCentroOhs)) {
-        if (!dryRun) {
-          const updated = await updateOhsCentro(workplace.codCentroOhs, payload);
-
-          logOhs(verbose, `Centro actualizado: ${workplace.name} -> ${workplace.codCentroOhs}`);
-
-          results.updated.push({
-            workplaceId: String(workplace._id),
-            name: workplace.name,
-            codCentro: String(workplace.codCentroOhs),
-            data: updated,
-          });
-        } else {
-          logOhs(verbose, `Centro se actualizaría: ${workplace.name} -> ${workplace.codCentroOhs}`);
-
-          results.updated.push({
-            workplaceId: String(workplace._id),
-            name: workplace.name,
-            codCentro: String(workplace.codCentroOhs),
-            dryRun: true,
-          });
-        }
-
-        continue;
-      }
-
-      const existingCentro = await findOhsCentroByName(workplace.name);
-      const existingCodCentro = getCodCentroFromOhsCentro(existingCentro);
-
-      if (existingCodCentro) {
-        if (!dryRun) {
-          const updated = await updateOhsCentro(existingCodCentro, payload);
-
-          await Workplace.updateOne(
-            { _id: workplace._id },
-            { $set: { codCentroOhs: String(existingCodCentro) } }
-          );
-
-          logOhs(verbose, `Centro enlazado: ${workplace.name} -> ${existingCodCentro}`);
-
-          results.linkedAndUpdated.push({
-            workplaceId: String(workplace._id),
-            name: workplace.name,
-            codCentro: String(existingCodCentro),
-            data: updated,
-          });
-        } else {
-          logOhs(verbose, `Centro se enlazaría: ${workplace.name} -> ${existingCodCentro}`);
-
-          results.linkedAndUpdated.push({
-            workplaceId: String(workplace._id),
-            name: workplace.name,
-            codCentro: String(existingCodCentro),
-            dryRun: true,
-          });
-        }
-
-        continue;
-      }
-
-      if (!dryRun) {
-        const created = await createOhsCentro(payload);
-        const createdId = getCodCentroFromOhsResponse(created);
-
-        if (!createdId) {
-          throw new ClientError(`OHS no devolvió codCentro válido para "${workplace.name}"`, 500);
-        }
-
-        await Workplace.updateOne(
-          { _id: workplace._id },
-          { $set: { codCentroOhs: String(createdId) } }
-        );
-
-        logOhs(verbose, `Centro creado: ${workplace.name} -> ${createdId}`);
-
-        results.created.push({
-          workplaceId: String(workplace._id),
-          name: workplace.name,
-          codCentro: String(createdId),
-          data: created,
-        });
-      } else {
-        logOhs(verbose, `Centro se crearía: ${workplace.name}`);
-
-        results.created.push({
-          workplaceId: String(workplace._id),
-          name: workplace.name,
-          dryRun: true,
-        });
-      }
-    } catch (error) {
-      logOhs(verbose, `ERROR centro: ${workplace.name}`, error.message);
-
-      results.errors.push({
-        workplaceId: String(workplace._id),
-        name: workplace.name,
-        codCentroOhs: workplace.codCentroOhs || null,
-        message: error.message,
-        statusCode: error.statusCode,
-        body: error.body,
-        url: error.url,
-      });
-    }
-  }
-
-  return results;
 };
 
 /* ==========================================================================
    Puestos OHS desde Jobs.subcategories
 ========================================================================== */
 
-/**
- * Obtiene la subcategoría de Jobs a partir del ObjectId guardado en Period.position.
- */
+const buildOhsPuestoPayload = ({ name, description, codTipoPuesto } = {}) => {
+  if (!name) throw new ClientError("Falta el nombre del puesto", 400);
+
+  const payload = {
+    nomTipoPuesto: String(name).trim(),
+    desTipoPuesto: String(description || name).trim(),
+  };
+
+  if (isValidOhsCode(codTipoPuesto)) payload.codTipoPuesto = Number(codTipoPuesto);
+
+  return payload;
+};
+
 const getJobSubcategoryById = async (subcategoryId) => {
   if (!subcategoryId) return null;
 
   const job = await Jobs.findOne(
     { "subcategories._id": subcategoryId },
-    { name: 1, "subcategories.$": 1 }
+    { name: 1, public: 1, "subcategories.$": 1 }
   ).lean();
 
   if (!job?.subcategories?.length) return null;
@@ -621,46 +361,82 @@ const getJobSubcategoryById = async (subcategoryId) => {
   return {
     jobId: String(job._id),
     jobName: job.name,
+    jobPublic: job.public,
     subcategoryId: String(subcategory._id),
     subcategoryName: subcategory.name,
+    subcategoryPublic: subcategory.public,
     codTipoPuestoOhs: subcategory.codTipoPuestoOhs || null,
   };
 };
 
-/**
- * Construye el nombre del puesto que se enviará a OHS.
- */
-const buildOhsPuestoNameFromSubcategory = (item) => {
-  return `${item.jobName} - ${item.subcategoryName}`.trim();
+const buildOhsPuestoNameFromSubcategory = (item) =>
+  `${item.jobName} - ${item.subcategoryName}`.trim();
+
+const findOhsPuestoByName = async (name) => {
+  if (!name) return null;
+
+  const data = await getOhsPuestos({ nomTipoPuesto: String(name).trim() });
+  const items = getOhsPuestosItems(data);
+  if (!items.length) return null;
+
+  const normalizedName = normalizeTextOhs(name);
+
+  const matches = items.filter((item) => {
+    const itemName = item?.nomTipoPuesto || item?.NomTipoPuesto || "";
+    return normalizeTextOhs(itemName) === normalizedName;
+  });
+
+  if (matches.length === 1) return matches[0];
+
+  if (matches.length > 1) {
+    throw new ClientError(`Hay más de un puesto en OHS con el nombre exacto "${name}"`, 409);
+  }
+
+  return null;
 };
 
-/**
- * Crea o actualiza un puesto en OHS.
- */
-const syncOhsPuesto = async ({ name, description, codTipoPuesto }) => {
+const syncOhsPuesto = async ({ name, description, codTipoPuesto } = {}) => {
   const payload = buildOhsPuestoPayload({ name, description, codTipoPuesto });
 
-  if (isValidOhsCode(codTipoPuesto)) {
-    const updated = await updateOhsPuesto(codTipoPuesto, payload);
+if (isValidOhsCode(codTipoPuesto)) {
+  const updated = await updateOhsPuesto(codTipoPuesto, payload);
 
-    return {
-      action: "updated",
-      codTipoPuesto: String(codTipoPuesto),
-      payload,
-      data: updated,
-    };
-  }
+  const checked = await findOhsPuestoByName(payload.nomTipoPuesto);
+
+  console.log("[OHS PUESTO CHECK]");
+  console.dir({
+    expectedCodTipoPuesto: Number(codTipoPuesto),
+    expectedName: payload.nomTipoPuesto,
+    foundCodTipoPuesto: checked?.codTipoPuesto || null,
+    foundName: checked?.nomTipoPuesto || "",
+    foundDescription: checked?.desTipoPuesto || "",
+    raw: checked,
+  }, { depth: null });
+
+  return {
+    action: "updated",
+    codTipoPuesto: String(codTipoPuesto),
+    payload,
+    data: updated,
+  };
+}
 
   const existing = await findOhsPuestoByName(payload.nomTipoPuesto);
   const existingCodTipoPuesto = getCodTipoPuestoFromOhsPuesto(existing);
 
   if (existingCodTipoPuesto) {
-    const updated = await updateOhsPuesto(existingCodTipoPuesto, payload);
+    const updated = await updateOhsPuesto(existingCodTipoPuesto, {
+      ...payload,
+      codTipoPuesto: Number(existingCodTipoPuesto),
+    });
 
     return {
       action: "linked-and-updated",
       codTipoPuesto: String(existingCodTipoPuesto),
-      payload,
+      payload: {
+        ...payload,
+        codTipoPuesto: Number(existingCodTipoPuesto),
+      },
       data: updated,
     };
   }
@@ -669,21 +445,15 @@ const syncOhsPuesto = async ({ name, description, codTipoPuesto }) => {
   let createdCodTipoPuesto = getCodTipoPuestoFromOhsPuesto(created);
 
   if (!createdCodTipoPuesto) {
-    const foundData = await getOhsPuestos({
-      nomTipoPuesto: payload.nomTipoPuesto,
-    });
-
-    const foundItems = getOhsPuestosItems(foundData);
-
-    const exactMatch = foundItems.find((item) => {
-      return normalizeTextOhs(item.nomTipoPuesto) === normalizeTextOhs(payload.nomTipoPuesto);
-    });
-
-    createdCodTipoPuesto = getCodTipoPuestoFromOhsPuesto(exactMatch);
+    const found = await findOhsPuestoByName(payload.nomTipoPuesto);
+    createdCodTipoPuesto = getCodTipoPuestoFromOhsPuesto(found);
   }
 
   if (!createdCodTipoPuesto) {
-    throw new ClientError(`OHS no devolvió codTipoPuesto válido para "${payload.nomTipoPuesto}"`, 500);
+    const error = new ClientError(`OHS no devolvió codTipoPuesto válido para "${payload.nomTipoPuesto}"`, 500);
+    error.payload = payload;
+    error.data = created;
+    throw error;
   }
 
   return {
@@ -694,306 +464,98 @@ const syncOhsPuesto = async ({ name, description, codTipoPuesto }) => {
   };
 };
 
-/**
- * Sincroniza todas las subcategorías públicas de Jobs como puestos en OHS.
- */
-const syncOhsPuestosFromJobsLocal = async ({ dryRun = true, verbose = false } = {}) => {
-  const jobs = await Jobs.find({
-    public: true,
-    subcategories: { $exists: true, $ne: [] },
-  })
-    .select("_id name subcategories")
-    .sort({ name: 1 })
-    .lean();
+const syncOhsPuestoFromJobSubcategory = async (subcategoryId) => {
+  if (!subcategoryId) throw new ClientError("Falta subcategoryId", 400);
 
-  logOhs(verbose, `Jobs con subcategorías encontrados: ${jobs.length}`);
+  const item = await getJobSubcategoryById(subcategoryId);
+  if (!item) throw new ClientError("Subcategoría de puesto no encontrada", 404);
+  if (!item.subcategoryName) throw new ClientError("La subcategoría no tiene nombre", 400);
 
-  const results = {
-    dryRun,
-    total: 0,
-    created: [],
-    updated: [],
-    linkedAndUpdated: [],
-    skipped: [],
-    errors: [],
-  };
+  const name = buildOhsPuestoNameFromSubcategory(item);
 
-  for (const job of jobs) {
-    for (const subcategory of job.subcategories || []) {
-      results.total += 1;
+  const result = await syncOhsPuesto({
+    name,
+    description: name,
+    codTipoPuesto: item.codTipoPuestoOhs,
+  });
 
-      try {
-        logOhs(verbose, `Puesto: ${job.name} - ${subcategory.name || ""}`);
+  console.log(result)
 
-        if (!subcategory.name) {
-          logOhs(verbose, `Puesto omitido: ${job.name} - ${subcategory.name || ""}`);
-
-          results.skipped.push({
-            jobId: String(job._id),
-            jobName: job.name,
-            subcategoryId: String(subcategory._id),
-            subcategoryName: subcategory.name || "",
-            reason: "Subcategoría sin nombre o no pública",
-          });
-          continue;
-        }
-
-        const item = {
-          jobId: String(job._id),
-          jobName: job.name,
-          subcategoryId: String(subcategory._id),
-          subcategoryName: subcategory.name,
-          codTipoPuestoOhs: subcategory.codTipoPuestoOhs || null,
-        };
-
-        const name = buildOhsPuestoNameFromSubcategory(item);
-        const description = name;
-
-        if (dryRun) {
-          const list = isValidOhsCode(item.codTipoPuestoOhs) ? "updated" : "created";
-
-          logOhs(verbose, `Puesto se ${list === "updated" ? "actualizaría" : "crearía"}: ${name}`);
-
-          results[list].push({
-            ...item,
-            name,
-            description,
-            dryRun: true,
-          });
-          continue;
-        }
-
-        const result = await syncOhsPuesto({
-          name,
-          description,
-          codTipoPuesto: item.codTipoPuestoOhs,
-        });
-
-        if (result.codTipoPuesto && String(result.codTipoPuesto) !== String(item.codTipoPuestoOhs || "")) {
-          await Jobs.updateOne(
-            { _id: job._id, "subcategories._id": subcategory._id },
-            { $set: { "subcategories.$.codTipoPuestoOhs": String(result.codTipoPuesto) } }
-          );
-        }
-
-        logOhs(verbose, `Puesto ${result.action}: ${name} -> ${result.codTipoPuesto}`);
-
-        const list = result.action === "linked-and-updated" ? "linkedAndUpdated" : result.action;
-
-        results[list].push({
-          ...item,
-          name,
-          description,
-          codTipoPuesto: result.codTipoPuesto,
-          data: result.data,
-        });
-      } catch (error) {
-        logOhs(verbose, `ERROR puesto: ${job.name} - ${subcategory.name || ""}`, error.message);
-
-        results.errors.push({
-          jobId: String(job._id),
-          jobName: job.name,
-          subcategoryId: String(subcategory._id),
-          subcategoryName: subcategory.name || "",
-          message: error.message,
-          statusCode: error.statusCode,
-          body: error.body,
-          url: error.url,
-        });
-      }
-    }
+  if (
+    result.codTipoPuesto &&
+    String(result.codTipoPuesto) !== String(item.codTipoPuestoOhs || "")
+  ) {
+    await Jobs.updateOne(
+      { _id: item.jobId, "subcategories._id": item.subcategoryId },
+      { $set: { "subcategories.$.codTipoPuestoOhs": String(result.codTipoPuesto) } }
+    );
   }
 
-  return results;
+  return {
+    ...result,
+    jobId: item.jobId,
+    jobName: item.jobName,
+    subcategoryId: item.subcategoryId,
+    subcategoryName: item.subcategoryName,
+    name,
+  };
 };
 
-/* ==========================================================================
-   Trabajadores OHS
-========================================================================== */
+const deleteOhsPuestoFromJobSubcategory = async (subcategoryId) => {
+  if (!subcategoryId) throw new ClientError("Falta subcategoryId", 400);
 
-/**
- * Crea o actualiza un trabajador en OHS desde un User y guarda userIdOhs.
- */
-const ensureOhsTrabajadorForUser = async (userId, extraPayload = {}) => {
-  if (!userId) throw new ClientError("Falta userId", 400);
+  const item = await getJobSubcategoryById(subcategoryId);
 
-  const user = await User.findById(userId);
-  if (!user) throw new ClientError("Usuario no encontrado", 404);
-
-  const payload = buildOhsTrabajadorFromUser(user, extraPayload);
-
-  let codTrabajador = user.userIdOhs || null;
-
-  if (!codTrabajador) {
-    const existing = await findOhsTrabajadorByUser(user);
-    codTrabajador = existing?.codTrabajador || null;
-  }
-
-  if (codTrabajador) {
-    const updated = await updateOhsTrabajador(codTrabajador, payload);
-
-    if (!user.userIdOhs || String(user.userIdOhs) !== String(codTrabajador)) {
-      await User.updateOne(
-        { _id: user._id },
-        { $set: { userIdOhs: String(codTrabajador) } }
-      );
-    }
-
+  if (!item) {
     return {
-      action: "updated",
-      userId: String(user._id),
-      codTrabajador: String(codTrabajador),
-      payload,
-      data: updated,
+      action: "skip-subcategory-not-found",
+      subcategoryId: String(subcategoryId),
+      reason: "Subcategoría no encontrada",
     };
   }
 
-  const created = await createOhsTrabajador(payload);
-  const createdId = getCodTrabajadorFromOhsResponse(created);
-
-  if (!createdId) {
-  const error = new ClientError(
-    `OHS no devolvió codTrabajador válido para ${user.firstName} ${user.lastName || ""}`,
-    500
-  );
-
-  error.payload = payload;
-  error.data = created;
-
-  throw error;
-}
-
-  await User.updateOne(
-    { _id: user._id },
-    { $set: { userIdOhs: String(createdId) } }
-  );
-
-  return {
-    action: "created",
-    userId: String(user._id),
-    codTrabajador: String(createdId),
-    payload,
-    data: created,
-  };
-};
-
-
-/**
- * Sincroniza todos los usuarios activos como trabajadores en OHS.
- */
-const syncActiveUsersWithOhsLocal = async ({ dryRun = true, limit = 0, verbose = false } = {}) => {
-  let usersQuery = User.find({
-    employmentStatus: "activo",
-    dni: { $exists: true, $ne: "" },
-    firstName: { $exists: true, $ne: "" },
-    email: { $exists: true, $ne: "" },
-  })
-    .select("_id firstName lastName dni birthday email gender userIdOhs employmentStatus")
-    .sort({ lastName: 1, firstName: 1 });
-
-  if (limit > 0) usersQuery = usersQuery.limit(limit);
-
-  const users = await usersQuery;
-
-  logOhs(verbose, `Trabajadores activos encontrados: ${users.length}`);
-
-  const results = {
-    dryRun,
-    total: users.length,
-    created: [],
-    updated: [],
-    linkedAndUpdated: [],
-    errors: [],
-  };
-
-  for (const user of users) {
-    try {
-      const dni = normalizeDniOhs(user.dni);
-      let codTrabajador = user.userIdOhs || null;
-
-      logOhs(
-        verbose,
-        `Trabajador: ${user.firstName || ""} ${user.lastName || ""} - ${dni}`
-      );
-
-      if (!codTrabajador) {
-        const found = await getOhsTrabajadorByDni(dni);
-        const items = getOhsTrabajadoresItems(found);
-
-        if (items.length > 1) {
-          logOhs(verbose, `ERROR trabajador duplicado en OHS: ${dni}`);
-
-          results.errors.push({
-            userId: String(user._id),
-            dni,
-            message: `Hay más de un trabajador en OHS con el DNI ${dni}`,
-            data: items,
-          });
-          continue;
-        }
-
-        if (items.length === 1) codTrabajador = items[0].codTrabajador;
-      }
-
-      if (dryRun) {
-        const action = codTrabajador
-          ? user.userIdOhs
-            ? "updated"
-            : "linkedAndUpdated"
-          : "created";
-
-        logOhs(verbose, `Trabajador se ${action}: ${dni}`);
-
-        results[action].push({
-          userId: String(user._id),
-          dni,
-          codTrabajador: codTrabajador ? String(codTrabajador) : null,
-          dryRun: true,
-        });
-
-        continue;
-      }
-
-      const result = await ensureOhsTrabajadorForUser(user._id);
-      const list = result.action === "updated" && !user.userIdOhs
-        ? "linkedAndUpdated"
-        : result.action;
-
-      logOhs(verbose, `Trabajador ${result.action}: ${dni} -> ${result.codTrabajador}`);
-
-      results[list].push({
-        userId: String(user._id),
-        dni,
-        codTrabajador: result.codTrabajador,
-        data: result.data,
-      });
-    } catch (error) {
-      logOhs(verbose, `ERROR trabajador: ${user.dni}`, error.message);
-
-     results.errors.push({
-  userId: String(user._id),
-  dni: user.dni,
-  name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
-  message: error.message,
-  statusCode: error.statusCode,
-  body: error.body,
-  url: error.url,
-  payload: error.payload || null,
-  data: error.data || null,
-});
-    }
+  if (!isValidOhsCode(item.codTipoPuestoOhs)) {
+    return {
+      action: "skip-without-codTipoPuestoOhs",
+      jobId: item.jobId,
+      jobName: item.jobName,
+      subcategoryId: item.subcategoryId,
+      subcategoryName: item.subcategoryName,
+      reason: "La subcategoría no tiene codTipoPuestoOhs válido",
+    };
   }
 
-  return results;
+  if (typeof deleteOhsPuesto !== "function") {
+    throw new ClientError("deleteOhsPuesto no está definido en ohsServices", 500);
+  }
+
+  const deleted = await deleteOhsPuesto(item.codTipoPuestoOhs);
+
+  return {
+    action: "deleted",
+    jobId: item.jobId,
+    jobName: item.jobName,
+    subcategoryId: item.subcategoryId,
+    subcategoryName: item.subcategoryName,
+    codTipoPuesto: String(item.codTipoPuestoOhs),
+    data: deleted,
+  };
 };
 
 /* ==========================================================================
-   Relación real trabajador-centro desde Sesame
+   Relaciones reales trabajador-centro y trabajador-puesto
+   Regla central:
+   Cada vez que se actualiza un trabajador, se recalculan y envían juntos:
+   - datos actuales del trabajador
+   - centro real desde Sesame/Workplace/OHS por nombre
+   - puesto real desde Periods/Jobs
 ========================================================================== */
 
-/**
- * Obtiene las asignaciones reales de oficinas de un empleado en Sesame.
- */
+const buildOhsListaPuestosTrabajador = (codTipoPuesto) => {
+  if (!isValidOhsCode(codTipoPuesto)) return [];
+  return [Number(codTipoPuesto)];
+};
+
 const getSesameOfficeAssignationsForUser = async (user) => {
   if (!user?.userIdSesame) return [];
 
@@ -1006,316 +568,266 @@ const getSesameOfficeAssignationsForUser = async (user) => {
   return data?.data || [];
 };
 
-/**
- * Obtiene empleados asignados a una oficina real de Sesame.
- */
-const getSesameOfficeEmployeesForOhs = async ({ officeIdSesame, limit = 500, page = 1 }) => {
-  const data = await sesameService.listOfficeEmployees({
-    officeId: officeIdSesame,
-    limit,
-    page,
-  });
-
-  return (data?.data || [])
-    .map((item) => {
-      const employee = item?.employee || item;
-      if (!employee?.id) return null;
-
-      return {
-        employeeIdSesame: String(employee.id),
-        fullName: [employee.firstName, employee.lastName].filter(Boolean).join(" ").trim(),
-        email: employee.email || "",
-      };
-    })
-    .filter(Boolean);
-};
-
-/**
- * Resuelve el centro OHS real de un usuario desde su oficina principal en Sesame.
- */
-const resolveRealOhsCentroFromSesameUser = async (user) => {
-  const assignations = await getSesameOfficeAssignationsForUser(user);
-
-  if (!assignations.length) {
+const resolveOhsCentroFromWorkplaceByName = async (workplace) => {
+  if (!workplace?.name) {
     return {
-      workplace: null,
       codCentro: null,
-      reason: "El usuario no tiene oficinas asignadas en Sesame",
+      workplace: workplace || null,
+      reason: "El Workplace no tiene nombre",
     };
   }
 
-  const mainAssignation =
-    assignations.find((item) => item?.isMainOffice) ||
-    (assignations.length === 1 ? assignations[0] : null);
+  const ohsCentro = await findOhsCentroByName(workplace.name);
+  const codCentro = getCodCentroFromOhsCentro(ohsCentro);
 
-  if (!mainAssignation) {
+  if (!codCentro) {
     return {
-      workplace: null,
       codCentro: null,
-      reason: "El usuario tiene varias oficinas en Sesame y ninguna marcada como principal",
-    };
-  }
-
-  const officeIdSesame = mainAssignation?.office?.id || mainAssignation?.officeId || null;
-
-  if (!officeIdSesame) {
-    return {
-      workplace: null,
-      codCentro: null,
-      reason: "La asignación de Sesame no tiene officeId",
-    };
-  }
-
-  const workplace = await Workplace.findOne({
-    active: true,
-    officeIdSesame: String(officeIdSesame),
-  })
-    .select("_id name officeIdSesame codCentroOhs active")
-    .lean();
-
-  if (!workplace) {
-    return {
-      workplace: null,
-      codCentro: null,
-      officeIdSesame,
-      reason: "No existe Workplace local vinculado a esa oficina Sesame",
-    };
-  }
-
-  if (!isValidOhsCode(workplace.codCentroOhs)) {
-    return {
       workplace,
-      codCentro: null,
-      officeIdSesame,
-      reason: "El Workplace no tiene codCentroOhs válido",
+      reason: `No existe centro OHS con el nombre exacto "${workplace.name}"`,
     };
+  }
+
+  if (String(workplace.codCentroOhs || "") !== String(codCentro)) {
+    await Workplace.updateOne(
+      { _id: workplace._id },
+      { $set: { codCentroOhs: String(codCentro) } }
+    );
   }
 
   return {
-    workplace,
-    codCentro: Number(workplace.codCentroOhs),
-    officeIdSesame,
+    codCentro: Number(codCentro),
+    workplace: {
+      ...workplace,
+      codCentroOhs: String(codCentro),
+    },
+    ohsCentro,
     reason: null,
   };
 };
 
-/**
- * Sincroniza el centro real de un trabajador en OHS desde Sesame.
- */
-const syncOhsTrabajadorRealFromSesameUser = async (userId, { dryRun = false } = {}) => {
-  if (!userId) throw new ClientError("Falta userId", 400);
+const resolveOhsCentroRealFromUser = async (user) => {
+  const assignations = await getSesameOfficeAssignationsForUser(user);
 
-  let user = await User.findById(userId);
-  if (!user) throw new ClientError("Usuario no encontrado", 404);
+  const offices = assignations.map((item) => ({
+    officeIdSesame: item?.office?.id || item?.officeId || null,
+    officeName: item?.office?.name || item?.officeName || item?.name || "",
+    isMainOffice: Boolean(item?.isMainOffice),
+  }));
 
-  if (user.employmentStatus !== "activo") {
+  /*
+   * 1) Prioridad: oficina real de Sesame
+   */
+  if (assignations.length) {
+    const mainAssignation =
+      assignations.find((item) => item?.isMainOffice) ||
+      (assignations.length === 1 ? assignations[0] : null);
+
+    if (!mainAssignation) {
+      return {
+        codCentro: null,
+        workplace: null,
+        officeIdSesame: null,
+        offices,
+        source: "sesame",
+        reason: "El usuario tiene varias oficinas en Sesame y ninguna marcada como principal",
+      };
+    }
+
+    const officeIdSesame = mainAssignation?.office?.id || mainAssignation?.officeId || null;
+
+    if (!officeIdSesame) {
+      return {
+        codCentro: null,
+        workplace: null,
+        officeIdSesame: null,
+        offices,
+        source: "sesame",
+        reason: "La asignación de Sesame no tiene officeId",
+      };
+    }
+
+    const workplace = await Workplace.findOne({
+      active: true,
+      officeIdSesame: String(officeIdSesame),
+    })
+      .select("_id name officeIdSesame codCentroOhs active")
+      .lean();
+
+    if (!workplace) {
+      return {
+        codCentro: null,
+        workplace: null,
+        officeIdSesame,
+        offices,
+        source: "sesame",
+        reason: "No existe Workplace local vinculado a esa oficina Sesame",
+      };
+    }
+
+    const resolved = await resolveOhsCentroFromWorkplaceByName(workplace);
+
     return {
-      action: "skip-status",
-      userId: String(user._id),
-      status: user.employmentStatus,
-      reason: "Solo se sincroniza centro real en OHS para trabajadores activos",
+      ...resolved,
+      officeIdSesame,
+      offices,
+      source: "sesame",
     };
   }
 
-  if (!dryRun && !user.userIdOhs) {
-    await ensureOhsTrabajadorForUser(user._id);
-    user = await User.findById(user._id);
-  }
+  /*
+   * 2) Fallback: si NO tiene oficina Sesame,
+   * usar el centro/workplace del dispositivo del periodo activo.
+   */
+  const period = await getActivePeriodForUser(user._id);
 
-  if (!user.userIdOhs) {
+  if (!period) {
     return {
-      action: "skip-without-userIdOhs",
-      userId: String(user._id),
-      reason: "Usuario sin userIdOhs",
+      codCentro: null,
+      workplace: null,
+      officeIdSesame: null,
+      offices,
+      source: "period-device",
+      reason: "El usuario no tiene oficina Sesame ni periodo activo",
     };
   }
 
-  const resolved = await resolveRealOhsCentroFromSesameUser(user);
+  const dispositiveId =
+    period.dispositiveId?._id ||
+    period.dispositiveId ||
+    period.device ||
+    null;
 
-  if (!resolved.codCentro) {
+  if (!dispositiveId) {
     return {
-      action: "skip-without-real-center",
-      userId: String(user._id),
-      userIdOhs: String(user.userIdOhs),
-      reason: resolved.reason,
-      officeIdSesame: resolved.officeIdSesame || null,
-      workplace: resolved.workplace || null,
+      codCentro: null,
+      workplace: null,
+      officeIdSesame: null,
+      offices,
+      source: "period-device",
+      periodId: String(period._id),
+      reason: "El periodo activo no tiene dispositiveId ni device",
     };
   }
 
-  const payload = buildOhsTrabajadorFromUser(user, {
-    codCentro: resolved.codCentro,
-  });
+  let workplace = null;
 
-  if (dryRun) {
-    return {
-      action: "would-update-real-center",
-      userId: String(user._id),
-      userIdOhs: String(user.userIdOhs),
-      codCentro: String(resolved.codCentro),
-      workplaceId: String(resolved.workplace._id),
-      workplaceName: resolved.workplace.name || "",
-      payload,
-    };
+  /*
+   * Caso A:
+   * El dispositivo viene populado y tiene workplaces[].
+   */
+  const dispositiveWorkplaces = Array.isArray(period.dispositiveId?.workplaces)
+    ? period.dispositiveId.workplaces
+    : [];
+
+  if (dispositiveWorkplaces.length) {
+    workplace = await Workplace.findOne({
+      _id: { $in: dispositiveWorkplaces },
+      active: true,
+    })
+      .select("_id name officeIdSesame codCentroOhs active")
+      .lean();
   }
 
-  const updated = await updateOhsTrabajador(user.userIdOhs, payload);
+  /*
+   * Caso B:
+   * El dispositivo tiene workplaceId o workplace directo.
+   */
+  if (!workplace) {
+    const workplaceId =
+      period.dispositiveId?.workplaceId ||
+      period.dispositiveId?.workplace ||
+      null;
 
-  return {
-    action: "updated-real-center",
-    userId: String(user._id),
-    userIdOhs: String(user.userIdOhs),
-    codCentro: String(resolved.codCentro),
-    workplaceId: String(resolved.workplace._id),
-    workplaceName: resolved.workplace.name || "",
-    payload,
-    data: updated,
-  };
-};
-
-/**
- * Sincroniza todos los centros reales de trabajadores desde las oficinas Sesame.
- */
-const syncActiveUsersOhsCentersFromSesameLocal = async ({ dryRun = true, limit = 0 } = {}) => {
-  let workplacesQuery = Workplace.find({
-    active: true,
-    officeIdSesame: { $exists: true, $nin: [null, ""] },
-    codCentroOhs: { $exists: true, $nin: [null, "", "-1", -1] },
-  })
-    .select("_id name active officeIdSesame codCentroOhs")
-    .sort({ name: 1 });
-
-  if (limit > 0) workplacesQuery = workplacesQuery.limit(limit);
-
-  const workplaces = await workplacesQuery.lean();
-
-  const results = {
-    dryRun,
-    totalWorkplaces: workplaces.length,
-    updated: [],
-    skipped: [],
-    errors: [],
-  };
-
-  for (const workplace of workplaces) {
-    try {
-      const codCentro = Number(workplace.codCentroOhs);
-
-      if (!isValidOhsCode(codCentro)) {
-        results.skipped.push({
-          workplaceId: String(workplace._id),
-          workplaceName: workplace.name || "",
-          reason: "codCentroOhs no válido",
-        });
-        continue;
-      }
-
-      const sesameEmployees = await getSesameOfficeEmployeesForOhs({
-        officeIdSesame: workplace.officeIdSesame,
-      });
-
-      if (!sesameEmployees.length) {
-        results.skipped.push({
-          workplaceId: String(workplace._id),
-          workplaceName: workplace.name || "",
-          officeIdSesame: workplace.officeIdSesame,
-          codCentro: String(codCentro),
-          reason: "La oficina Sesame no tiene empleados asignados",
-        });
-        continue;
-      }
-
-      const users = await User.find({
-        userIdSesame: {
-          $in: sesameEmployees.map((employee) => employee.employeeIdSesame),
-        },
+    if (workplaceId) {
+      workplace = await Workplace.findOne({
+        _id: workplaceId,
+        active: true,
       })
-        .select("_id firstName lastName dni birthday email gender userIdSesame userIdOhs employmentStatus")
+        .select("_id name officeIdSesame codCentroOhs active")
         .lean();
-
-      const usersBySesameId = {};
-      users.forEach((user) => {
-        usersBySesameId[String(user.userIdSesame)] = user;
-      });
-
-      for (const sesameEmployee of sesameEmployees) {
-        const user = usersBySesameId[String(sesameEmployee.employeeIdSesame)] || null;
-
-        if (!user) {
-          results.skipped.push({
-            workplaceId: String(workplace._id),
-            workplaceName: workplace.name || "",
-            employeeIdSesame: sesameEmployee.employeeIdSesame,
-            employeeName: sesameEmployee.fullName,
-            employeeEmail: sesameEmployee.email,
-            reason: "Empleado de Sesame no encontrado en Mongo por userIdSesame",
-          });
-          continue;
-        }
-
-        if (!user.userIdOhs) {
-          results.skipped.push({
-            workplaceId: String(workplace._id),
-            workplaceName: workplace.name || "",
-            userId: String(user._id),
-            userIdSesame: user.userIdSesame,
-            name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
-            dni: user.dni || "",
-            reason: "Usuario local sin userIdOhs",
-          });
-          continue;
-        }
-
-        const payload = buildOhsTrabajadorFromUser(user, { codCentro });
-
-        if (!dryRun) {
-          const updated = await updateOhsTrabajador(user.userIdOhs, payload);
-
-          results.updated.push({
-            workplaceId: String(workplace._id),
-            workplaceName: workplace.name || "",
-            codCentro: String(codCentro),
-            userId: String(user._id),
-            userIdOhs: String(user.userIdOhs),
-            dni: user.dni || "",
-            data: updated,
-          });
-        } else {
-          results.updated.push({
-            workplaceId: String(workplace._id),
-            workplaceName: workplace.name || "",
-            codCentro: String(codCentro),
-            userId: String(user._id),
-            userIdOhs: String(user.userIdOhs),
-            dni: user.dni || "",
-            dryRun: true,
-          });
-        }
-      }
-    } catch (error) {
-      results.errors.push({
-        workplaceId: String(workplace._id),
-        workplaceName: workplace.name || "",
-        officeIdSesame: workplace.officeIdSesame || null,
-        codCentroOhs: workplace.codCentroOhs || null,
-        message: error.message,
-        statusCode: error.statusCode,
-        body: error.body,
-        url: error.url,
-      });
     }
   }
 
-  return results;
+  /*
+   * Caso C:
+   * Si el modelo Workplace tuviera relación directa con dispositivo.
+   * Lo dejamos como fallback por si existe en tu colección.
+   */
+  if (!workplace) {
+    workplace = await Workplace.findOne({
+      active: true,
+      $or: [
+        { dispositiveId },
+        { dispositive: dispositiveId },
+        { device: dispositiveId },
+      ],
+    })
+      .select("_id name officeIdSesame codCentroOhs active")
+      .lean();
+  }
+
+  /*
+   * Caso D:
+   * Buscar el dispositivo completo por si populate no trajo workplaces.
+   */
+  if (!workplace) {
+    const dispositive = await Dispositive.findById(dispositiveId)
+      .select("_id name workplaces workplaceId workplace")
+      .lean();
+
+    const workplaceIds = Array.isArray(dispositive?.workplaces)
+      ? dispositive.workplaces
+      : [];
+
+    const directWorkplaceId = dispositive?.workplaceId || dispositive?.workplace || null;
+
+    if (directWorkplaceId) {
+      workplace = await Workplace.findOne({
+        _id: directWorkplaceId,
+        active: true,
+      })
+        .select("_id name officeIdSesame codCentroOhs active")
+        .lean();
+    }
+
+    if (!workplace && workplaceIds.length) {
+      workplace = await Workplace.findOne({
+        _id: { $in: workplaceIds },
+        active: true,
+      })
+        .select("_id name officeIdSesame codCentroOhs active")
+        .lean();
+    }
+  }
+
+  if (!workplace) {
+    return {
+      codCentro: null,
+      workplace: null,
+      officeIdSesame: null,
+      offices,
+      source: "period-device",
+      periodId: String(period._id),
+      dispositiveId: String(dispositiveId),
+      dispositiveName: period.dispositiveId?.name || "",
+      reason: "No se ha encontrado Workplace activo vinculado al dispositivo del periodo activo",
+    };
+  }
+
+  const resolved = await resolveOhsCentroFromWorkplaceByName(workplace);
+
+  return {
+    ...resolved,
+    officeIdSesame: workplace.officeIdSesame || null,
+    offices,
+    source: "period-device",
+    periodId: String(period._id),
+    dispositiveId: String(dispositiveId),
+    dispositiveName: period.dispositiveId?.name || "",
+  };
 };
 
-/* ==========================================================================
-   Relación real trabajador-puesto desde Periods + Jobs
-========================================================================== */
-
-/**
- * Obtiene el periodo activo actual del trabajador.
- */
 const getActivePeriodForUser = async (userId) => {
   return Periods.findOne({
     idUser: userId,
@@ -1326,15 +838,14 @@ const getActivePeriodForUser = async (userId) => {
     .lean();
 };
 
-/**
- * Resuelve el puesto real OHS del trabajador desde Periods + Jobs.
- */
 const resolveOhsPuestoRealFromUser = async (userId) => {
   const period = await getActivePeriodForUser(userId);
 
   if (!period) {
     return {
       codTipoPuesto: null,
+      period: null,
+      puesto: null,
       reason: "El trabajador no tiene periodo activo",
     };
   }
@@ -1344,8 +855,8 @@ const resolveOhsPuestoRealFromUser = async (userId) => {
   if (!puesto) {
     return {
       codTipoPuesto: null,
-      periodId: String(period._id),
-      position: String(period.position),
+      period,
+      puesto: null,
       reason: "La posición del periodo activo no corresponde a ninguna subcategoría de Jobs",
     };
   }
@@ -1353,7 +864,7 @@ const resolveOhsPuestoRealFromUser = async (userId) => {
   if (!isValidOhsCode(puesto.codTipoPuestoOhs)) {
     return {
       codTipoPuesto: null,
-      periodId: String(period._id),
+      period,
       puesto,
       reason: "La subcategoría del puesto no tiene codTipoPuestoOhs",
     };
@@ -1361,90 +872,860 @@ const resolveOhsPuestoRealFromUser = async (userId) => {
 
   return {
     codTipoPuesto: Number(puesto.codTipoPuestoOhs),
-    periodId: String(period._id),
+    period,
     puesto,
     reason: null,
   };
 };
 
-/**
- * Sincroniza en OHS el puesto real del trabajador desde su periodo activo.
- */
-const syncOhsTrabajadorPuestoReal = async (userId, { dryRun = false } = {}) => {
-  if (!userId) throw new ClientError("Falta userId", 400);
+const resolveOhsTrabajadorRelationsPayload = async (user) => {
+  const result = {
+    payload: {},
+    centro: null,
+    puesto: null,
+    warnings: [],
+  };
 
-  let user = await User.findById(userId);
+const resolvedCentro = await resolveOhsCentroRealFromUser(user);
+
+if (resolvedCentro.codCentro) {
+  result.payload.codCentro = Number(resolvedCentro.codCentro);
+
+  result.centro = {
+    codCentro: String(resolvedCentro.codCentro),
+    workplaceId: resolvedCentro.workplace?._id ? String(resolvedCentro.workplace._id) : null,
+    workplaceName: resolvedCentro.workplace?.name || "",
+    officeIdSesame: resolvedCentro.officeIdSesame || null,
+    source: resolvedCentro.source || null,
+    periodId: resolvedCentro.periodId || null,
+    dispositiveId: resolvedCentro.dispositiveId || null,
+    dispositiveName: resolvedCentro.dispositiveName || "",
+  };
+} else {
+  result.warnings.push({
+    type: "center-not-resolved",
+    reason: resolvedCentro.reason,
+    officeIdSesame: resolvedCentro.officeIdSesame || null,
+    offices: resolvedCentro.offices || [],
+    source: resolvedCentro.source || null,
+    periodId: resolvedCentro.periodId || null,
+    dispositiveId: resolvedCentro.dispositiveId || null,
+    dispositiveName: resolvedCentro.dispositiveName || "",
+  });
+}
+
+  const resolvedPuesto = await resolveOhsPuestoRealFromUser(user._id);
+
+  if (resolvedPuesto.codTipoPuesto) {
+    result.payload.listaPuestosTrabajador = buildOhsListaPuestosTrabajador(
+      resolvedPuesto.codTipoPuesto
+    );
+
+    result.puesto = {
+      codTipoPuesto: String(resolvedPuesto.codTipoPuesto),
+      periodId: resolvedPuesto.period?._id ? String(resolvedPuesto.period._id) : null,
+      jobId: resolvedPuesto.puesto?.jobId || null,
+      jobName: resolvedPuesto.puesto?.jobName || "",
+      subcategoryId: resolvedPuesto.puesto?.subcategoryId || null,
+      subcategoryName: resolvedPuesto.puesto?.subcategoryName || "",
+    };
+  } else {
+    result.warnings.push({
+      type: "puesto-not-resolved",
+      reason: resolvedPuesto.reason,
+      periodId: resolvedPuesto.period?._id ? String(resolvedPuesto.period._id) : null,
+    });
+  }
+
+  return result;
+};
+
+/* ==========================================================================
+   Trabajadores OHS
+========================================================================== */
+
+const findOhsTrabajadorByUserIncludingDeleted = async (user) => {
+  if (!user?.dni) return null;
+
+  const dni = normalizeDniOhs(user.dni);
+
+  const data = await getOhsTrabajadorByDniIncludingDeleted(dni);
+  const items = getOhsTrabajadoresItems(data);
+
+  const matches = items.filter((item) =>
+    normalizeDniOhs(item.codIdentificador) === dni
+  );
+
+  if (!matches.length) return null;
+
+  if (matches.length > 1) {
+    throw new ClientError(`Hay más de un trabajador en OHS con el DNI ${user.dni}`, 409);
+  }
+
+  return matches[0];
+};
+
+const buildOhsTrabajadorPutPayload = ({
+  user,
+  currentOhs = {},
+  relationsPayload = {},
+  extraPayload = {},
+}) => {
   if (!user) throw new ClientError("Usuario no encontrado", 404);
+  if (!user.firstName) throw new ClientError("El usuario no tiene nombre", 400);
+  if (!user.dni) throw new ClientError("El usuario no tiene DNI/NIE", 400);
 
-  if (!dryRun && !user.userIdOhs) {
-    await ensureOhsTrabajadorForUser(user._id);
-    user = await User.findById(userId);
-  }
+  const { apellido1Trabajador, apellido2Trabajador } = splitLastName(user.lastName);
 
-  if (!user.userIdOhs) {
+  const payload = cleanUndefined({
+  ...currentOhs,
+
+  codTrabajador: currentOhs.codTrabajador
+    ? Number(currentOhs.codTrabajador)
+    : undefined,
+
+  nomTrabajador: String(user.firstName || "").trim(),
+  apellido1Trabajador,
+  apellido2Trabajador,
+  codIdentificador: normalizeDniOhs(user.dni),
+  fecNacimiento: user.birthday ? formatDateOhs(user.birthday) : currentOhs.fecNacimiento,
+  desEmail: user.email ? String(user.email).trim().toLowerCase() : currentOhs.desEmail,
+  indSexo: mapGenderToOhs(user.gender),
+
+  ...relationsPayload,
+  ...extraPayload,
+});
+
+if (payload.listaPuestosTrabajador === null) {
+  delete payload.listaPuestosTrabajador;
+}
+
+return payload;
+};
+
+const findCurrentOhsTrabajadorForUser = async (user) => {
+  if (!user?.dni) {
     return {
-      action: "skip-without-userIdOhs",
-      userId: String(user._id),
-      reason: "Usuario sin userIdOhs",
+      currentOhs: null,
+      codTrabajador: null,
     };
   }
 
-  const resolved = await resolveOhsPuestoRealFromUser(user._id);
+  const currentOhs = await findOhsTrabajadorByUserIncludingDeleted(user);
+  const codTrabajador = currentOhs?.codTrabajador || null;
 
-  if (!resolved.codTipoPuesto) {
-    return {
-      action: "skip-without-puesto",
+  if (
+    user.userIdOhs &&
+    codTrabajador &&
+    String(user.userIdOhs) !== String(codTrabajador)
+  ) {
+    console.log("[OHS USER ID DESCUADRADO]", {
       userId: String(user._id),
-      userIdOhs: String(user.userIdOhs),
-      reason: resolved.reason,
-      periodId: resolved.periodId || null,
-      puesto: resolved.puesto || null,
-    };
+      dni: user.dni,
+      userIdOhsLocal: user.userIdOhs,
+      codTrabajadorOhs: codTrabajador,
+    });
   }
-
-  const puestosTrabajador = buildOhsPuestosTrabajador(resolved.codTipoPuesto);
-  const payload = buildOhsTrabajadorFromUser(user, { puestosTrabajador });
-
-  if (dryRun) {
-    return {
-      action: "would-update-puesto-real",
-      userId: String(user._id),
-      userIdOhs: String(user.userIdOhs),
-      periodId: resolved.periodId,
-      puesto: resolved.puesto,
-      puestosTrabajador,
-      payload,
-    };
-  }
-
-  const updated = await updateOhsTrabajador(user.userIdOhs, payload);
 
   return {
-    action: "updated-puesto-real",
-    userId: String(user._id),
-    userIdOhs: String(user.userIdOhs),
-    periodId: resolved.periodId,
-    puesto: resolved.puesto,
-    puestosTrabajador,
-    payload,
-    data: updated,
+    currentOhs,
+    codTrabajador: isValidOhsCode(codTrabajador) ? Number(codTrabajador) : null,
   };
 };
 
 /**
- * Sincroniza en OHS el puesto real de todos los trabajadores activos.
+ * FUNCIÓN CENTRAL DE TRABAJADORES.
+ *
+ * Cada vez que se actualiza un usuario en OHS:
+ * - toma los datos actuales antiguos de OHS
+ * - actualiza nombre, DNI, email, fecha, sexo desde Mongo
+ * - busca el centro real por Sesame -> Workplace -> nomCentro en OHS
+ * - busca el puesto real por Periods -> Jobs.subcategories
+ * - manda TODO junto en un único PUT completo
  */
-const syncActiveUsersOhsPuestosFromPeriodsLocal = async ({ dryRun = true, limit = 0 } = {}) => {
-  let usersQuery = User.find({
+const syncOhsTrabajadorForUser = async (
+  userId,
+  extraPayload = {},
+  { createIfMissing = true, dryRun = false } = {}
+) => {
+  if (!userId) throw new ClientError("Falta userId", 400);
+
+const user = await User.findById(userId).lean();
+if (!user) throw new ClientError("Usuario no encontrado", 404);
+
+if (user.apafa === true) {
+  return {
+    action: "skip-apafa",
+    userId: String(user._id),
+    dni: user.dni || "",
+    reason: "Usuario APAFA, no se sincroniza con OHS",
+  };
+}
+
+  const { currentOhs, codTrabajador } = await findCurrentOhsTrabajadorForUser(user);
+  if (!codTrabajador && !createIfMissing) {
+    return {
+      action: "skip-without-ohs-worker",
+      userId: String(user._id),
+      dni: user.dni || "",
+      reason: "Trabajador no encontrado en OHS",
+    };
+  }
+
+const activeLeave = await hasActiveLeaveForUser(user._id);
+const isReactivation = extraPayload?.fecBaja === null;
+const shouldResolveRelations = !activeLeave || isReactivation;
+
+let relations;
+
+if (shouldResolveRelations) {
+  relations = await resolveOhsTrabajadorRelationsPayload(user);
+} else {
+  const resolvedPuesto = await resolveOhsPuestoRealFromUser(user._id);
+
+  if (!resolvedPuesto.codTipoPuesto) {
+    return {
+      action: "skip-active-leave-without-position",
+      userId: String(user._id),
+      dni: user.dni || "",
+      codTrabajador: codTrabajador ? String(codTrabajador) : null,
+      reason: "Usuario con baja activa: no se actualiza OHS porque no se puede reenviar listaPuestosTrabajador sin borrar el puesto",
+      warning: resolvedPuesto.reason,
+    };
+  }
+
+  relations = {
+    payload: {
+      codCentro: currentOhs.codCentro,
+      listaPuestosTrabajador: [Number(resolvedPuesto.codTipoPuesto)],
+    },
+    centro: {
+      codCentro: currentOhs.codCentro || null,
+      workplaceId: null,
+      workplaceName: currentOhs.desCentro || "",
+      source: "current-ohs",
+    },
+    puesto: {
+      codTipoPuesto: String(resolvedPuesto.codTipoPuesto),
+      periodId: resolvedPuesto.period?._id ? String(resolvedPuesto.period._id) : null,
+      jobId: resolvedPuesto.puesto?.jobId || null,
+      jobName: resolvedPuesto.puesto?.jobName || "",
+      subcategoryId: resolvedPuesto.puesto?.subcategoryId || null,
+      subcategoryName: resolvedPuesto.puesto?.subcategoryName || "",
+      source: "period-preserved-active-leave",
+    },
+    warnings: [
+      {
+        type: "relations-preserved-active-leave",
+        reason: "Usuario con baja activa: se conserva centro actual de OHS y se reenvía el puesto desde el periodo activo",
+      },
+    ],
+  };
+}
+
+const payload = buildOhsTrabajadorPutPayload({
+  user,
+  currentOhs: currentOhs || {},
+  relationsPayload: relations.payload,
+  extraPayload: {
+    codTrabajador: codTrabajador ? Number(codTrabajador) : undefined,
+    ...extraPayload,
+  },
+});
+
+  if (dryRun) {
+    return {
+      action: codTrabajador ? "would-update" : "would-create",
+      userId: String(user._id),
+      dni: user.dni || "",
+      codTrabajador: codTrabajador ? String(codTrabajador) : null,
+      payload,
+      centro: relations.centro,
+      puesto: relations.puesto,
+      warnings: relations.warnings,
+    };
+  }
+
+  if (!codTrabajador) {
+    const created = await createOhsTrabajador(payload);
+    const createdId = getCodTrabajadorFromOhsResponse(created);
+
+    if (!createdId) {
+      const error = new ClientError(
+        `OHS no devolvió codTrabajador válido para ${user.firstName} ${user.lastName || ""}`,
+        500
+      );
+      error.payload = payload;
+      error.data = created;
+      throw error;
+    }
+
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { userIdOhs: String(createdId) } }
+    );
+
+    return {
+      action: "created",
+      userId: String(user._id),
+      dni: user.dni || "",
+      codTrabajador: String(createdId),
+      payload,
+      centro: relations.centro,
+      puesto: relations.puesto,
+      warnings: relations.warnings,
+      data: created,
+    };
+  }
+
+  const updated = await updateOhsTrabajador(codTrabajador, payload);
+
+  if (!user.userIdOhs || String(user.userIdOhs) !== String(codTrabajador)) {
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { userIdOhs: String(codTrabajador) } }
+    );
+  }
+
+  return {
+    action: currentOhs?.fecBaja && payload.fecBaja === null ? "reactivated" : "updated",
+    userId: String(user._id),
+    dni: user.dni || "",
+    codTrabajador: String(codTrabajador),
+    payload,
+    centro: relations.centro,
+    puesto: relations.puesto,
+    warnings: relations.warnings,
+    data: updated,
+  };
+};
+
+const bajaOhsTrabajadorForUser = async (userId, fechaBaja = new Date()) => {
+  return syncOhsTrabajadorForUser(
+    userId,
+    { fecBaja: formatDateOhs(fechaBaja) || new Date().toISOString() },
+    { createIfMissing: false }
+  );
+};
+
+const reactivarOhsTrabajadorForUser = async (userId, extraPayload = {}) => {
+  return syncOhsTrabajadorForUser(
+    userId,
+    { fecBaja: null, ...extraPayload },
+    { createIfMissing: true }
+  );
+};
+
+/**
+ * LOCAL / MANTENIMIENTO.
+ * Corrige todos los trabajadores activos en OHS.
+ * Usa syncOhsTrabajadorForUser(), así que también manda centro + puesto juntos.
+ */
+const syncAllOhsTrabajadoresActivosLocal = async ({
+  dryRun = true,
+  limit = 0,
+  verbose = false,
+} = {}) => {
+  let query = User.find({
     employmentStatus: "activo",
-    userIdOhs: { $exists: true, $nin: [null, ""] },
+    dni: { $exists: true, $ne: "" },
+    firstName: { $exists: true, $ne: "" },
   })
-    .select("_id firstName lastName dni email userIdOhs employmentStatus")
+    .select("_id firstName lastName dni email gender birthday userIdOhs userIdSesame employmentStatus")
     .sort({ lastName: 1, firstName: 1 });
 
-  if (limit > 0) usersQuery = usersQuery.limit(limit);
+  if (limit > 0) query = query.limit(limit);
 
-  const users = await usersQuery;
+  const users = await query;
+
+  const results = {
+    dryRun,
+    total: users.length,
+    updated: [],
+    created: [],
+    skipped: [],
+    errors: [],
+  };
+
+  for (const user of users) {
+    try {
+      if (verbose) {
+        console.log("");
+        console.log("====================================================");
+        console.log(`[OHS TRABAJADOR] ${user.dni || ""} - ${user.firstName || ""} ${user.lastName || ""}`);
+        console.log("====================================================");
+      }
+
+      const result = await syncOhsTrabajadorForUser(user._id, {}, { dryRun });
+
+      if (result.action?.startsWith("skip")) {
+        results.skipped.push(result);
+        continue;
+      }
+
+      const list = result.action === "created" || result.action === "would-create"
+        ? "created"
+        : "updated";
+
+      results[list].push({
+        userId: String(user._id),
+        userIdOhs: result.codTrabajador ? String(result.codTrabajador) : null,
+        dni: user.dni || "",
+        name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+        userIdSesame: user.userIdSesame || null,
+        action: result.action,
+        codCentro: result.payload?.codCentro || null,
+        listaPuestosTrabajador: result.payload?.listaPuestosTrabajador || null,
+        centro: result.centro,
+        puesto: result.puesto,
+        warnings: result.warnings,
+        payload: result.payload,
+        data: result.data,
+      });
+
+      if (verbose) {
+        console.log("[OHS TRABAJADOR] Resultado:");
+        console.dir({
+          action: result.action,
+          userId: String(user._id),
+          userIdOhs: result.codTrabajador ? String(result.codTrabajador) : null,
+          dni: user.dni || "",
+          codCentro: result.payload?.codCentro || null,
+          listaPuestosTrabajador: result.payload?.listaPuestosTrabajador || null,
+          centro: result.centro,
+          puesto: result.puesto,
+          warnings: result.warnings,
+        }, { depth: null });
+      }
+    } catch (error) {
+      results.errors.push({
+        userId: String(user._id),
+        userIdOhs: user.userIdOhs ? String(user.userIdOhs) : null,
+        dni: user.dni || "",
+        name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+        userIdSesame: user.userIdSesame || null,
+        message: error.message,
+        statusCode: error.statusCode,
+        body: error.body,
+        url: error.url,
+        payload: error.payload || null,
+        data: error.data || null,
+      });
+
+      if (verbose) {
+        console.log("[OHS TRABAJADOR] ERROR:");
+        console.dir({
+          userId: String(user._id),
+          dni: user.dni || "",
+          name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+          message: error.message,
+          body: error.body,
+          payload: error.payload || null,
+        }, { depth: null });
+      }
+    }
+  }
+
+  return results;
+};
+/* ==========================================================================
+   Exports limpios para otros controladores
+========================================================================== */
+/**
+ * LOCAL / MANTENIMIENTO
+ *
+ * Busca trabajadores activos con periodo activo vigente,
+ * pero sin oficina/centro asignado en Sesame, y los actualiza en OHS.
+ *
+ * Usa syncOhsTrabajadorForUser(), por tanto:
+ * - recalcula centro real
+ * - como no hay oficina Sesame, debe usar el centro del dispositivo del periodo activo
+ * - recalcula puesto real desde el periodo activo
+ * - manda todo junto en un único PUT completo
+ */
+// const syncOhsTrabajadoresActivosSinCentroSesameLocal = async ({
+//   dryRun = true,
+//   limit = 0,
+//   verbose = false,
+// } = {}) => {
+//   let usersQuery = User.find({
+//     employmentStatus: "activo",
+//     dni: { $exists: true, $ne: "" },
+//     firstName: { $exists: true, $ne: "" },
+//   })
+//     .select("_id firstName lastName dni email gender birthday userIdOhs userIdSesame employmentStatus")
+//     .sort({ lastName: 1, firstName: 1 });
+
+//   if (limit > 0) usersQuery = usersQuery.limit(limit);
+
+//   const users = await usersQuery;
+
+//   const results = {
+//     dryRun,
+//     totalChecked: users.length,
+//     totalMatched: 0,
+//     updated: [],
+//     created: [],
+//     skipped: [],
+//     errors: [],
+//   };
+
+//   for (const user of users) {
+//     try {
+//       if (verbose) {
+//         console.log("");
+//         console.log("====================================================");
+//         console.log(`[OHS SIN CENTRO SESAME] ${user.dni || ""} - ${user.firstName || ""} ${user.lastName || ""}`);
+//         console.log("====================================================");
+//       }
+
+//       const period = await getActivePeriodForUser(user._id);
+
+//       if (!period) {
+//         results.skipped.push({
+//           userId: String(user._id),
+//           userIdOhs: user.userIdOhs ? String(user.userIdOhs) : null,
+//           dni: user.dni || "",
+//           name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+//           reason: "Usuario activo sin periodo activo vigente",
+//         });
+//         continue;
+//       }
+
+//       let assignations = [];
+
+//       if (user.userIdSesame) {
+//         assignations = await getSesameOfficeAssignationsForUser(user);
+//       }
+
+//       if (assignations.length > 0) {
+//         results.skipped.push({
+//           userId: String(user._id),
+//           userIdOhs: user.userIdOhs ? String(user.userIdOhs) : null,
+//           dni: user.dni || "",
+//           name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+//           userIdSesame: user.userIdSesame || null,
+//           periodId: String(period._id),
+//           reason: "El usuario sí tiene oficina/centro asignado en Sesame",
+//           sesameOffices: assignations.map((item) => ({
+//             officeIdSesame: item?.office?.id || item?.officeId || null,
+//             officeName: item?.office?.name || item?.officeName || item?.name || "",
+//             isMainOffice: Boolean(item?.isMainOffice),
+//           })),
+//         });
+//         continue;
+//       }
+
+//       results.totalMatched += 1;
+
+//       if (dryRun) {
+//         const preview = await syncOhsTrabajadorForUser(user._id, {}, { dryRun: true });
+
+//         results.updated.push({
+//           userId: String(user._id),
+//           userIdOhs: user.userIdOhs ? String(user.userIdOhs) : null,
+//           dni: user.dni || "",
+//           name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+//           userIdSesame: user.userIdSesame || null,
+//           periodId: String(period._id),
+//           action: preview.action,
+//           codCentro: preview.payload?.codCentro || null,
+//           listaPuestosTrabajador: preview.payload?.listaPuestosTrabajador || null,
+//           centro: preview.centro,
+//           puesto: preview.puesto,
+//           warnings: preview.warnings,
+//           payload: preview.payload,
+//         });
+
+//         if (verbose) {
+//           console.log("[OHS SIN CENTRO SESAME] DRY RUN:");
+//           console.dir({
+//             action: preview.action,
+//             userId: String(user._id),
+//             dni: user.dni || "",
+//             periodId: String(period._id),
+//             codCentro: preview.payload?.codCentro || null,
+//             listaPuestosTrabajador: preview.payload?.listaPuestosTrabajador || null,
+//             centro: preview.centro,
+//             puesto: preview.puesto,
+//             warnings: preview.warnings,
+//           }, { depth: null });
+//         }
+
+//         continue;
+//       }
+
+//       const result = await syncOhsTrabajadorForUser(user._id);
+
+//       const list = result.action === "created" ? "created" : "updated";
+
+//       results[list].push({
+//         userId: String(user._id),
+//         userIdOhs: result.codTrabajador ? String(result.codTrabajador) : null,
+//         dni: user.dni || "",
+//         name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+//         userIdSesame: user.userIdSesame || null,
+//         periodId: String(period._id),
+//         action: result.action,
+//         codCentro: result.payload?.codCentro || null,
+//         listaPuestosTrabajador: result.payload?.listaPuestosTrabajador || null,
+//         centro: result.centro,
+//         puesto: result.puesto,
+//         warnings: result.warnings,
+//         payload: result.payload,
+//         data: result.data,
+//       });
+
+//       if (verbose) {
+//         console.log("[OHS SIN CENTRO SESAME] Resultado:");
+//         console.dir({
+//           action: result.action,
+//           userId: String(user._id),
+//           userIdOhs: result.codTrabajador ? String(result.codTrabajador) : null,
+//           dni: user.dni || "",
+//           periodId: String(period._id),
+//           codCentro: result.payload?.codCentro || null,
+//           listaPuestosTrabajador: result.payload?.listaPuestosTrabajador || null,
+//           centro: result.centro,
+//           puesto: result.puesto,
+//           warnings: result.warnings,
+//         }, { depth: null });
+//       }
+//     } catch (error) {
+//       results.errors.push({
+//         userId: String(user._id),
+//         userIdOhs: user.userIdOhs ? String(user.userIdOhs) : null,
+//         dni: user.dni || "",
+//         name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+//         userIdSesame: user.userIdSesame || null,
+//         message: error.message,
+//         statusCode: error.statusCode,
+//         body: error.body,
+//         url: error.url,
+//         payload: error.payload || null,
+//         data: error.data || null,
+//       });
+
+//       if (verbose) {
+//         console.log("[OHS SIN CENTRO SESAME] ERROR:");
+//         console.dir({
+//           userId: String(user._id),
+//           dni: user.dni || "",
+//           name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+//           message: error.message,
+//           body: error.body,
+//           payload: error.payload || null,
+//         }, { depth: null });
+//       }
+//     }
+//   }
+
+//   return results;
+// };
+
+/**
+ * LOCAL / MANTENIMIENTO
+ *
+ * Elimina de OHS todos los trabajadores que en Mongo son APAFA.
+ *
+ * Regla:
+ * - APAFA no debe existir en OHS.
+ * - Si existe en OHS, se elimina con DELETE.
+ * - Después se limpia userIdOhs en Mongo.
+ */
+const deleteAllOhsTrabajadoresApafaLocal = async ({
+  dryRun = true,
+  limit = 0,
+  verbose = false,
+} = {}) => {
+  let query = User.find({
+    apafa: true,
+    dni: { $exists: true, $ne: "" },
+  })
+    .select("_id firstName lastName dni email userIdOhs apafa employmentStatus")
+    .sort({ lastName: 1, firstName: 1 });
+
+  if (limit > 0) query = query.limit(limit);
+
+  const users = await query;
+
+  const results = {
+    dryRun,
+    total: users.length,
+    deleted: [],
+    skipped: [],
+    errors: [],
+  };
+
+  for (const user of users) {
+    try {
+      if (verbose) {
+        console.log("");
+        console.log("====================================================");
+        console.log(`[OHS APAFA DELETE] ${user.dni || ""} - ${user.firstName || ""} ${user.lastName || ""}`);
+        console.log("====================================================");
+      }
+
+      let currentOhs = null;
+      let codTrabajador = user.userIdOhs || null;
+
+      if (codTrabajador && isValidOhsCode(codTrabajador)) {
+        const data = await getOhsTrabajadorByCodIncludingDeleted(Number(codTrabajador));
+        currentOhs = getOhsTrabajadoresItems(data)?.[0] || null;
+      }
+
+      if (!currentOhs) {
+        const data = await getOhsTrabajadorByDniIncludingDeleted(normalizeDniOhs(user.dni));
+        const items = getOhsTrabajadoresItems(data);
+
+        if (items.length > 1) {
+          throw new ClientError(`Hay más de un trabajador en OHS con el DNI ${user.dni}`, 409);
+        }
+
+        currentOhs = items[0] || null;
+        codTrabajador = currentOhs?.codTrabajador || currentOhs?.CodTrabajador || null;
+      }
+
+      if (!isValidOhsCode(codTrabajador)) {
+        if (user.userIdOhs) {
+          if (!dryRun) {
+            await User.updateOne(
+              { _id: user._id },
+              { $unset: { userIdOhs: "" } }
+            );
+          }
+
+          results.skipped.push({
+            userId: String(user._id),
+            dni: user.dni || "",
+            name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+            userIdOhs: user.userIdOhs ? String(user.userIdOhs) : null,
+            reason: "No se encontró trabajador en OHS, se limpia userIdOhs local",
+            dryRun,
+          });
+
+          continue;
+        }
+
+        results.skipped.push({
+          userId: String(user._id),
+          dni: user.dni || "",
+          name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+          reason: "No existe en OHS",
+        });
+
+        continue;
+      }
+
+      if (dryRun) {
+        results.deleted.push({
+          userId: String(user._id),
+          dni: user.dni || "",
+          name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+          codTrabajador: String(codTrabajador),
+          userIdOhs: user.userIdOhs ? String(user.userIdOhs) : null,
+          action: "would-delete-apafa-from-ohs",
+          currentOhs: {
+            codTrabajador: currentOhs?.codTrabajador || currentOhs?.CodTrabajador || null,
+            codIdentificador: currentOhs?.codIdentificador || currentOhs?.CodIdentificador || null,
+            nomTrabajador: currentOhs?.nomTrabajador || currentOhs?.NomTrabajador || null,
+            apellido1Trabajador: currentOhs?.apellido1Trabajador || currentOhs?.Apellido1Trabajador || null,
+            apellido2Trabajador: currentOhs?.apellido2Trabajador || currentOhs?.Apellido2Trabajador || null,
+            fecBaja: currentOhs?.fecBaja || currentOhs?.FecBaja || null,
+          },
+        });
+
+        continue;
+      }
+
+      const deleted = await deleteOhsTrabajador(Number(codTrabajador));
+
+      await User.updateOne(
+        { _id: user._id },
+        { $unset: { userIdOhs: "" } }
+      );
+
+      results.deleted.push({
+        userId: String(user._id),
+        dni: user.dni || "",
+        name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+        codTrabajador: String(codTrabajador),
+        userIdOhs: user.userIdOhs ? String(user.userIdOhs) : null,
+        action: "deleted-apafa-from-ohs",
+        data: deleted,
+      });
+
+      if (verbose) {
+        console.log("[OHS APAFA DELETE] Eliminado:");
+        console.dir({
+          userId: String(user._id),
+          dni: user.dni || "",
+          codTrabajador: String(codTrabajador),
+        }, { depth: null });
+      }
+    } catch (error) {
+      results.errors.push({
+        userId: String(user._id),
+        dni: user.dni || "",
+        name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+        userIdOhs: user.userIdOhs ? String(user.userIdOhs) : null,
+        message: error.message,
+        statusCode: error.statusCode,
+        body: error.body,
+        url: error.url,
+        data: error.data || null,
+      });
+
+      if (verbose) {
+        console.log("[OHS APAFA DELETE] ERROR:");
+        console.dir({
+          userId: String(user._id),
+          dni: user.dni || "",
+          name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+          message: error.message,
+          body: error.body,
+        }, { depth: null });
+      }
+    }
+  }
+
+  return results;
+};
+
+/**
+ * LOCAL / MANTENIMIENTO
+ *
+ * Actualiza el sexo/género de todos los trabajadores existentes en OHS.
+ *
+ * Regla:
+ * - No crea trabajadores nuevos en OHS.
+ * - No sincroniza APAFA.
+ * - Usa syncOhsTrabajadorForUser(), así que manda payload completo.
+ * - El helper mapGenderToOhs() convierte:
+ *   male / h / hombre  -> H
+ *   female / m / mujer -> M
+ *   cualquier otra cosa -> M
+ */
+const syncAllOhsTrabajadoresGenderLocal = async ({
+  dryRun = true,
+  limit = 0,
+  verbose = false,
+} = {}) => {
+  let query = User.find({
+    apafa: { $ne: true },
+    dni: { $exists: true, $ne: "" },
+    firstName: { $exists: true, $ne: "" },
+    $or: [
+      { userIdOhs: { $exists: true, $nin: [null, ""] } },
+      { employmentStatus: "activo" },
+    ],
+  })
+    .select("_id firstName lastName dni email gender birthday userIdOhs userIdSesame employmentStatus apafa")
+    .sort({ lastName: 1, firstName: 1 });
+
+  if (limit > 0) query = query.limit(limit);
+
+  const users = await query;
 
   const results = {
     dryRun,
@@ -1456,963 +1737,311 @@ const syncActiveUsersOhsPuestosFromPeriodsLocal = async ({ dryRun = true, limit 
 
   for (const user of users) {
     try {
-      const result = await syncOhsTrabajadorPuestoReal(user._id, { dryRun });
+      if (verbose) {
+        console.log("");
+        console.log("====================================================");
+        console.log(`[OHS GENDER] ${user.dni || ""} - ${user.firstName || ""} ${user.lastName || ""}`);
+        console.log("====================================================");
+      }
 
-      if (result.action.startsWith("skip")) {
-        results.skipped.push(result);
+      if (user.apafa === true) {
+        results.skipped.push({
+          userId: String(user._id),
+          dni: user.dni || "",
+          name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+          reason: "Usuario APAFA, no se sincroniza con OHS",
+        });
         continue;
       }
 
-      results.updated.push(result);
+      const expectedGender = mapGenderToOhs(user.gender);
+
+      const result = await syncOhsTrabajadorForUser(
+        user._id,
+        {},
+        {
+          createIfMissing: false,
+          dryRun,
+        }
+      );
+
+      if (result.action?.startsWith("skip")) {
+        results.skipped.push({
+          ...result,
+          expectedGender,
+        });
+        continue;
+      }
+
+      results.updated.push({
+        userId: String(user._id),
+        userIdOhs: result.codTrabajador ? String(result.codTrabajador) : null,
+        dni: user.dni || "",
+        name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+        genderMongo: user.gender || null,
+        genderOhsExpected: expectedGender,
+        genderPayload: result.payload?.indSexo || null,
+        action: result.action,
+        centro: result.centro || null,
+        puesto: result.puesto || null,
+        warnings: result.warnings || [],
+        payload: result.payload,
+        data: result.data,
+      });
+
+      if (verbose) {
+        console.log("[OHS GENDER] Resultado:");
+        console.dir({
+          action: result.action,
+          userId: String(user._id),
+          userIdOhs: result.codTrabajador ? String(result.codTrabajador) : null,
+          dni: user.dni || "",
+          genderMongo: user.gender || null,
+          genderOhsExpected: expectedGender,
+          genderPayload: result.payload?.indSexo || null,
+          codCentro: result.payload?.codCentro || null,
+          listaPuestosTrabajador: result.payload?.listaPuestosTrabajador || null,
+          warnings: result.warnings || [],
+        }, { depth: null });
+      }
     } catch (error) {
       results.errors.push({
         userId: String(user._id),
-        userIdOhs: user.userIdOhs || null,
-        name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+        userIdOhs: user.userIdOhs ? String(user.userIdOhs) : null,
         dni: user.dni || "",
+        name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+        genderMongo: user.gender || null,
+        expectedGender: mapGenderToOhs(user.gender),
         message: error.message,
         statusCode: error.statusCode,
         body: error.body,
         url: error.url,
+        payload: error.payload || null,
+        data: error.data || null,
       });
+
+      if (verbose) {
+        console.log("[OHS GENDER] ERROR:");
+        console.dir({
+          userId: String(user._id),
+          dni: user.dni || "",
+          name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+          genderMongo: user.gender || null,
+          expectedGender: mapGenderToOhs(user.gender),
+          message: error.message,
+          body: error.body,
+        }, { depth: null });
+      }
     }
   }
 
   return results;
 };
 
-/* ==========================================================================
-   Sincronizaciones compuestas
-========================================================================== */
 
-/**
- * Sincroniza completamente un trabajador: datos básicos, centro real y puesto real.
- */
-const syncOhsTrabajadorFull = async (userId, { dryRun = false } = {}) => {
-  if (!userId) throw new ClientError("Falta userId", 400);
-
-  const trabajador = dryRun
-    ? { action: "dry-run-skip-basic-worker-sync" }
-    : await ensureOhsTrabajadorForUser(userId);
-
-  const centro = await syncOhsTrabajadorRealFromSesameUser(userId, { dryRun });
-  const puesto = await syncOhsTrabajadorPuestoReal(userId, { dryRun });
-
-  return {
-    dryRun,
-    trabajador,
-    centro,
-    puesto,
-  };
-};
-
-/**
- * Muestra logs solo cuando verbose está activo.
- */
-const logOhs = (verbose, message, data = null) => {
-  if (!verbose) return;
-
-  const time = new Date().toLocaleTimeString("es-ES");
-
-  if (data !== null) {
-    console.log(`[OHS ${time}] ${message}`, data);
-    return;
-  }
-
-  console.log(`[OHS ${time}] ${message}`);
-};
-
-/**
- * Sincroniza centros, puestos, trabajadores, centros reales y puestos reales.
- */
-/**
- * Sincroniza centros, puestos, trabajadores, centros reales y puestos reales.
- */
-const syncOhsAllLocal = async ({
-  dryRun = true,
-  limitCentros = 0,
-  limitUsers = 0,
-  verbose = false,
-} = {}) => {
-  logOhs(verbose, "INICIO sync total", { dryRun, limitCentros, limitUsers });
-
-  logOhs(verbose, "1/5 Sincronizando centros...");
-  const centros = await syncActiveWorkplacesWithOhsLocal({
-    dryRun,
-    limit: limitCentros,
-    verbose,
-  });
-  logOhs(verbose, "1/5 Centros finalizados", {
-    total: centros.total,
-    created: centros.created?.length || 0,
-    updated: centros.updated?.length || 0,
-    linkedAndUpdated: centros.linkedAndUpdated?.length || 0,
-    errors: centros.errors?.length || 0,
-  });
-
-  logOhs(verbose, "2/5 Sincronizando puestos desde Jobs.subcategories...");
-  const puestos = await syncOhsPuestosFromJobsLocal({
-    dryRun,
-    verbose,
-  });
-  logOhs(verbose, "2/5 Puestos finalizados", {
-    total: puestos.total,
-    created: puestos.created?.length || 0,
-    updated: puestos.updated?.length || 0,
-    linkedAndUpdated: puestos.linkedAndUpdated?.length || 0,
-    skipped: puestos.skipped?.length || 0,
-    errors: puestos.errors?.length || 0,
-  });
-
-  logOhs(verbose, "3/5 Sincronizando trabajadores básicos...");
-  const trabajadores = await syncActiveUsersWithOhsLocal({
-    dryRun,
-    limit: limitUsers,
-    verbose,
-  });
-  logOhs(verbose, "3/5 Trabajadores finalizados", {
-    total: trabajadores.total,
-    created: trabajadores.created?.length || 0,
-    updated: trabajadores.updated?.length || 0,
-    linkedAndUpdated: trabajadores.linkedAndUpdated?.length || 0,
-    errors: trabajadores.errors?.length || 0,
-  });
-
-  logOhs(verbose, "4/5 Sincronizando centros reales trabajador desde Sesame...");
-  const trabajadoresCentros = await syncActiveUsersOhsCentersFromSesameLocal({
-    dryRun,
-    limit: limitCentros,
-    verbose,
-  });
-  logOhs(verbose, "4/5 Centros reales trabajador finalizados", {
-    totalWorkplaces: trabajadoresCentros.totalWorkplaces,
-    updated: trabajadoresCentros.updated?.length || 0,
-    skipped: trabajadoresCentros.skipped?.length || 0,
-    errors: trabajadoresCentros.errors?.length || 0,
-  });
-
-  logOhs(verbose, "5/5 Sincronizando puestos reales trabajador desde Periods + Jobs...");
-  const trabajadoresPuestos = await syncActiveUsersOhsPuestosFromPeriodsLocal({
-    dryRun,
-    limit: limitUsers,
-    verbose,
-  });
-  logOhs(verbose, "5/5 Puestos reales trabajador finalizados", {
-    total: trabajadoresPuestos.total,
-    updated: trabajadoresPuestos.updated?.length || 0,
-    skipped: trabajadoresPuestos.skipped?.length || 0,
-    errors: trabajadoresPuestos.errors?.length || 0,
-  });
-
-  logOhs(verbose, "FIN sync total");
-
-  return {
-    dryRun,
-    centros,
-    puestos,
-    trabajadores,
-    trabajadoresCentros,
-    trabajadoresPuestos,
-  };
-};
-
-/* ==========================================================================
-   Endpoints: centros
-========================================================================== */
-
-/**
- * Consulta centros en OHS.
- */
-const postOhsGetCentros = async (req, res) => {
-  const { codCentro, nomCentro, params = {} } = req.body || {};
-  const finalParams = { ...params };
-
-  if (codCentro !== undefined && codCentro !== "") finalParams.codCentro = Number(codCentro);
-  if (nomCentro !== undefined) finalParams.nomCentro = String(nomCentro).trim();
-
-  response(res, 200, await getOhsCentros(finalParams));
-};
-
-/**
- * Sincroniza un centro desde un Workplace.
- */
-const postOhsSyncCentroFromWorkplace = async (req, res) => {
-  const { workplaceId, payload = {} } = req.body || {};
-  response(res, 200, await syncOhsCentroForWorkplace(workplaceId, payload));
-};
-
-/**
- * Sincroniza todos los centros activos.
- */
-const postOhsSyncAllCentros = async (req, res) => {
-  const { dryRun = true, limit = 0 } = req.body || {};
-  response(res, 200, await syncActiveWorkplacesWithOhsLocal({ dryRun, limit: Number(limit) }));
-};
-
-/* ==========================================================================
-   Endpoints: puestos
-========================================================================== */
-
-/**
- * Consulta puestos en OHS.
- */
-const postOhsGetPuestos = async (req, res) => {
-  const { codTipoPuesto, nomTipoPuesto, params = {} } = req.body || {};
-  const finalParams = { ...params };
-
-  if (codTipoPuesto !== undefined && codTipoPuesto !== "") {
-    finalParams.codTipoPuesto = Number(codTipoPuesto);
-  }
-
-  if (nomTipoPuesto !== undefined) {
-    finalParams.nomTipoPuesto = String(nomTipoPuesto).trim();
-  }
-
-  response(res, 200, await getOhsPuestos(finalParams));
-};
-
-/**
- * Sincroniza todos los puestos desde Jobs.subcategories.
- */
-const postOhsSyncAllPuestosFromJobs = async (req, res) => {
-  const { dryRun = true } = req.body || {};
-  response(res, 200, await syncOhsPuestosFromJobsLocal({ dryRun }));
-};
-
-/* ==========================================================================
-   Endpoints: trabajadores
-========================================================================== */
-
-/**
- * Consulta trabajadores en OHS por parámetros directos o por usuario local.
- */
-const postOhsGetTrabajadores = async (req, res) => {
-  const {
-    userId,
-    dni,
-    firstName,
-    lastName,
-    codTrabajador,
-    params = {},
-  } = req.body || {};
-
-  const finalParams = { ...params };
-
-  if (userId) {
-    const user = await User.findById(userId).lean();
-    if (!user) throw new ClientError("Usuario no encontrado", 404);
-
-    if (user.firstName) finalParams.nomTrabajador = user.firstName;
-
-    if (user.lastName) {
-      const names = splitLastName(user.lastName);
-      finalParams.apellido1Trabajador = names.apellido1Trabajador;
-      finalParams.apellido2Trabajador = names.apellido2Trabajador;
-    }
-
-    if (user.dni) finalParams.codIdentificador = normalizeDniOhs(user.dni);
-  }
-
-  if (dni) finalParams.codIdentificador = normalizeDniOhs(dni);
-  if (firstName) finalParams.nomTrabajador = String(firstName).trim();
-
-  if (lastName) {
-    const names = splitLastName(lastName);
-    finalParams.apellido1Trabajador = names.apellido1Trabajador;
-    finalParams.apellido2Trabajador = names.apellido2Trabajador;
-  }
-
-  if (codTrabajador) finalParams.codTrabajador = Number(codTrabajador);
-
-  response(res, 200, await getOhsTrabajadores(finalParams));
-};
-
-/**
- * Consulta un trabajador en OHS por DNI.
- */
-const postOhsGetTrabajadorByDni = async (req, res) => {
-  const { dni } = req.body || {};
-  if (!dni) throw new ClientError("Falta DNI/NIE", 400);
-
-  response(res, 200, await getOhsTrabajadorByDni(normalizeDniOhs(dni)));
-};
-
-/**
- * Sincroniza un trabajador básico desde User.
- */
-const postOhsSyncTrabajadorFromUser = async (req, res) => {
-  const { userId, payload = {} } = req.body || {};
-  response(res, 200, await ensureOhsTrabajadorForUser(userId, payload));
-};
-
-/**
- * Sincroniza el centro real del trabajador desde Sesame.
- */
-const postOhsSyncTrabajadorRealFromSesameUser = async (req, res) => {
-  const { userId, dryRun = false } = req.body || {};
-  response(res, 200, await syncOhsTrabajadorRealFromSesameUser(userId, { dryRun }));
-};
-
-/**
- * Sincroniza el puesto real del trabajador desde Periods + Jobs.
- */
-const postOhsSyncTrabajadorPuestoReal = async (req, res) => {
-  const { userId, dryRun = false } = req.body || {};
-  response(res, 200, await syncOhsTrabajadorPuestoReal(userId, { dryRun }));
-};
-
-/**
- * Sincroniza completamente un trabajador.
- */
-const postOhsSyncTrabajadorFull = async (req, res) => {
-  const { userId, dryRun = false } = req.body || {};
-  response(res, 200, await syncOhsTrabajadorFull(userId, { dryRun }));
-};
-
-/**
- * Sincroniza todos los trabajadores activos.
- */
-const postOhsSyncAllTrabajadores = async (req, res) => {
-  const { dryRun = true, limit = 0 } = req.body || {};
-  response(res, 200, await syncActiveUsersWithOhsLocal({ dryRun, limit: Number(limit) }));
-};
-
-/**
- * Sincroniza todos los centros reales de trabajadores.
- */
-const postOhsSyncAllTrabajadoresCentros = async (req, res) => {
-  const { dryRun = true, limit = 0 } = req.body || {};
-  response(res, 200, await syncActiveUsersOhsCentersFromSesameLocal({ dryRun, limit: Number(limit) }));
-};
-
-/**
- * Sincroniza todos los puestos reales de trabajadores.
- */
-const postOhsSyncAllTrabajadoresPuestos = async (req, res) => {
-  const { dryRun = true, limit = 0 } = req.body || {};
-  response(res, 200, await syncActiveUsersOhsPuestosFromPeriodsLocal({ dryRun, limit: Number(limit) }));
-};
-
-/**
- * Sincroniza todo el bloque OHS.
- */
-const postOhsSyncAll = async (req, res) => {
-  const { dryRun = true, limitCentros = 0, limitUsers = 0 } = req.body || {};
-
-  response(res, 200, await syncOhsAllLocal({
-    dryRun,
-    limitCentros: Number(limitCentros),
-    limitUsers: Number(limitUsers),
-  }));
-};
-
-
-/**
- * Da de baja un trabajador en OHS usando el endpoint DELETE.
- * En OHS no se interpreta como borrado físico, sino como baja/inactivación.
- */
-const bajaOhsTrabajadorForUser = async (userId) => {
-  if (!userId) throw new ClientError("Falta userId", 400);
-
-  const user = await User.findById(userId);
-  if (!user) throw new ClientError("Usuario no encontrado", 404);
-
-  if (!isValidOhsCode(user.userIdOhs)) {
-    return {
-      action: "skip-without-userIdOhs",
-      userId: String(user._id),
-      reason: "El usuario no tiene userIdOhs válido",
-    };
-  }
-
-  const deleted = await deleteOhsTrabajador(user.userIdOhs);
-
-  return {
-    action: "baja-ohs-trabajador",
-    userId: String(user._id),
-    codTrabajador: String(user.userIdOhs),
-    data: deleted,
-  };
-};
-
-/**
- * Da de baja un centro en OHS usando el endpoint DELETE.
- * En OHS no se interpreta como borrado físico, sino como baja/inactivación.
- */
-const bajaOhsCentroForWorkplace = async (workplaceId) => {
-  if (!workplaceId) throw new ClientError("Falta workplaceId", 400);
-
-  const workplace = await Workplace.findById(workplaceId);
-  if (!workplace) throw new ClientError("Centro de trabajo no encontrado", 404);
-
-  if (!isValidOhsCode(workplace.codCentroOhs)) {
-    return {
-      action: "skip-without-codCentroOhs",
-      workplaceId: String(workplace._id),
-      reason: "El centro no tiene codCentroOhs válido",
-    };
-  }
-
-  const deleted = await deleteOhsCentro(workplace.codCentroOhs);
-
-  return {
-    action: "baja-ohs-centro",
-    workplaceId: String(workplace._id),
-    codCentro: String(workplace.codCentroOhs),
-    data: deleted,
-  };
-};
-
-//BORRAR
-/**
- * Vacía OHS de pruebas y limpia los códigos OHS locales.
- * Uso exclusivo para preparar una sincronización completa desde cero.
- */
-/**
- * Vacía OHS de pruebas y limpia los códigos OHS locales.
- * Uso exclusivo para preparar una sincronización completa desde cero.
- */
-/**
- * Vacía OHS de pruebas y limpia los códigos OHS locales.
- * Uso exclusivo para preparar una sincronización completa desde cero.
- */
-
-const hasItems = (items) => Array.isArray(items) && items.length > 0;
-
-const compactOhsResult = (result = {}) => {
-  const output = {};
-
-  if (hasItems(result.errors)) output.errors = result.errors;
-  if (hasItems(result.skipped)) output.skipped = result.skipped;
-
-  return output;
-};
-
-const buildOnlyOhsIssuesReport = ({ wipe, sync }) => {
-  return {
-    wipe: {
-      trabajadores: compactOhsResult(wipe?.trabajadores),
-      puestos: compactOhsResult(wipe?.puestos),
-      centros: compactOhsResult(wipe?.centros),
-    },
-    sync: {
-      centros: compactOhsResult(sync?.centros),
-      puestos: compactOhsResult(sync?.puestos),
-      trabajadores: compactOhsResult(sync?.trabajadores),
-      trabajadoresCentros: compactOhsResult(sync?.trabajadoresCentros),
-      trabajadoresPuestos: compactOhsResult(sync?.trabajadoresPuestos),
-    },
-  };
-};
-
-const removeEmptyObjects = (value) => {
-  if (Array.isArray(value)) return value;
-
-  if (value && typeof value === "object") {
-    const clean = {};
-
-    Object.entries(value).forEach(([key, item]) => {
-      const cleanedItem = removeEmptyObjects(item);
-
-      const isEmptyObject =
-        cleanedItem &&
-        typeof cleanedItem === "object" &&
-        !Array.isArray(cleanedItem) &&
-        Object.keys(cleanedItem).length === 0;
-
-      if (!isEmptyObject) clean[key] = cleanedItem;
-    });
-
-    return clean;
-  }
-
-  return value;
-};
-const wipeOhsTestDataLocal = async ({
-  dryRun = true,
-  confirm = false,
-  cleanLocal = true,
-  verbose = false,
-} = {}) => {
-  if (process.env.NODE_ENV === "production") {
-    throw new ClientError("Esta función no puede ejecutarse en producción", 403);
-  }
-
-  if (!confirm) {
-    throw new ClientError("Debes enviar confirm: true para ejecutar esta limpieza", 400);
-  }
-
-  logOhs(verbose, "INICIO wipe OHS", { dryRun, cleanLocal });
-
-  const results = {
-    dryRun,
-    cleanLocal,
-    trabajadores: {
-      total: 0,
-      deleted: [],
-      errors: [],
-    },
-    puestos: {
-      total: 0,
-      deleted: [],
-      errors: [],
-    },
-    centros: {
-      total: 0,
-      deleted: [],
-      errors: [],
-    },
-    local: {
-      skipped: dryRun || !cleanLocal,
-      users: null,
-      workplaces: null,
-      jobs: null,
-    },
-  };
-
-  logOhs(verbose, "Consultando trabajadores OHS...");
-  const trabajadoresData = await getOhsTrabajadores();
-  const trabajadores = getOhsTrabajadoresItems(trabajadoresData);
-
-  results.trabajadores.total = trabajadores.length;
-
-  logOhs(verbose, `Trabajadores OHS encontrados para borrar: ${trabajadores.length}`);
-
-  for (const trabajador of trabajadores) {
-    const codTrabajador = trabajador.codTrabajador;
-
-    if (!isValidOhsCode(codTrabajador)) continue;
-
-    try {
-      if (!dryRun) {
-        await deleteOhsTrabajador(codTrabajador);
-      }
-
-      logOhs(
-        verbose,
-        `Trabajador borrado OHS: ${codTrabajador} - ${trabajador.codIdentificador || ""}`
-      );
-
-      results.trabajadores.deleted.push({
-        codTrabajador: String(codTrabajador),
-        dni: trabajador.codIdentificador || "",
-        name: [
-          trabajador.nomTrabajador,
-          trabajador.apellido1Trabajador,
-          trabajador.apellido2Trabajador,
-        ].filter(Boolean).join(" "),
-        dryRun,
-      });
-    } catch (error) {
-      logOhs(verbose, `ERROR borrando trabajador OHS: ${codTrabajador}`, error.message);
-
-      results.trabajadores.errors.push({
-        codTrabajador: String(codTrabajador),
-        dni: trabajador.codIdentificador || "",
-        message: error.message,
-        statusCode: error.statusCode,
-        body: error.body,
-        url: error.url,
-      });
-    }
-  }
-
-  logOhs(verbose, "Consultando puestos OHS...");
-  const puestosData = await getOhsPuestos();
-  const puestos = getOhsPuestosItems(puestosData);
-
-  results.puestos.total = puestos.length;
-
-  logOhs(verbose, `Puestos OHS encontrados para borrar: ${puestos.length}`);
-
-  for (const puesto of puestos) {
-    const codTipoPuesto = puesto.codTipoPuesto;
-
-    if (!isValidOhsCode(codTipoPuesto)) continue;
-
-    try {
-      if (!dryRun) {
-        await deleteOhsPuesto(codTipoPuesto);
-      }
-
-      logOhs(verbose, `Puesto borrado OHS: ${codTipoPuesto} - ${puesto.nomTipoPuesto || ""}`);
-
-      results.puestos.deleted.push({
-        codTipoPuesto: String(codTipoPuesto),
-        name: puesto.nomTipoPuesto || "",
-        dryRun,
-      });
-    } catch (error) {
-      logOhs(verbose, `ERROR borrando puesto OHS: ${codTipoPuesto}`, error.message);
-
-      results.puestos.errors.push({
-        codTipoPuesto: String(codTipoPuesto),
-        name: puesto.nomTipoPuesto || "",
-        message: error.message,
-        statusCode: error.statusCode,
-        body: error.body,
-        url: error.url,
-      });
-    }
-  }
-
-  logOhs(verbose, "Consultando centros OHS...");
-  const centrosData = await getOhsCentros();
-  const centros = getOhsCentrosItems(centrosData);
-
-  results.centros.total = centros.length;
-
-  logOhs(verbose, `Centros OHS encontrados para borrar: ${centros.length}`);
-
-  for (const centro of centros) {
-    const codCentro = centro.codCentro;
-
-    if (!isValidOhsCode(codCentro)) continue;
-
-    try {
-      if (!dryRun) {
-        await deleteOhsCentro(codCentro);
-      }
-
-      logOhs(verbose, `Centro borrado OHS: ${codCentro} - ${centro.nomCentro || ""}`);
-
-      results.centros.deleted.push({
-        codCentro: String(codCentro),
-        name: centro.nomCentro || "",
-        dryRun,
-      });
-    } catch (error) {
-      logOhs(verbose, `ERROR borrando centro OHS: ${codCentro}`, error.message);
-
-      results.centros.errors.push({
-        codCentro: String(codCentro),
-        name: centro.nomCentro || "",
-        message: error.message,
-        statusCode: error.statusCode,
-        body: error.body,
-        url: error.url,
-      });
-    }
-  }
-
-  if (!dryRun && cleanLocal) {
-    logOhs(verbose, "Limpiando códigos OHS locales en Mongo...");
-
-    const users = await User.updateMany(
-      { userIdOhs: { $exists: true, $nin: [null, ""] } },
-      { $set: { userIdOhs: null } }
-    );
-
-    const workplaces = await Workplace.updateMany(
-      { codCentroOhs: { $exists: true, $nin: [null, ""] } },
-      { $set: { codCentroOhs: null } }
-    );
-
-    const jobs = await Jobs.updateMany(
-      { "subcategories.codTipoPuestoOhs": { $exists: true, $nin: [null, ""] } },
-      { $set: { "subcategories.$[].codTipoPuestoOhs": null } }
-    );
-
-    logOhs(verbose, "Códigos locales limpiados", {
-      users: users.modifiedCount,
-      workplaces: workplaces.modifiedCount,
-      jobs: jobs.modifiedCount,
-    });
-
-    results.local = {
-      skipped: false,
-      users: users.modifiedCount,
-      workplaces: workplaces.modifiedCount,
-      jobs: jobs.modifiedCount,
-    };
-  }
-
-  logOhs(verbose, "FIN wipe OHS", {
-    trabajadores: {
-      total: results.trabajadores.total,
-      deleted: results.trabajadores.deleted.length,
-      errors: results.trabajadores.errors.length,
-    },
-    puestos: {
-      total: results.puestos.total,
-      deleted: results.puestos.deleted.length,
-      errors: results.puestos.errors.length,
-    },
-    centros: {
-      total: results.centros.total,
-      deleted: results.centros.deleted.length,
-      errors: results.centros.errors.length,
-    },
-    local: results.local,
-  });
-
-  return results;
-};
-
-// BORRAR DESPUÉS DE LA PRUEBA
-const fs = require("fs");
-const path = require("path");
-const testWipeAndSyncOhsLocal = async () => {
-  const startedAt = Date.now();
-  const startedAtIso = new Date().toISOString();
-
-  const report = {
-  name: "testWipeAndSyncOhsLocal",
-  startedAt: startedAtIso,
-  finishedAt: null,
-  durationSeconds: null,
-  status: "running",
-  summary: {
-    wipe: null,
-    sync: null,
-  },
-  issues: {
-    wipe: null,
-    sync: null,
-  },
-  errors: {
-    fatal: null,
-  },
-};
-
-  const logsDir = path.join(process.cwd(), "ohs-logs");
-
-  if (!fs.existsSync(logsDir)) {
-    fs.mkdirSync(logsDir, { recursive: true });
-  }
-
-  const fileName = `ohs-sync-report-${startedAtIso.replace(/[:.]/g, "-")}.json`;
-  const filePath = path.join(logsDir, fileName);
-
-  const saveReport = () => {
-    report.finishedAt = new Date().toISOString();
-    report.durationSeconds = Math.round((Date.now() - startedAt) / 1000);
-
-    fs.writeFileSync(
-      filePath,
-      JSON.stringify(report, null, 2),
-      "utf8"
-    );
-
-    console.log("");
-    console.log("====================================================");
-    console.log("REPORTE JSON GUARDADO");
-    console.log("====================================================");
-    console.log(filePath);
-    console.log("");
-  };
-
+const runOhsSafe = async (label, fn) => {
   try {
-    console.log("");
-    console.log("====================================================");
-    console.log("INICIO PRUEBA OHS: BORRAR TODO + SINCRONIZAR TODO");
-    console.log("====================================================");
-    console.log("");
-
-    console.log("====================================================");
-    console.log("1/2 BORRANDO OHS DE PRUEBAS");
-    console.log("====================================================");
-
-    const wipe = await wipeOhsTestDataLocal({
-      dryRun: false,
-      confirm: true,
-      cleanLocal: true,
-      verbose: true,
+    return await fn();
+  } catch (err) {
+    console.error(`[OHS SAFE] ${label}:`, {
+      message: err.message,
+      statusCode: err.statusCode,
+      payload: err.payload || null,
+      data: err.data || null,
     });
-
-  
-
-    report.summary.wipe = {
-      trabajadores: {
-        total: wipe.trabajadores.total,
-        deleted: wipe.trabajadores.deleted.length,
-        errors: wipe.trabajadores.errors.length,
-      },
-      puestos: {
-        total: wipe.puestos.total,
-        deleted: wipe.puestos.deleted.length,
-        errors: wipe.puestos.errors.length,
-      },
-      centros: {
-        total: wipe.centros.total,
-        deleted: wipe.centros.deleted.length,
-        errors: wipe.centros.errors.length,
-      },
-      local: wipe.local,
-    };
-
-    console.log("");
-    console.log("RESUMEN BORRADO OHS:");
-    console.dir(report.summary.wipe, { depth: null });
-
-    if (
-      wipe.trabajadores.errors.length ||
-      wipe.puestos.errors.length ||
-      wipe.centros.errors.length
-    ) {
-      console.log("");
-      console.log("ERRORES EN BORRADO OHS:");
-      console.dir(
-        {
-          trabajadores: wipe.trabajadores.errors.slice(0, 20),
-          puestos: wipe.puestos.errors.slice(0, 20),
-          centros: wipe.centros.errors.slice(0, 20),
-        },
-        { depth: null }
-      );
-    }
-
-    console.log("");
-    console.log("====================================================");
-    console.log("2/2 SINCRONIZANDO TODO OHS");
-    console.log("====================================================");
-
-    const sync = await syncOhsAllLocal({
-      dryRun: false,
-      limitCentros: 0,
-      limitUsers: 0,
-      verbose: true,
-    });
-
-   
-
-    report.summary.sync = {
-      centros: {
-        total: sync.centros.total,
-        created: sync.centros.created.length,
-        updated: sync.centros.updated.length,
-        linkedAndUpdated: sync.centros.linkedAndUpdated.length,
-        errors: sync.centros.errors.length,
-      },
-      puestos: {
-        total: sync.puestos.total,
-        created: sync.puestos.created.length,
-        updated: sync.puestos.updated.length,
-        linkedAndUpdated: sync.puestos.linkedAndUpdated.length,
-        skipped: sync.puestos.skipped.length,
-        errors: sync.puestos.errors.length,
-      },
-      trabajadores: {
-        total: sync.trabajadores.total,
-        created: sync.trabajadores.created.length,
-        updated: sync.trabajadores.updated.length,
-        linkedAndUpdated: sync.trabajadores.linkedAndUpdated.length,
-        errors: sync.trabajadores.errors.length,
-      },
-      trabajadoresCentros: {
-        totalWorkplaces: sync.trabajadoresCentros.totalWorkplaces,
-        updated: sync.trabajadoresCentros.updated.length,
-        skipped: sync.trabajadoresCentros.skipped.length,
-        errors: sync.trabajadoresCentros.errors.length,
-      },
-      trabajadoresPuestos: {
-        total: sync.trabajadoresPuestos.total,
-        updated: sync.trabajadoresPuestos.updated.length,
-        skipped: sync.trabajadoresPuestos.skipped.length,
-        errors: sync.trabajadoresPuestos.errors.length,
-      },
-    };
-
-    const issues = removeEmptyObjects(buildOnlyOhsIssuesReport({ wipe, sync }));
-
-report.issues = {
-  wipe: issues.wipe || null,
-  sync: issues.sync || null,
-};
-
-    console.log("");
-    console.log("RESUMEN SINCRONIZACIÓN OHS:");
-    console.dir(report.summary.sync, { depth: null });
-
-    if (
-      sync.centros.errors.length ||
-      sync.puestos.errors.length ||
-      sync.trabajadores.errors.length ||
-      sync.trabajadoresCentros.errors.length ||
-      sync.trabajadoresPuestos.errors.length
-    ) {
-      console.log("");
-      console.log("ERRORES EN SINCRONIZACIÓN OHS:");
-      console.dir(
-        {
-          centros: sync.centros.errors.slice(0, 20),
-          puestos: sync.puestos.errors.slice(0, 20),
-          trabajadores: sync.trabajadores.errors.slice(0, 20),
-          trabajadoresCentros: sync.trabajadoresCentros.errors.slice(0, 20),
-          trabajadoresPuestos: sync.trabajadoresPuestos.errors.slice(0, 20),
-        },
-        { depth: null }
-      );
-    }
-
-    report.status = "finished";
-
-    console.log("");
-    console.log("====================================================");
-    console.log(`FIN PRUEBA OHS. Duración: ${Math.round((Date.now() - startedAt) / 1000)}s`);
-    console.log("====================================================");
-    console.log("");
-
-    saveReport();
 
     return {
-      wipe,
-      sync,
-      reportPath: filePath,
+      action: "ohs-error",
+      label,
+      message: err.message,
+      payload: err.payload || null,
+      data: err.data || null,
     };
-  } catch (error) {
-    report.status = "failed";
-
-    report.errors.fatal = {
-      message: error.message,
-      stack: error.stack,
-      statusCode: error.statusCode,
-      body: error.body,
-      url: error.url,
-    };
-
-    console.log("");
-    console.log("====================================================");
-    console.log("ERROR FATAL EN PRUEBA OHS");
-    console.log("====================================================");
-    console.dir(report.errors.fatal, { depth: null });
-
-    saveReport();
-
-    throw error;
   }
 };
 
-//fin borrar
+const syncOhsTrabajador = async (req, res) => {
+  const { userId, dryRun = false } = req.body || {};
 
+  if (!userId) throw new ClientError("Falta userId", 400);
+
+  queueSyncOhsTrabajadorForUser(userId, {}, {
+    createIfMissing: false,
+    dryRun: Boolean(dryRun),
+  });
+
+  return response(res, 200, {
+    action: "queued",
+    userId,
+    dryRun: Boolean(dryRun),
+  });
+};
+
+const runOhsBackground = (label, fn) => {
+  setImmediate(async () => {
+    const result = await runOhsSafe(label, fn);
+
+    const logData = {
+      action: result?.action || null,
+      userId: result?.userId || null,
+      dni: result?.dni || null,
+      codTrabajador: result?.codTrabajador || null,
+
+      codCentro: result?.centro?.codCentro || result?.payload?.codCentro || null,
+      workplaceId: result?.centro?.workplaceId || null,
+      workplaceName: result?.centro?.workplaceName || "",
+
+      codTipoPuesto:
+        result?.puesto?.codTipoPuesto ||
+        result?.payload?.listaPuestosTrabajador?.[0] ||
+        null,
+      puesto: result?.puesto
+        ? `${result.puesto.jobName || ""} - ${result.puesto.subcategoryName || ""}`.trim()
+        : "",
+
+      warnings: result?.warnings || [],
+    };
+
+    if (result?.action === "ohs-error") {
+      console.log(`[OHS BACKGROUND ERROR] ${label}`);
+      console.dir(result, { depth: null });
+      return;
+    }
+
+    if (logData.warnings.length) {
+      console.log(`[OHS BACKGROUND WARNINGS] ${label}`);
+      console.dir(logData.warnings, { depth: null });
+    }
+  });
+};
+
+const queueSyncOhsTrabajadorForUser = (userId, extraPayload = {}, options = {}) => {
+  if (!userId) return;
+
+  runOhsBackground(`sync trabajador OHS user ${userId}`, () =>
+    syncOhsTrabajadorForUser(userId, extraPayload, options)
+  );
+};
+
+const queueBajaOhsTrabajadorForUser = (userId, fechaBaja = new Date()) => {
+  if (!userId) return;
+
+  runOhsBackground(`baja trabajador OHS user ${userId}`, () =>
+    bajaOhsTrabajadorForUser(userId, fechaBaja)
+  );
+};
+
+const queueReactivarOhsTrabajadorForUser = (userId, extraPayload = {}) => {
+  if (!userId) return;
+
+  runOhsBackground(`reactivar trabajador OHS user ${userId}`, () =>
+    reactivarOhsTrabajadorForUser(userId, extraPayload)
+  );
+};
+
+const queueCreateOhsCentroForWorkplace = (workplaceId, extraPayload = {}) => {
+  if (!workplaceId) return;
+
+  runOhsBackground(`crear centro OHS workplace ${workplaceId}`, () =>
+    createOhsCentroForWorkplace(workplaceId, extraPayload)
+  );
+};
+
+const queueUpdateOhsCentroForWorkplace = (workplaceId, extraPayload = {}) => {
+  if (!workplaceId) return;
+
+  runOhsBackground(`actualizar centro OHS workplace ${workplaceId}`, () =>
+    updateOhsCentroForWorkplace(workplaceId, extraPayload)
+  );
+};
+
+const queueDeleteOhsCentroFromSnapshot = (workplace) => {
+  if (!workplace?._id) return;
+
+  runOhsBackground(`eliminar centro OHS workplace ${workplace._id}`, async () => {
+    if (!isValidOhsCode(workplace.codCentroOhs)) {
+      return {
+        action: "skip-without-codCentroOhs",
+        workplaceId: String(workplace._id),
+        workplaceName: workplace.name || "",
+      };
+    }
+
+    const deleted = await deleteOhsCentro(workplace.codCentroOhs);
+
+    return {
+      action: "deleted",
+      workplaceId: String(workplace._id),
+      workplaceName: workplace.name || "",
+      codCentro: String(workplace.codCentroOhs),
+      data: deleted,
+    };
+  });
+};
+
+const queueSyncOhsPuestoFromJobSubcategory = (subcategoryId) => {
+  if (!subcategoryId) return;
+
+  runOhsBackground(`sync puesto OHS subcategory ${subcategoryId}`, () =>
+    syncOhsPuestoFromJobSubcategory(subcategoryId)
+  );
+};
+
+const queueDeleteOhsPuestoFromSnapshot = ({ jobId, jobName, subcategory } = {}) => {
+  if (!subcategory?._id) return;
+
+  runOhsBackground(`eliminar puesto OHS subcategory ${subcategory._id}`, async () => {
+    if (!isValidOhsCode(subcategory.codTipoPuestoOhs)) {
+      return {
+        action: "skip-without-codTipoPuestoOhs",
+        jobId: jobId ? String(jobId) : null,
+        jobName: jobName || "",
+        subcategoryId: String(subcategory._id),
+        subcategoryName: subcategory.name || "",
+      };
+    }
+
+    const deleted = await deleteOhsPuesto(subcategory.codTipoPuestoOhs);
+
+    return {
+      action: "deleted",
+      jobId: jobId ? String(jobId) : null,
+      jobName: jobName || "",
+      subcategoryId: String(subcategory._id),
+      subcategoryName: subcategory.name || "",
+      codTipoPuesto: String(subcategory.codTipoPuestoOhs),
+      data: deleted,
+    };
+  });
+};
+
+const queueDeleteOhsPuestosFromJobSnapshot = (job) => {
+  if (!job?.subcategories?.length) return;
+
+  for (const subcategory of job.subcategories) {
+    queueDeleteOhsPuestoFromSnapshot({
+      jobId: job._id,
+      jobName: job.name,
+      subcategory,
+    });
+  }
+};
 module.exports = {
-  postOhsGetCentros: catchAsync(postOhsGetCentros),
-  postOhsSyncCentroFromWorkplace: catchAsync(postOhsSyncCentroFromWorkplace),
-  postOhsSyncAllCentros: catchAsync(postOhsSyncAllCentros),
+  // Endpoint manual
+  syncOhsTrabajador: catchAsync(syncOhsTrabajador),
 
-  postOhsGetPuestos: catchAsync(postOhsGetPuestos),
-  postOhsSyncAllPuestosFromJobs: catchAsync(postOhsSyncAllPuestosFromJobs),
+  // Trabajadores OHS
+  queueSyncOhsTrabajadorForUser,
+  queueBajaOhsTrabajadorForUser,
+  queueReactivarOhsTrabajadorForUser,
 
-  postOhsGetTrabajadores: catchAsync(postOhsGetTrabajadores),
-  postOhsGetTrabajadorByDni: catchAsync(postOhsGetTrabajadorByDni),
-  postOhsSyncTrabajadorFromUser: catchAsync(postOhsSyncTrabajadorFromUser),
-  postOhsSyncTrabajadorRealFromSesameUser: catchAsync(postOhsSyncTrabajadorRealFromSesameUser),
-  postOhsSyncTrabajadorPuestoReal: catchAsync(postOhsSyncTrabajadorPuestoReal),
-  postOhsSyncTrabajadorFull: catchAsync(postOhsSyncTrabajadorFull),
+  // Centros OHS
+  queueCreateOhsCentroForWorkplace,
+  queueUpdateOhsCentroForWorkplace,
+  queueDeleteOhsCentroFromSnapshot,
 
-  postOhsSyncAllTrabajadores: catchAsync(postOhsSyncAllTrabajadores),
-  postOhsSyncAllTrabajadoresCentros: catchAsync(postOhsSyncAllTrabajadoresCentros),
-  postOhsSyncAllTrabajadoresPuestos: catchAsync(postOhsSyncAllTrabajadoresPuestos),
-  postOhsSyncAll: catchAsync(postOhsSyncAll),
-
-  bajaOhsTrabajadorForUser,
-  bajaOhsCentroForWorkplace,
-
-  ensureOhsTrabajadorForUser,
-  syncOhsCentroForWorkplace,
-  syncOhsPuesto,
-  syncOhsPuestosFromJobsLocal,
-  syncOhsTrabajadorRealFromSesameUser,
-  syncOhsTrabajadorPuestoReal,
-  syncOhsTrabajadorFull,
+  // Puestos OHS
+  queueSyncOhsPuestoFromJobSubcategory,
+  queueDeleteOhsPuestoFromSnapshot,
+  queueDeleteOhsPuestosFromJobSnapshot,
 };

@@ -74,6 +74,7 @@ const request = (method, path, data = null) => {
   });
 };
 
+
 module.exports = {
   request,
   OHS_COD_GRUPO_EMPRESA,

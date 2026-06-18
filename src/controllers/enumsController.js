@@ -24,6 +24,11 @@ const mongoose = require("mongoose");
 ---------------------------------*/
 
 const { uploadFileToDrive, updateFileInDrive, deleteFileById } = require("./googleController");
+const {
+  queueSyncOhsPuestoFromJobSubcategory,
+  queueDeleteOhsPuestoFromSnapshot,
+  queueDeleteOhsPuestosFromJobSnapshot,
+} = require("./ohsController");
 
 
 
@@ -405,6 +410,7 @@ const validTypes = {
   periodEndReason: PeriodEndReason,
 };
 
+
 // Función auxiliar para obtener el modelo según el tipo
 const getModelByType = (type) => {
   const Model = validTypes[type];
@@ -440,8 +446,9 @@ const postSubcategory = async (req, res) => {
   }
 
   if (req.body.type === "jobs") {
-    await ensureJobPositionDocumentation(subData._id, subData.name);
-  }
+  await ensureJobPositionDocumentation(subData._id, subData.name);
+  queueSyncOhsPuestoFromJobSubcategory(subData._id);
+}
 
   response(res, 200, updatedEnum);
 };
@@ -452,10 +459,26 @@ const deleteSubcategory = async (req, res) => {
     throw new ClientError("Los datos no son correctos", 400);
   }
 
-  const filter = { _id: req.body.id };
-  const update = { $pull: { subcategories: { _id: req.body.idCategory } } };
   const Model = getModelByType(req.body.type);
-  const updatedEnum = await Model.findOneAndUpdate(filter, update, { new: true });
+
+  if (req.body.type === "jobs") {
+  const jobSnapshot = await Jobs.findOne(
+    { "subcategories._id": req.body.idCategory },
+    { name: 1, "subcategories.$": 1 }
+  ).lean();
+
+  queueDeleteOhsPuestoFromSnapshot({
+    jobId: jobSnapshot?._id,
+    jobName: jobSnapshot?.name,
+    subcategory: jobSnapshot?.subcategories?.[0],
+  });
+}
+
+  const updatedEnum = await Model.findOneAndUpdate(
+    { _id: req.body.id },
+    { $pull: { subcategories: { _id: req.body.idCategory } } },
+    { new: true }
+  );
 
   response(res, 200, updatedEnum);
 };
@@ -541,7 +564,6 @@ const putEnums = async (req, res) => {
     "periodEndReason",
   ];
 
-
   if (!req.body.id || !req.body.name || !req.body.type) {
     throw new ClientError("Los datos no son correctos", 400);
   }
@@ -582,6 +604,8 @@ const putEnums = async (req, res) => {
     if (type === "jobs") {
       await ensureJobPositionDocumentation(subId, req.body.name);
       await updateJobPositionDocumentationName(subId, req.body.name);
+
+      queueSyncOhsPuestoFromJobSubcategory(subId);
     }
 
     return response(res, 200, updatedEnum);
@@ -673,6 +697,14 @@ const putEnums = async (req, res) => {
     throw new ClientError("Elemento no encontrado", 404);
   }
 
+  if (type === "jobs") {
+  const job = await Jobs.findById(id).select("subcategories").lean();
+
+  for (const sub of job?.subcategories || []) {
+    if (sub?._id) queueSyncOhsPuestoFromJobSubcategory(sub._id);
+  }
+}
+
   response(res, 200, updated);
 };
 
@@ -692,7 +724,16 @@ const deleteEnums = async (req, res) => {
     modeloPDF = doc.modeloPDF || null;
   }
 
-  const result = await Model.deleteOne({ _id: id });
+  if (type === "jobs") {
+  const jobSnapshot = await Jobs.findById(id)
+    .select("name subcategories")
+    .lean();
+
+  queueDeleteOhsPuestosFromJobSnapshot(jobSnapshot);
+}
+
+const result = await Model.deleteOne({ _id: id });
+
   if (result.deletedCount === 0) {
     throw new ClientError("No se encontró el documento para eliminar", 404);
   }

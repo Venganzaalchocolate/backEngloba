@@ -5,7 +5,7 @@ const {
 } = require("./ohsClient");
 
 /* ==========================================================================
-   Helpers base
+   Helpers
 ========================================================================== */
 
 const withGrupo = (data = {}) => ({
@@ -19,59 +19,51 @@ const withEmpresa = (data = {}) => ({
   ...data,
 });
 
-const crud = (path, defaultBody = {}, methods = ["get", "post", "put", "delete"]) => {
-  const service = {};
-
-  if (methods.includes("get")) {
-    service.get = (data = {}) => request("GET", path, { ...defaultBody, ...data });
-  }
-
-  if (methods.includes("post")) {
-    service.post = (data = {}) => request("POST", path, { ...defaultBody, ...data });
-  }
-
-  if (methods.includes("put")) {
-    service.put = (data = {}) => request("PUT", path, { ...defaultBody, ...data });
-  }
-
-  if (methods.includes("delete")) {
-    service.delete = (data = {}) => request("DELETE", path, { ...defaultBody, ...data });
-  }
-
-  return service;
+const isValidCode = (value) => {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue > 0;
 };
 
-/* ==========================================================================
-   Recursos OHS usados por la sincronización
-========================================================================== */
+const cleanString = (value = "") => String(value || "").trim();
 
-const OhsCentros = crud("V1/GEN/Centros", withGrupo(), ["get", "post", "put", "delete"]);
-const OhsPuestos = crud("V1/GEN/Puestos", withGrupo(), ["get", "post", "put", "delete"]);
-const OhsTrabajadores = crud("V1/GEN/Trabajadores", withEmpresa(), ["get", "post", "put", "delete"]);
+const normalizeDni = (value = "") =>
+  String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/-/g, "");
 
 /* ==========================================================================
    Centros
 ========================================================================== */
 
 const getOhsCentros = (data = {}) => {
-  return OhsCentros.get(data);
+  return request("GET", "V1/GEN/Centros", withGrupo(data));
 };
 
 const createOhsCentro = (data = {}) => {
-  return OhsCentros.post(data);
+  return request("POST", "V1/GEN/Centros", withGrupo(data));
 };
 
 const updateOhsCentro = (codCentro, data = {}) => {
-  return OhsCentros.put({
-    codCentro,
+  if (!isValidCode(codCentro)) {
+    throw new Error("codCentro inválido para actualizar centro OHS");
+  }
+
+  return request("PUT", "V1/GEN/Centros", withGrupo({
     ...data,
-  });
+    codCentro: Number(codCentro),
+  }));
 };
 
 const deleteOhsCentro = (codCentro) => {
-  return OhsCentros.delete({
-    codCentro,
-  });
+  if (!isValidCode(codCentro)) {
+    throw new Error("codCentro inválido para eliminar centro OHS");
+  }
+
+  return request("DELETE", "V1/GEN/Centros", withGrupo({
+    codCentro: Number(codCentro),
+  }));
 };
 
 /* ==========================================================================
@@ -79,23 +71,52 @@ const deleteOhsCentro = (codCentro) => {
 ========================================================================== */
 
 const getOhsPuestos = (data = {}) => {
-  return OhsPuestos.get(data);
+  return request("GET", "V1/GEN/Puestos", withGrupo(data));
 };
 
 const createOhsPuesto = (data = {}) => {
-  return OhsPuestos.post(data);
+  const nomTipoPuesto = cleanString(data.nomTipoPuesto);
+  const desTipoPuesto = cleanString(data.desTipoPuesto || data.nomTipoPuesto);
+
+  if (!nomTipoPuesto) {
+    throw new Error("nomTipoPuesto obligatorio para crear puesto OHS");
+  }
+
+  return request("POST", "V1/GEN/Puestos", {
+    nomTipoPuesto,
+    desTipoPuesto,
+    codGrupoEmpresa: OHS_COD_GRUPO_EMPRESA,
+  });
 };
 
 const updateOhsPuesto = (codTipoPuesto, data = {}) => {
-  return OhsPuestos.put({
-    codTipoPuesto,
-    ...data,
+  if (!isValidCode(codTipoPuesto)) {
+    throw new Error("codTipoPuesto inválido para actualizar puesto OHS");
+  }
+
+  const nomTipoPuesto = cleanString(data.nomTipoPuesto);
+  const desTipoPuesto = cleanString(data.desTipoPuesto || data.nomTipoPuesto);
+
+  if (!nomTipoPuesto) {
+    throw new Error("nomTipoPuesto obligatorio para actualizar puesto OHS");
+  }
+
+  return request("PUT", "V1/GEN/Puestos", {
+    nomTipoPuesto,
+    codTipoPuesto: Number(codTipoPuesto),
+    desTipoPuesto,
+    codGrupoEmpresa: OHS_COD_GRUPO_EMPRESA,
   });
 };
 
 const deleteOhsPuesto = (codTipoPuesto) => {
-  return OhsPuestos.delete({
-    codTipoPuesto,
+  if (!isValidCode(codTipoPuesto)) {
+    throw new Error("codTipoPuesto inválido para eliminar puesto OHS");
+  }
+
+  return request("DELETE", "V1/GEN/Puestos", {
+    codTipoPuesto: Number(codTipoPuesto),
+    codGrupoEmpresa: OHS_COD_GRUPO_EMPRESA,
   });
 };
 
@@ -104,48 +125,75 @@ const deleteOhsPuesto = (codTipoPuesto) => {
 ========================================================================== */
 
 const getOhsTrabajadores = (data = {}) => {
-  return OhsTrabajadores.get(data);
+  return request("GET", "V1/GEN/Trabajadores", withEmpresa(data));
 };
 
 const getOhsTrabajadorByDni = (dni) => {
   return getOhsTrabajadores({
-    codIdentificador: dni,
+    codIdentificador: normalizeDni(dni),
+  });
+};
+
+const getOhsTrabajadorByDniIncludingDeleted = (dni) => {
+  return getOhsTrabajadores({
+    codIdentificador: normalizeDni(dni),
+    indIncluyeBorrados: true,
+  });
+};
+
+const getOhsTrabajadorByCodIncludingDeleted = (codTrabajador) => {
+  if (!isValidCode(codTrabajador)) {
+    throw new Error("codTrabajador inválido para consultar trabajador OHS");
+  }
+
+  return getOhsTrabajadores({
+    codTrabajador: Number(codTrabajador),
+    indIncluyeBorrados: true,
   });
 };
 
 const createOhsTrabajador = (data = {}) => {
-  return OhsTrabajadores.post(data);
+  return request("POST", "V1/GEN/Trabajadores", withEmpresa(data));
 };
 
 const updateOhsTrabajador = (codTrabajador, data = {}) => {
-  return OhsTrabajadores.put({
-    codTrabajador,
+  if (!isValidCode(codTrabajador)) {
+    throw new Error("codTrabajador inválido para actualizar trabajador OHS");
+  }
+
+  return request("PUT", "V1/GEN/Trabajadores", withEmpresa({
     ...data,
-  });
+    codTrabajador: Number(codTrabajador),
+  }));
 };
 
 const deleteOhsTrabajador = (codTrabajador) => {
-  return OhsTrabajadores.delete({
-    codTrabajador,
-  });
+  if (!isValidCode(codTrabajador)) {
+    throw new Error("codTrabajador inválido para eliminar trabajador OHS");
+  }
+
+  return request("DELETE", "V1/GEN/Trabajadores", withEmpresa({
+    codTrabajador: Number(codTrabajador),
+  }));
 };
 
 /* ==========================================================================
-   Test de endpoints principales
+   Test básico
 ========================================================================== */
 
-const OHS_WORKING_GET_ENDPOINTS = [
-  ["Centros", getOhsCentros],
-  ["Puestos", getOhsPuestos],
-  ["Trabajadores", getOhsTrabajadores],
-];
-
 const getOhsWorkingGetEndpoints = async () => {
+  const endpoints = [
+    ["Centros", getOhsCentros],
+    ["Puestos", getOhsPuestos],
+    ["Trabajadores", getOhsTrabajadores],
+  ];
+
   const results = [];
 
-  for (const [label, fn] of OHS_WORKING_GET_ENDPOINTS) {
+  for (const [label, fn] of endpoints) {
     try {
       const data = await fn();
+
       results.push({
         label,
         ok: true,
@@ -182,8 +230,9 @@ module.exports = {
 
   getOhsTrabajadores,
   getOhsTrabajadorByDni,
+  getOhsTrabajadorByDniIncludingDeleted,
+  getOhsTrabajadorByCodIncludingDeleted,
   createOhsTrabajador,
   updateOhsTrabajador,
   deleteOhsTrabajador,
-
 };

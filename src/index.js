@@ -29,6 +29,7 @@ const moduleScopeRoutes=require('./routes/moduleScopeRoutes')
 const documentationReceiptTemplaterRoutes=require('./routes/documentationReceiptTemplaterRoutes')
 const anideCentroManagerRoutes=require('./routes/anideRoutes')
 
+
 const { connectToDatabase } = require('./database/connect');
 require('./controllers/cronScheduleController');
 
@@ -89,6 +90,7 @@ app.use('/api', attendedUserRoutes)
 app.use('/api', moduleScopeRoutes)
 app.use('/api', documentationReceiptTemplaterRoutes)
 app.use('/api', anideCentroManagerRoutes)
+
 
 
  

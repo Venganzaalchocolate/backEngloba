@@ -7,6 +7,12 @@ const {
   syncSesameOfficeForWorkplace,
   deleteSesameOfficeForWorkplace,
 } = require('./sesameController');
+const {
+  queueCreateOhsCentroForWorkplace,
+  queueUpdateOhsCentroForWorkplace,
+  queueDeleteOhsCentroFromSnapshot,
+} = require("./ohsController");
+
 
 const isValidId = (v) => mongoose.Types.ObjectId.isValid(v);
 const isDupKey = (err) => err && err.code === 11000;
@@ -224,6 +230,8 @@ const createWorkplace = async (req, res) => {
     await syncSesameOfficeForWorkplace(workplace._id);
     workplace = await Workplace.findById(workplace._id).populate('province', 'name');
   }
+
+  queueCreateOhsCentroForWorkplace(workplace._id);
 
   response(res, 200, workplace);
 };
@@ -513,6 +521,8 @@ if (!Object.keys(updateObj).length && !wantsSesameOffice) {
     updated = await Workplace.findById(updated._id).populate('province', 'name');
   }
 
+  queueUpdateOhsCentroForWorkplace(updated._id);
+
   response(res, 200, updated);
 };
 
@@ -536,6 +546,9 @@ const deleteWorkplace = async (req, res) => {
   if (dispositivesUsingWorkplace > 0) {
     throw new ClientError('No se puede eliminar el centro porque está vinculado a uno o varios dispositivos', 400);
   }
+
+
+    queueDeleteOhsCentroFromSnapshot(workplace);
 
   if (workplace.officeIdSesame) {
     await deleteSesameOfficeForWorkplace(workplaceId);

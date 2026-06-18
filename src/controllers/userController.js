@@ -13,6 +13,11 @@ const {
   disableSesameEmployeeForUser,
   deleteSesameEmployeeForUser,
 } = require('./sesameController');
+const {
+  queueSyncOhsTrabajadorForUser,
+  queueBajaOhsTrabajadorForUser,
+  queueReactivarOhsTrabajadorForUser,
+} = require('./ohsController');
 
 const WEEKLY_HOURS = 38.5;
 // Día equivalente “redondeado”
@@ -324,7 +329,15 @@ const postCreateUser = async (req, res) => {
     console.log("no se ha podido crear/sincronizar el usuario en Sesame", e?.message || e);
   }
 
-  response(res, 200, newUser);
+
+if (newUser?.employmentStatus === "activo") {
+  queueSyncOhsTrabajadorForUser(newUser._id);
+}
+
+
+  
+
+  return response(res, 200, newUser);
 };
 
 // =========================
@@ -691,6 +704,7 @@ const UserDeleteId = async (req, res) => {
   await LeaveModel.deleteMany({ idUser: id });
   await PeriodsModel.deleteMany({ idUser: id });
 
+    queueBajaOhsTrabajadorForUser(id);
   if (userToDelete.email) {
     try { await deleteUserByEmailWS(userToDelete.email); } catch (e) {
       console.log('[UserDeleteId] Fallo al borrar en Workspace:', e?.message || e);
@@ -713,7 +727,8 @@ const userPut = async (req, res) => {
 
   const updateFields = {};
   const userId = toId(req.body._id);
-  const userAux = await User.findById(userId).select("email employmentStatus userIdSesame");
+
+  const userAux = await User.findById(userId).select("email employmentStatus userIdSesame userIdOhs");
   if (!userAux) throw new ClientError("Usuario no encontrado", 404);
 
   if (req.body.employmentStatus) {
@@ -757,13 +772,6 @@ const userPut = async (req, res) => {
         const ws = await createUserWS(userId);
         updateFields.email = ws.email;
       }
-
-      /**
-       * No activamos Sesame aquí.
-       * La activación Sesame se hace desde el flujo del front:
-       * postSesameAssignEmployeeToDispositiveScopes
-       * porque necesita seleccionar dispositivo y, a veces, workplace.
-       */
     }
   }
 
@@ -817,7 +825,6 @@ const userPut = async (req, res) => {
 
   if (req.body.studies) {
     const studiesParsed = parseField(req.body.studies, "studies");
-
     updateFields.studies = studiesParsed.map((s) => new mongoose.Types.ObjectId(s));
   }
 
@@ -831,13 +838,16 @@ const userPut = async (req, res) => {
   if (Array.isArray(req.body.personalHours)) updateFields.personalHours = normalizeVacationEntries(req.body.personalHours);
   if (req.body.notes !== undefined) updateFields.notes = req.body.notes;
 
-
   try {
-    const updatedUser = await User.findOneAndUpdate(
+    let updatedUser = await User.findOneAndUpdate(
       { _id: userId },
       { $set: updateFields },
       { new: true, runValidators: true }
     );
+
+    if (!updatedUser) {
+      throw new ClientError("Usuario no encontrado", 404);
+    }
 
     if (
       req.body.employmentStatus === "activo" &&
@@ -858,6 +868,14 @@ const userPut = async (req, res) => {
       }
     }
 
+if (req.body.employmentStatus === "ya no trabaja con nosotros") {
+  queueBajaOhsTrabajadorForUser(userId);
+} else if (req.body.employmentStatus === "activo") {
+  queueReactivarOhsTrabajadorForUser(userId);
+} else if (updatedUser.employmentStatus === "activo") {
+  queueSyncOhsTrabajadorForUser(userId, {}, { createIfMissing: false });
+}
+
     if (req.body.personalHours || req.body.vacationHours) {
       const payload = {
         _id: updatedUser._id,
@@ -866,6 +884,7 @@ const userPut = async (req, res) => {
         personalHours: updatedUser.personalHours || [],
         personalDays: updatedUser.personalDays || [],
       };
+
       return response(res, 200, payload);
     }
 
@@ -875,6 +894,7 @@ const userPut = async (req, res) => {
       const [[, dupValue]] = Object.entries(error.keyValue);
       throw new ClientError(`'${dupValue}' ya existe. No se pudo actualizar el usuario porque debe ser único`, 400);
     }
+
     throw new ClientError("Error al actualizar el usuario", 500);
   }
 };
@@ -1097,81 +1117,112 @@ const payroll = async (req, res) => {
 // =========================
 // Rehire (migrado a Dispositive / dispositiveId)
 // =========================
+// =========================
+// Rehire (migrado a Dispositive / dispositiveId)
+// =========================
 const rehireUser = async (req, res) => {
-  validateRequiredFields(req.body, ['dni', 'hiring']);
+  validateRequiredFields(req.body, ["dni", "hiring"]);
 
   const rawDni = req.body.dni;
   const hiringInput = req.body.hiring;
-  if (typeof rawDni !== 'string') {
-    throw new ClientError('El DNI debe ser un string', 400);
+
+  if (typeof rawDni !== "string") {
+    throw new ClientError("El DNI debe ser un string", 400);
   }
 
   const dni = normalizeDni(rawDni);
 
   const userDoc = await User.findOne({
-    dni: { $regex: `^${dni}$`, $options: 'i' }
+    dni: { $regex: `^${dni}$`, $options: "i" },
   });
+
   if (!userDoc) {
-    throw new ClientError('Usuario no encontrado', 404);
+    throw new ClientError("Usuario no encontrado", 404);
   }
 
   if (!hiringInput?.workShift?.type) {
     throw new ClientError('El hiring debe incluir "workShift.type"', 400);
   }
+
   const workShiftType = hiringInput.workShift.type;
 
   const openPeriods = await Periods.find({
     idUser: userDoc._id,
     active: { $ne: false },
-    $or: [{ endDate: null }, { endDate: { $exists: false } }]
+    $or: [{ endDate: null }, { endDate: { $exists: false } }],
   }).select({ workShift: 1 }).lean();
 
-  const openFullTime = openPeriods.filter(p => p.workShift?.type === 'completa').length;
-  const openPartTime = openPeriods.filter(p => p.workShift?.type === 'parcial').length;
+  const openFullTime = openPeriods.filter((p) => p.workShift?.type === "completa").length;
+  const openPartTime = openPeriods.filter((p) => p.workShift?.type === "parcial").length;
 
   const hasEndDate = !!hiringInput.endDate;
+
   if (!hasEndDate) {
-    if (workShiftType === 'completa') {
+    if (workShiftType === "completa") {
       if (openFullTime > 0 || openPartTime > 0) {
-        throw new ClientError('Ya existe un periodo abierto; no se puede crear otro a jornada completa', 400);
+        throw new ClientError(
+          "Ya existe un periodo abierto; no se puede crear otro a jornada completa",
+          400
+        );
       }
-    } else if (workShiftType === 'parcial') {
+    } else if (workShiftType === "parcial") {
       if (openFullTime > 0) {
-        throw new ClientError('Hay un periodo abierto a jornada completa; no se puede crear uno parcial', 400);
+        throw new ClientError(
+          "Hay un periodo abierto a jornada completa; no se puede crear uno parcial",
+          400
+        );
       }
+
       if (openPartTime >= 2) {
-        throw new ClientError('No se permiten más de 2 periodos abiertos a media jornada', 400);
+        throw new ClientError(
+          "No se permiten más de 2 periodos abiertos a media jornada",
+          400
+        );
       }
     } else {
-      throw new ClientError('Tipo de jornada inválido', 400);
+      throw new ClientError("Tipo de jornada inválido", 400);
     }
   }
 
-  // Documento del nuevo Period (usa dispositiveId)
+  const startDate = new Date(hiringInput.startDate);
+  if (Number.isNaN(startDate.getTime())) {
+    throw new ClientError("Fecha de inicio no válida", 400);
+  }
+
+  const endDate = hiringInput.endDate ? new Date(hiringInput.endDate) : null;
+  if (endDate && Number.isNaN(endDate.getTime())) {
+    throw new ClientError("Fecha de fin no válida", 400);
+  }
+
   const hiringDoc = {
     idUser: userDoc._id,
-    startDate: new Date(hiringInput.startDate),
-    endDate: hiringInput.endDate ? new Date(hiringInput.endDate) : null,
-    dispositiveId: toObjectId(hiringInput.dispositiveId, 'dispositiveId'),
-    position: toObjectId(hiringInput.position, 'position'),
+    startDate,
+    endDate,
+    dispositiveId: toObjectId(hiringInput.dispositiveId, "dispositiveId"),
+    position: toObjectId(hiringInput.position, "position"),
     workShift: { type: workShiftType },
     active: hiringInput.active !== false,
   };
 
   if (hiringInput.selectionProcess) {
-    hiringDoc.selectionProcess = toObjectId(hiringInput.selectionProcess, 'selectionProcess');
+    hiringDoc.selectionProcess = toObjectId(
+      hiringInput.selectionProcess,
+      "selectionProcess"
+    );
   }
 
-  // Replacement por DNI
   const dniReplacement = hiringInput.dnireplacement || hiringInput?.reason?.dni || null;
+
   if (dniReplacement) {
     const dniRep = normalizeDni(dniReplacement);
+
     const replacementUser = await User.findOne(
-      { dni: { $regex: `^${dniRep}$`, $options: 'i' } },
+      { dni: { $regex: `^${dniRep}$`, $options: "i" } },
       { _id: 1 }
     );
+
     if (!replacementUser) {
-      throw new ClientError('El trabajador al que sustituye no existe', 400);
+      throw new ClientError("El trabajador al que sustituye no existe", 400);
     }
 
     hiringDoc.replacement = { user: replacementUser._id };
@@ -1179,8 +1230,10 @@ const rehireUser = async (req, res) => {
     const openLeave = await Leaves.findOne({
       idUser: replacementUser._id,
       active: { $ne: false },
-      actualEndLeaveDate: null
-    }).sort({ startLeaveDate: -1 }).select({ _id: 1 });
+      actualEndLeaveDate: null,
+    })
+      .sort({ startLeaveDate: -1 })
+      .select({ _id: 1 });
 
     if (openLeave) {
       hiringDoc.replacement.leave = openLeave._id;
@@ -1188,58 +1241,75 @@ const rehireUser = async (req, res) => {
       const lastLeave = await Leaves.findOne({ idUser: replacementUser._id })
         .sort({ startLeaveDate: -1 })
         .select({ _id: 1 });
+
       if (lastLeave) hiringDoc.replacement.leave = lastLeave._id;
     }
   }
 
   let createdPeriod;
+
   try {
     createdPeriod = await Periods.create(hiringDoc);
-  } catch {
-    throw new ClientError('No se pudo crear el nuevo periodo de contratación', 400);
+  } catch (error) {
+    console.log("[rehireUser] Error creando periodo:", error?.message || error);
+    throw new ClientError("No se pudo crear el nuevo periodo de contratación", 400);
   }
 
-  // Asegurar email corporativo y grupo + Preferents por provincia del dispositive
-  // 1) El estado de recontratación debe actualizarse siempre
-  await User.updateOne(
-    { _id: userDoc._id },
-    { $set: { employmentStatus: 'en proceso de contratación' } }
+  let updatedUser = await User.findByIdAndUpdate(
+    userDoc._id,
+    {
+      $set: {
+        employmentStatus: "en proceso de contratación",
+      },
+    },
+    {
+      new: true,
+      runValidators: true,
+    }
   );
 
-  // 2) Workspace no debe bloquear el estado ni el periodo
+  if (!updatedUser) {
+    throw new ClientError("No se pudo actualizar el estado del usuario", 400);
+  }
+
   try {
-    if (!userDoc.email) {
-      const ws = await createUserWS(userDoc._id);
+    if (!updatedUser.email) {
+      const ws = await createUserWS(updatedUser._id);
 
       if (ws?.email) {
-        await User.updateOne(
-          { _id: userDoc._id },
-          { $set: { email: String(ws.email).toLowerCase() } }
+        updatedUser = await User.findByIdAndUpdate(
+          updatedUser._id,
+          {
+            $set: {
+              email: String(ws.email).toLowerCase(),
+            },
+          },
+          {
+            new: true,
+            runValidators: true,
+          }
         );
-
-        userDoc.email = String(ws.email).toLowerCase();
       }
     }
   } catch (e) {
-    console.log('[rehireUser] No se pudo crear email corporativo:', e?.message || e);
+    console.log("[rehireUser] No se pudo crear email corporativo:", e?.message || e);
   }
 
-  // 3) Grupo Workspace y Preferents tampoco deben bloquear
   try {
     const dsp = await Dispositive.findById(hiringDoc.dispositiveId)
-      .select('groupWorkspace province')
+      .select("groupWorkspace province")
       .lean();
 
     const groupWorkspaceId = dsp?.groupWorkspace;
 
     if (groupWorkspaceId) {
-      await addUserToGroup(userDoc._id, groupWorkspaceId);
+      await addUserToGroup(updatedUser._id, groupWorkspaceId);
     }
 
     if (dsp?.province) {
       await Preferents.updateMany(
         {
-          user: userDoc._id,
+          user: updatedUser._id,
           active: true,
           jobs: hiringDoc.position,
           provinces: dsp.province,
@@ -1248,11 +1318,13 @@ const rehireUser = async (req, res) => {
       );
     }
   } catch (e) {
-    console.log('[rehireUser] Workspace/Preferents non-blocking:', e?.message || e);
+    console.log("[rehireUser] Workspace/Preferents non-blocking:", e?.message || e);
   }
 
-  const updatedUser = await User.findById(userDoc._id);
-  return response(res, 200, { user: updatedUser, period: createdPeriod });
+  return response(res, 200, {
+    user: updatedUser,
+    period: createdPeriod,
+  });
 };
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
