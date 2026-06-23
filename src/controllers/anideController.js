@@ -1,6 +1,12 @@
 const mongoose = require("mongoose");
-const { AnideCentro, AnideUsuariaAtendida, Provinces } = require("../models/indexModels");
+const {
+  AnideCentro,
+  AnideUsuariaAtendida,
+  Provinces,
+} = require("../models/indexModels");
 const { catchAsync, response, ClientError } = require("../utils/indexUtils");
+
+const BED_STATUSES = ["available", "maintenance", "unusable", "reserved"];
 
 const toId = (id, fieldName = "id") => {
   if (!id || !mongoose.Types.ObjectId.isValid(id)) {
@@ -64,10 +70,7 @@ const findCama = (habitacion, camaId) => {
 
 const getActiveStay = (usuaria) => {
   return (usuaria.staysAnide || []).find((stay) => {
-    return (
-      stay.active !== false &&
-      (!stay.endDate || stay.endDate === null)
-    );
+    return stay.active !== false && (!stay.endDate || stay.endDate === null);
   });
 };
 
@@ -92,6 +95,10 @@ const assertCentroHabitacionCamaValid = async ({
 
   if (cama.active === false) {
     throw new ClientError("La cama no está activa", 400);
+  }
+
+  if (["maintenance", "unusable", "reserved"].includes(cama.status)) {
+    throw new ClientError("La cama no está disponible para asignación", 400);
   }
 
   return { centro, habitacion, cama };
@@ -123,16 +130,6 @@ const assertCamaLibre = async ({ centroId, camaId, excludeUsuariaId = null }) =>
 
 /* =====================================================
    CENTROS ANIDE
-   type:
-   - list
-   - get
-   - create
-   - update
-   - toggle
-   - roomAdd
-   - roomUpdate
-   - bedAdd
-   - bedUpdate
 ===================================================== */
 
 const anideCentroManager = async (req, res) => {
@@ -318,10 +315,22 @@ const anideCentroManager = async (req, res) => {
   }
 
   if (type === "bedAdd") {
-    const { centroId, habitacionId, name, notes = "" } = req.body || {};
+    const {
+      centroId,
+      habitacionId,
+      name,
+      active = true,
+      status = "available",
+      capacity = 1,
+      notes = "",
+    } = req.body || {};
 
     if (!name) {
       throw new ClientError("El nombre de la cama es requerido", 400);
+    }
+
+    if (!BED_STATUSES.includes(status)) {
+      throw new ClientError("El estado de la cama no es válido", 400);
     }
 
     const centro = await getCentroOrFail(centroId);
@@ -329,7 +338,9 @@ const anideCentroManager = async (req, res) => {
 
     habitacion.camas.push({
       name: String(name).trim(),
-      active: true,
+      active,
+      status,
+      capacity: Math.max(Number(capacity || 1), 1),
       notes,
     });
 
@@ -345,33 +356,46 @@ const anideCentroManager = async (req, res) => {
       camaId,
       name,
       active,
+      status,
+      capacity,
       notes,
     } = req.body || {};
+
+    if (status !== undefined && !BED_STATUSES.includes(status)) {
+      throw new ClientError("El estado de la cama no es válido", 400);
+    }
 
     const centro = await getCentroOrFail(centroId);
     const habitacion = findHabitacion(centro, habitacionId);
     const cama = findCama(habitacion, camaId);
 
-    if (active === false) {
-      const hasActiveStay = await AnideUsuariaAtendida.exists({
-        active: true,
-        staysAnide: {
-          $elemMatch: {
-            centro: centro._id,
-            camaId: cama._id,
-            active: true,
-            $or: [{ endDate: null }, { endDate: { $exists: false } }],
-          },
+    const hasActiveStay = await AnideUsuariaAtendida.exists({
+      active: true,
+      staysAnide: {
+        $elemMatch: {
+          centro: centro._id,
+          camaId: cama._id,
+          active: true,
+          $or: [{ endDate: null }, { endDate: { $exists: false } }],
         },
-      });
+      },
+    });
 
-      if (hasActiveStay) {
-        throw new ClientError("No se puede desactivar una cama ocupada", 400);
-      }
+    if (hasActiveStay && active === false) {
+      throw new ClientError("No se puede desactivar una cama ocupada", 400);
+    }
+
+    if (
+      hasActiveStay &&
+      ["maintenance", "unusable", "reserved"].includes(status)
+    ) {
+      throw new ClientError("No se puede bloquear una cama ocupada", 400);
     }
 
     if (name !== undefined) cama.name = String(name).trim();
     if (active !== undefined) cama.active = active;
+    if (status !== undefined) cama.status = status;
+    if (capacity !== undefined) cama.capacity = Math.max(Number(capacity || 1), 1);
     if (notes !== undefined) cama.notes = notes;
 
     await centro.save();
@@ -384,16 +408,6 @@ const anideCentroManager = async (req, res) => {
 
 /* =====================================================
    USUARIAS ANIDE
-   type:
-   - list
-   - get
-   - create
-   - update
-   - toggle
-   - aliasAdd
-   - assignStay
-   - moveStay
-   - closeStay
 ===================================================== */
 
 const anideUsuariaManager = async (req, res) => {
@@ -516,6 +530,7 @@ const anideUsuariaManager = async (req, res) => {
       birthday = null,
       nationality = "",
       gender = "",
+      familyUnit = {},
       notes = "",
       createdBy = null,
     } = req.body || {};
@@ -530,6 +545,12 @@ const anideUsuariaManager = async (req, res) => {
       birthday: birthday ? new Date(birthday) : null,
       nationality: String(nationality || "").trim(),
       gender,
+      familyUnit: {
+        children: Number(familyUnit.children || 0),
+        dependents: Number(familyUnit.dependents || 0),
+        adults: Number(familyUnit.adults || 0),
+        notes: String(familyUnit.notes || "").trim(),
+      },
       notes,
       createdBy:
         createdBy && mongoose.Types.ObjectId.isValid(createdBy)
@@ -549,6 +570,7 @@ const anideUsuariaManager = async (req, res) => {
       birthday,
       nationality,
       gender,
+      familyUnit,
       notes,
       active,
       updatedBy,
@@ -564,6 +586,15 @@ const anideUsuariaManager = async (req, res) => {
     if (gender !== undefined) updateFields.gender = gender;
     if (notes !== undefined) updateFields.notes = notes;
     if (active !== undefined) updateFields.active = active;
+
+    if (familyUnit !== undefined) {
+      updateFields.familyUnit = {
+        children: Number(familyUnit.children || 0),
+        dependents: Number(familyUnit.dependents || 0),
+        adults: Number(familyUnit.adults || 0),
+        notes: String(familyUnit.notes || "").trim(),
+      };
+    }
 
     if (updatedBy && mongoose.Types.ObjectId.isValid(updatedBy)) {
       updateFields.updatedBy = updatedBy;
@@ -640,6 +671,7 @@ const anideUsuariaManager = async (req, res) => {
       habitacionId,
       camaId,
       startDate,
+      companions = {},
       notes = "",
     } = req.body || {};
 
@@ -671,6 +703,12 @@ const anideUsuariaManager = async (req, res) => {
       startDate: new Date(startDate),
       endDate: null,
       active: true,
+      companions: {
+        children: Number(companions.children || 0),
+        dependents: Number(companions.dependents || 0),
+        adults: Number(companions.adults || 0),
+        notes: String(companions.notes || "").trim(),
+      },
       notes,
     });
 
@@ -689,6 +727,7 @@ const anideUsuariaManager = async (req, res) => {
       habitacionId,
       camaId,
       moveDate,
+      companions = null,
       notes = "",
     } = req.body || {};
 
@@ -706,6 +745,8 @@ const anideUsuariaManager = async (req, res) => {
       throw new ClientError("La usuaria no tiene una estancia activa", 400);
     }
 
+    const nextCompanions = companions || activeStay.companions || {};
+
     activeStay.active = false;
     activeStay.endDate = new Date(moveDate);
 
@@ -720,6 +761,12 @@ const anideUsuariaManager = async (req, res) => {
       startDate: new Date(moveDate),
       endDate: null,
       active: true,
+      companions: {
+        children: Number(nextCompanions.children || 0),
+        dependents: Number(nextCompanions.dependents || 0),
+        adults: Number(nextCompanions.adults || 0),
+        notes: String(nextCompanions.notes || "").trim(),
+      },
       notes,
     });
 
@@ -784,7 +831,7 @@ const anideCentroOccupancy = async (req, res) => {
       },
     },
   })
-    .select("_id firstName lastName documentId nationality gender staysAnide")
+    .select("_id firstName lastName documentId nationality gender familyUnit staysAnide")
     .lean();
 
   const occupiedByCama = {};
@@ -806,6 +853,8 @@ const anideCentroOccupancy = async (req, res) => {
       documentId: usuaria.documentId || "",
       nationality: usuaria.nationality || "",
       gender: usuaria.gender || "",
+      familyUnit: usuaria.familyUnit || {},
+      companions: stay.companions || {},
       stayId: String(stay._id),
       startDate: stay.startDate,
       notes: stay.notes || "",
@@ -817,17 +866,30 @@ const anideCentroOccupancy = async (req, res) => {
   let occupiedBeds = 0;
 
   const habitaciones = (centro.habitaciones || []).map((habitacion) => {
+    let roomActiveBeds = 0;
+    let roomOccupiedBeds = 0;
+
     const camas = (habitacion.camas || []).map((cama) => {
       const occupied = occupiedByCama[String(cama._id)] || null;
+      const active = cama.active !== false;
+      const status = cama.status || "available";
+      const usable = active && status !== "unusable" && status !== "maintenance";
 
       totalBeds += 1;
-      if (cama.active !== false) activeBeds += 1;
-      if (occupied) occupiedBeds += 1;
+      if (usable) activeBeds += 1;
+      if (usable) roomActiveBeds += 1;
+
+      if (occupied) {
+        occupiedBeds += 1;
+        roomOccupiedBeds += 1;
+      }
 
       return {
         _id: String(cama._id),
         name: cama.name,
-        active: cama.active !== false,
+        active,
+        status,
+        capacity: cama.capacity || 1,
         notes: cama.notes || "",
         occupied: !!occupied,
         usuaria: occupied,
@@ -840,6 +902,9 @@ const anideCentroOccupancy = async (req, res) => {
       active: habitacion.active !== false,
       notes: habitacion.notes || "",
       camas,
+      activeBeds: roomActiveBeds,
+      occupiedBeds: roomOccupiedBeds,
+      freeBeds: Math.max(roomActiveBeds - roomOccupiedBeds, 0),
     };
   });
 
@@ -854,7 +919,7 @@ const anideCentroOccupancy = async (req, res) => {
       totalBeds,
       activeBeds,
       occupiedBeds,
-      freeBeds: activeBeds - occupiedBeds,
+      freeBeds: Math.max(activeBeds - occupiedBeds, 0),
     },
     habitaciones,
   });
@@ -892,12 +957,12 @@ const findProvinceIdByName = async (name) => {
 const createDemoRoom = (name, totalBeds = 2, extra = {}) => ({
   name,
   active: extra.active !== false,
-  status: extra.status || "available",
   notes: extra.notes || "",
   camas: Array.from({ length: totalBeds }).map((_, index) => ({
     name: `Cama ${index + 1}`,
     active: true,
     status: "available",
+    capacity: 1,
     notes: "",
   })),
 });
@@ -905,7 +970,14 @@ const createDemoRoom = (name, totalBeds = 2, extra = {}) => ({
 const getRoom = (centro, roomIndex) => centro.habitaciones[roomIndex];
 const getBed = (room, bedIndex) => room.camas[bedIndex];
 
-const buildDemoStay = ({ centro, room, bed, startDate, notes = "" }) => ({
+const buildDemoStay = ({
+  centro,
+  room,
+  bed,
+  startDate,
+  companions = {},
+  notes = "",
+}) => ({
   centro: centro._id,
   province: centro.province,
   habitacionId: room._id,
@@ -913,10 +985,14 @@ const buildDemoStay = ({ centro, room, bed, startDate, notes = "" }) => ({
   startDate: new Date(startDate),
   endDate: null,
   active: true,
+  companions: {
+    children: Number(companions.children || 0),
+    dependents: Number(companions.dependents || 0),
+    adults: Number(companions.adults || 0),
+    notes: String(companions.notes || "").trim(),
+  },
   notes,
 });
-
-
 
 module.exports = {
   anideCentroManager: catchAsync(anideCentroManager),

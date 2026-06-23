@@ -14,6 +14,19 @@ const camaSchema = new Schema(
       default: true,
     },
 
+    status: {
+      type: String,
+      enum: ["available", "occupied", "maintenance", "unusable", "reserved"],
+      default: "available",
+      index: true,
+    },
+
+    capacity: {
+      type: Number,
+      default: 1,
+      min: 1,
+    },
+
     notes: {
       type: String,
       trim: true,

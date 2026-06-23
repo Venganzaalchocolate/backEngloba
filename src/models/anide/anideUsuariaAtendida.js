@@ -79,6 +79,32 @@ const stayAnideSchema = new Schema(
       index: true,
     },
 
+    companions: {
+      children: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      dependents: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      adults: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      notes: {
+        type: String,
+        trim: true,
+        default: "",
+      },
+    },
+
     notes: {
       type: String,
       trim: true,
@@ -139,6 +165,32 @@ const anideUsuariaAtendidaSchema = new Schema(
       type: String,
       enum: ["male", "female", "others", "nonBinary", ""],
       default: "",
+    },
+
+    familyUnit: {
+      children: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      dependents: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      adults: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+
+      notes: {
+        type: String,
+        trim: true,
+        default: "",
+      },
     },
 
     staysAnide: {

@@ -130,6 +130,7 @@ const groupSuffixMap = {
   psychology: "psico",
   education: "edu",
   tecnicos: "tec",
+  juridico: "jur"
 };
 
 const groupNamePrefixMap = {
@@ -139,6 +140,7 @@ const groupNamePrefixMap = {
   psychology: "Equipo de Psicólogos",
   education: "Equipo de Educadores",
   coordination: "Equipo de Coordinadores",
+  juridico: "Equipo jurídico",
   blank: "Subgrupo de",
 };
 
