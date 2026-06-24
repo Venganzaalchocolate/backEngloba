@@ -6,10 +6,12 @@ const {
   processDailyLeaveStatusChanges,
   processDailyExpectedLeaveEndReminders
 } = require('./leaveController');
+const { processHrHiringStartReminders } = require('./hiringController');
 
 let isRunning = false;
 let isRunningDisableVolunteers = false;
 let isRunningLeaves = false;
+let isRunningHiringReminders = false;
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -96,6 +98,30 @@ if (isDev) {
       isRunningLeaves = false;
     }
   }, { timezone: 'Europe/Madrid' });
+
+  // 4) Cada día a la 01:00: avisar a RRHH de altas próximas en 24h/48h
+  cron.schedule('0 1 * * *', async () => {
+    if (isRunningHiringReminders) {
+      console.log('🕑 Aún sigue ejecutándose la comprobación de altas próximas, esperando siguiente turno.');
+      return;
+    }
+
+    isRunningHiringReminders = true;
+    console.log('▶️ Iniciando comprobación de altas próximas...');
+
+    try {
+      const res = await processHrHiringStartReminders();
+
+      console.log('✅ processHrHiringStartReminders() finalizado:', {
+        checkedUsers: res?.checkedUsers ?? 0,
+        checkedPeriods: res?.checkedPeriods ?? 0,
+        emailed: res?.emailed?.length ?? 0,
+        emailErrors: res?.emailErrors?.length ?? 0,
+      });
+    } catch (err) {
+      console.error('❌ Error en comprobación de altas próximas:', err);
+    } finally {
+      isRunningHiringReminders = false;
+    }
+  }, { timezone: 'Europe/Madrid' });
 }
-
-

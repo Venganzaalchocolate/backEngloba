@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const { User, Periods, Leaves, Preferents, Dispositive, Jobs, PeriodEndReason } = require('../models/indexModels');
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const { moveUserBetweenDevicesWS, syncWorkspaceOrgUnitForUser } = require('./workspaceController');
+const { buildHiringHrReminderPlainText, buildHiringHrReminderHtmlEmail } = require('../templates/emailTemplates');
+const { sendEmail } = require('./emailControllerGoogle');
 
 /* ---------------------------------------------------------
    Helpers
@@ -773,8 +775,125 @@ async function relocateHirings(req, res) {
   }
 }
 
+async function processHrHiringStartReminders() {
+  const hrEmail = "maria.admin@engloba.org.es";
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const afterTomorrow = new Date(today);
+  afterTomorrow.setDate(afterTomorrow.getDate() + 2);
+
+  const limit = new Date(today);
+  limit.setDate(limit.getDate() + 3);
+
+  const users = await User.find({
+    employmentStatus: "en proceso de contratación",
+  })
+    .select("firstName lastName dni email phone employmentStatus")
+    .lean();
+
+  const periods = await Periods.find({
+    idUser: { $in: users.map((u) => u._id) },
+    active: true,
+    startDate: {
+      $gte: tomorrow,
+      $lt: limit,
+    },
+  })
+    .populate({
+      path: "dispositiveId",
+      select: "name program province",
+      populate: [
+        { path: "program", select: "name" },
+        { path: "province", select: "name" },
+      ],
+    })
+    .lean();
+
+  const jobs = await Jobs.find({
+    "subcategories._id": {
+      $in: periods.map((p) => p.position).filter(Boolean),
+    },
+  })
+    .select("subcategories")
+    .lean();
+
+  const usersById = new Map(users.map((u) => [String(u._id), u]));
+  const positionsById = new Map();
+
+  for (const job of jobs) {
+    for (const subcategory of job.subcategories || []) {
+      positionsById.set(String(subcategory._id), subcategory);
+    }
+  }
+
+  const result = {
+    checkedUsers: users.length,
+    checkedPeriods: periods.length,
+    emailed: [],
+    emailErrors: [],
+  };
+
+  for (const period of periods) {
+    const user = usersById.get(String(period.idUser));
+    if (!user) continue;
+
+    const workerName = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+    const hoursRemaining = period.startDate >= afterTomorrow ? 48 : 24;
+
+    const emailData = {
+      hoursRemaining,
+      workerName,
+      workerDni: user.dni || "",
+      workerEmail: user.email || "",
+      workerPhone: user.phone || "",
+      startDate: new Date(period.startDate).toLocaleDateString("es-ES"),
+      positionName: positionsById.get(String(period.position))?.name || "",
+      dispositiveName: period.dispositiveId?.name || "",
+      programName: period.dispositiveId?.program?.name || "",
+      provinceName: period.dispositiveId?.province?.name || "",
+    };
+
+    const subject =
+      hoursRemaining === 24
+        ? `[URGENTE] Alta pendiente en 24h · ${workerName}`
+        : `[Acción requerida] Alta pendiente en 48h · ${workerName}`;
+
+    try {
+      await sendEmail(
+        hrEmail,
+        subject,
+        buildHiringHrReminderPlainText(emailData),
+        buildHiringHrReminderHtmlEmail(emailData)
+      );
+
+      result.emailed.push({
+        userId: user._id,
+        periodId: period._id,
+        workerName,
+        startDate: period.startDate,
+        hoursRemaining,
+        positionName: emailData.positionName,
+        to: hrEmail,
+      });
+    } catch (err) {
+      result.emailErrors.push({
+        userId: user._id,
+        periodId: period._id,
+        workerName,
+        startDate: period.startDate,
+        hoursRemaining,
+        error: err.message,
+      });
+    }
+  }
+
+  return result;
+}
 
 module.exports = {
   createHiring: catchAsync(createHiring),
@@ -785,5 +904,7 @@ module.exports = {
   listHirings: catchAsync(listHirings),
   getHiringById: catchAsync(getHiringById),
   getLastHiringForUser: catchAsync(getLastHiringForUser),
-  relocateHirings: catchAsync(relocateHirings)
+  relocateHirings: catchAsync(relocateHirings),
+
+  processHrHiringStartReminders
 };

@@ -1438,6 +1438,7 @@ const getUserIdsWithOpenPeriodsForFilters = async (body = {}) => {
 
 const getUsers = async (req, res) => {
   const { page, limit } = req.body || {};
+
   if (!page || !limit) {
     throw new ClientError("Faltan datos no son correctos", 400);
   }
@@ -1453,24 +1454,28 @@ const getUsers = async (req, res) => {
     const rx = createAccentInsensitiveRegex(body.firstName);
     filters.firstName = { $regex: rx };
   }
+
   if (body.lastName) {
     const rx = createAccentInsensitiveRegex(body.lastName);
     filters.lastName = { $regex: rx };
   }
 
   if (body.role) {
-    filters.role = body.role
+    filters.role = body.role;
   }
 
   if (body.email) {
     filters.email = { $regex: body.email, $options: "i" };
   }
+
   if (body.phone) {
     filters.phone = { $regex: body.phone, $options: "i" };
   }
+
   if (body.dni) {
     filters.dni = { $regex: body.dni, $options: "i" };
   }
+
   if (body.gender) {
     filters.gender = body.gender;
   }
@@ -1485,12 +1490,13 @@ const getUsers = async (req, res) => {
     if (body.disability === "si") {
       filters["disability.percentage"] = { $gt: 0 };
     }
+
     if (body.disability === "no") {
       filters["disability.percentage"] = 0;
     }
   }
 
-  // Estado laboral
+  // ---------------- Estado laboral ----------------
   if (body.status) {
     if (body.status === "total") {
       filters.employmentStatus = {
@@ -1501,26 +1507,29 @@ const getUsers = async (req, res) => {
     }
   }
 
-  // ---------------- Filtros por Periods abiertos (programa/dispositivo/provincia/posición) ----------------
+  const shouldIncludeHiringStartDate =
+    body.status === "en proceso de contratación" || body.status === "total";
+
+  // ---------------- Filtros por Periods abiertos ----------------
   const mustFilterByPeriods =
     body.dispositive ||
     body.programId ||
     body.provinces ||
     body.position ||
-    (Array.isArray(body.allowedDispositiveIds) && body.allowedDispositiveIds.length);
+    (Array.isArray(body.allowedDispositiveIds) &&
+      body.allowedDispositiveIds.length);
 
   if (mustFilterByPeriods) {
     const userIdsFromPeriods = await getUserIdsWithOpenPeriodsForFilters(body);
 
     if (!userIdsFromPeriods.length) {
-      // No hay ningún usuario con periodo abierto que cumpla esos filtros
       return response(res, 200, { users: [], totalPages: 0 });
     }
 
     filters._id = { $in: userIdsFromPeriods };
   }
 
-  // ---------------- Proyección LIGERA para lista / panel ----------------
+  // ---------------- Proyección ligera para lista / panel ----------------
   const projection = {
     firstName: 1,
     lastName: 1,
@@ -1560,17 +1569,13 @@ const getUsers = async (req, res) => {
 
   const userIds = users.map((u) => u._id);
 
-  // =========================
-  // 1) hasPendingRequests (UserChangeRequest)
-  // =========================
-  const [pendingIds, leaveIds] = await Promise.all([
+  // ---------------- Flags y fecha de alta si aplica ----------------
+  const [pendingIds, leaveIds, hiringPeriods] = await Promise.all([
     UserChangeRequest.distinct("userId", {
       userId: { $in: userIds },
       status: "pending",
     }),
-    // =========================
-    // 2) isOnLeave (Leaves)
-    // =========================
+
     Leaves.distinct("idUser", {
       idUser: { $in: userIds },
       active: { $ne: false },
@@ -1579,16 +1584,48 @@ const getUsers = async (req, res) => {
         { actualEndLeaveDate: { $exists: false } },
       ],
     }),
+
+    shouldIncludeHiringStartDate
+      ? Periods.find({
+          idUser: { $in: userIds },
+          active: true,
+        })
+          .select("idUser startDate")
+          .sort({ startDate: -1 })
+          .lean()
+      : [],
   ]);
 
   const pendingSet = new Set(pendingIds.map((id) => String(id)));
   const leaveSet = new Set(leaveIds.map((id) => String(id)));
 
-  const usersWithFlags = users.map((u) => ({
-    ...u,
-    hasPendingRequests: pendingSet.has(String(u._id)),
-    isOnLeave: leaveSet.has(String(u._id)),
-  }));
+  const hiringStartDateByUserId = new Map();
+
+  for (const period of hiringPeriods) {
+    const userId = String(period.idUser);
+
+    if (!hiringStartDateByUserId.has(userId)) {
+      hiringStartDateByUserId.set(userId, period.startDate);
+    }
+  }
+
+  const usersWithFlags = users.map((u) => {
+    const user = {
+      ...u,
+      hasPendingRequests: pendingSet.has(String(u._id)),
+      isOnLeave: leaveSet.has(String(u._id)),
+    };
+
+    if (
+      shouldIncludeHiringStartDate &&
+      u.employmentStatus === "en proceso de contratación"
+    ) {
+      user.hiringStartDate = hiringStartDateByUserId.get(String(u._id)) || null;
+    }
+
+    return user;
+  });
+
   response(res, 200, { users: usersWithFlags, totalPages });
 };
 

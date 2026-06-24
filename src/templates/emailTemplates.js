@@ -3310,3 +3310,140 @@ export function buildRefugeeDaySpecialInvitationHtmlEmail({
 </body>
 </html>`;
 }
+
+
+export function buildHiringHrReminderPlainText({
+  hoursRemaining = 48,
+  workerName = "",
+  workerDni = "",
+  workerEmail = "",
+  workerPhone = "",
+  startDate = "",
+  positionName = "",
+  dispositiveName = "",
+  programName = "",
+  provinceName = "",
+} = {}) {
+  return `Hola equipo de Recursos Humanos,
+
+Os informamos de que queda(n) ${hoursRemaining} horas para la incorporación de una nueva contratación.
+
+Por favor, revisad la información y realizad las gestiones necesarias para que el alta esté preparada antes de la fecha de inicio indicada.
+
+DATOS DE LA PERSONA CONTRATADA
+• Nombre: ${workerName || "No indicado"}
+• DNI/NIE: ${workerDni || "No indicado"}
+• Email: ${workerEmail || "No indicado"}
+• Teléfono: ${workerPhone || "No indicado"}
+
+DATOS DEL ALTA
+• Fecha de alta: ${startDate || "No indicada"}
+• Puesto: ${positionName || "No indicado"}
+
+UBICACIÓN / DESTINO
+• Dispositivo/Centro: ${dispositiveName || "No indicado"}
+• Programa: ${programName || "No indicado"}
+• Provincia: ${provinceName || "No indicada"}
+
+Este mensaje se ha generado automáticamente desde la aplicación de Engloba.
+
+Un saludo,
+Asociación Engloba`;
+}
+
+export function buildHiringHrReminderHtmlEmail({
+  hoursRemaining = 48,
+  workerName = "",
+  workerDni = "",
+  workerEmail = "",
+  workerPhone = "",
+  startDate = "",
+  positionName = "",
+  dispositiveName = "",
+  programName = "",
+  provinceName = "",
+  logoUrl = "https://app.engloba.org.es/graphic/logotipo_blanco.png",
+} = {}) {
+  const isUrgent = Number(hoursRemaining) <= 24;
+  const tagText = isUrgent ? "Alta en 24 horas" : "Alta en 48 horas";
+  const tagColor = isUrgent ? "#f3853a" : "#4f529f";
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Alta pendiente · Nueva contratación</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#ededed;font-family:'Roboto',Arial,sans-serif;color:#333;line-height:1.55}
+  .card{max-width:700px;margin:36px auto;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 10px 28px rgba(0,0,0,.10)}
+  .header{background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);color:#fff;text-align:center;padding:30px 24px}
+  .logo{max-width:150px;height:auto;margin:0 auto 10px;display:block}
+  .header h1{font-size:24px;margin:0;font-weight:800}
+  .subtitle{font-size:14px;opacity:.92;margin-top:6px}
+  .tag{display:inline-block;margin-top:14px;background:${tagColor};color:#fff;padding:7px 14px;border-radius:999px;font-size:13px;font-weight:800;letter-spacing:.2px}
+  .content{padding:30px 34px;font-size:16px}
+  .content p{margin:14px 0}
+  .alert{background:#fff8e8;border:1px solid #f5dc98;color:#6f4b00;border-radius:12px;padding:16px 18px;margin:14px 0 20px}
+  .section{margin:22px 0 10px;color:#4f529f;font-size:17px;font-weight:800}
+  .block{background:#f8f9ff;border:1px solid #e4e7ff;border-radius:12px;padding:16px 18px;margin:10px 0 18px}
+  .row{padding:8px 0;border-bottom:1px solid #eceef8}
+  .row:last-child{border-bottom:0}
+  .label{display:inline-block;width:170px;font-weight:800;color:#4f529f}
+  .value{color:#333}
+  .footer{background:#bec3f4;text-align:center;padding:18px 16px;font-size:13px;color:#333}
+</style>
+</head>
+
+<body>
+  <div class="card">
+    <div class="header">
+      ${logoUrl ? `<img src="${logoUrl}" alt="Asociación Engloba" class="logo">` : ""}
+      <h1>Alta pendiente de nueva contratación</h1>
+      <div class="subtitle">Notificación automática para Recursos Humanos</div>
+      <div class="tag">${tagText}</div>
+    </div>
+
+    <div class="content">
+      <p>Hola equipo de Recursos Humanos,</p>
+
+      <div class="alert">
+        <strong>Acción requerida:</strong><br>
+        Queda(n) <strong>${hoursRemaining} horas</strong> para la incorporación de una nueva persona trabajadora.
+        Por favor, realizad las gestiones necesarias para que el alta esté preparada antes de la fecha de inicio.
+      </div>
+
+      <div class="section">Datos de la persona contratada</div>
+      <div class="block">
+        <div class="row"><span class="label">Nombre</span><span class="value">${workerName || "No indicado"}</span></div>
+        <div class="row"><span class="label">DNI/NIE</span><span class="value">${workerDni || "No indicado"}</span></div>
+        <div class="row"><span class="label">Email</span><span class="value">${workerEmail || "No indicado"}</span></div>
+        <div class="row"><span class="label">Teléfono</span><span class="value">${workerPhone || "No indicado"}</span></div>
+      </div>
+
+      <div class="section">Datos del alta</div>
+      <div class="block">
+        <div class="row"><span class="label">Fecha de alta</span><span class="value">${startDate || "No indicada"}</span></div>
+        <div class="row"><span class="label">Puesto</span><span class="value">${positionName || "No indicado"}</span></div>
+      </div>
+
+      <div class="section">Ubicación / destino</div>
+      <div class="block">
+        <div class="row"><span class="label">Dispositivo/Centro</span><span class="value">${dispositiveName || "No indicado"}</span></div>
+        <div class="row"><span class="label">Programa</span><span class="value">${programName || "No indicado"}</span></div>
+        <div class="row"><span class="label">Provincia</span><span class="value">${provinceName || "No indicada"}</span></div>
+      </div>
+
+      <p>Este correo se ha generado automáticamente desde la aplicación de Engloba.</p>
+
+      <p>Un saludo,<br><strong>Asociación Engloba</strong></p>
+    </div>
+
+    <div class="footer">
+      Asociación Engloba · Recursos Humanos
+    </div>
+  </div>
+</body>
+</html>`;
+}
