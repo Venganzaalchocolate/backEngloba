@@ -50,26 +50,26 @@ async function request(wsfunction, params = {}) {
   }
 
   if (!res.ok || result?.exception) {
-  const err = new Error(
-    result?.message ||
+    const err = new Error(
+      result?.message ||
       result?.errorcode ||
       "Error al conectar con Moodle"
-  );
+    );
 
-  err.status = res.status;
-  err.details = result;
-  err.moodleRequest = {
-    wsfunction,
-    params: Object.fromEntries(
-      Object.entries(params).map(([key, value]) => [
-        key,
-        key.toLowerCase().includes("password") ? "***" : value,
-      ])
-    ),
-  };
+    err.status = res.status;
+    err.details = result;
+    err.moodleRequest = {
+      wsfunction,
+      params: Object.fromEntries(
+        Object.entries(params).map(([key, value]) => [
+          key,
+          key.toLowerCase().includes("password") ? "***" : value,
+        ])
+      ),
+    };
 
-  throw err;
-}
+    throw err;
+  }
 
   return result;
 }
@@ -145,6 +145,26 @@ const moodleService = {
       courseid: courseId,
     });
   },
+
+assignRole({ userId, roleId, contextId, contextLevel, instanceId }) {
+  return request("core_role_assign_roles", {
+    "assignments[0][roleid]": roleId,
+    "assignments[0][userid]": userId,
+    "assignments[0][contextid]": contextId,
+    "assignments[0][contextlevel]": contextLevel,
+    "assignments[0][instanceid]": instanceId,
+  });
+},
+
+unassignRole({ userId, roleId, contextId, contextLevel, instanceId }) {
+  return request("core_role_unassign_roles", {
+    "unassignments[0][roleid]": roleId,
+    "unassignments[0][userid]": userId,
+    "unassignments[0][contextid]": contextId,
+    "unassignments[0][contextlevel]": contextLevel,
+    "unassignments[0][instanceid]": instanceId,
+  });
+},
 };
 
 module.exports = moodleService;

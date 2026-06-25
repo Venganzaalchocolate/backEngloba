@@ -18,6 +18,7 @@ const {
   queueBajaOhsTrabajadorForUser,
   queueReactivarOhsTrabajadorForUser,
 } = require('./ohsController');
+const { queueSyncMoodleUserForUser } = require('./moodleController');
 
 const WEEKLY_HOURS = 38.5;
 // Día equivalente “redondeado”
@@ -332,6 +333,7 @@ const postCreateUser = async (req, res) => {
 
 if (newUser?.employmentStatus === "activo") {
   queueSyncOhsTrabajadorForUser(newUser._id);
+  queueSyncMoodleUserForUser(newUser._id);
 }
 
 
@@ -875,7 +877,7 @@ if (req.body.employmentStatus === "ya no trabaja con nosotros") {
 } else if (updatedUser.employmentStatus === "activo") {
   queueSyncOhsTrabajadorForUser(userId, {}, { createIfMissing: false });
 }
-
+queueSyncMoodleUserForUser(updatedUser._id);
     if (req.body.personalHours || req.body.vacationHours) {
       const payload = {
         _id: updatedUser._id,
@@ -1676,8 +1678,11 @@ const recreateCorporateEmail = async (req, res) => {
     throw new ClientError('No se pudo recrear el email corporativo', 400);
   }
 
-  const updatedUser = await User.findById(result.userId).lean();
 
+  const updatedUser = await User.findById(result.userId).lean();
+    if (updatedUser?.employmentStatus === "activo") {
+  queueSyncMoodleUserForUser(updatedUser._id);
+}
   response(res, 200, updatedUser);
 };
 
