@@ -346,6 +346,9 @@ const {
 // ----------------------------- ANIDE CONTROLLER -------------------------------
 const { anideCentroManager, anideUsuariaManager, anideCentroOccupancy } = require("./anideController");
 
+    // ----------------------------- MOODLE CONTROLLER -------------------------------
+const { postMoodleTest } = require("./moodleController");
+
 // ============================================================================
 // EXPORTS (sin duplicados, sin comas raras)
 // ============================================================================
@@ -649,5 +652,9 @@ postSesameGetOfficeManagers,
     anideCentroManager,
     anideUsuariaManager,
     anideCentroOccupancy,
+
+    // ----------------------------- MOODLE CONTROLLER -------------------------------
+
+    postMoodleTest,
 };
 
