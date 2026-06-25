@@ -28,6 +28,7 @@ const DocumentationReceiptTemplate=require("./documentationReceiptTemplateSchema
 const AnideUsuariaAtendida = require('./anide/anideUsuariaAtendida');
 const AnideCentro = require('./anide/anideCentro');
 const PeriodEndReason = require('./periodEndReason');
+const OidcRecord=require('./oidcRecord');
 
 module.exports = {
     User,
@@ -58,5 +59,6 @@ module.exports = {
     DocumentationReceiptTemplate,
     AnideUsuariaAtendida,
     AnideCentro,
-    PeriodEndReason
+    PeriodEndReason,
+    OidcRecord
 }

@@ -2,6 +2,9 @@
   "name": "backengloba",
   "version": "1.0.0",
   "main": "index.js",
+  "engines": {
+    "node": ">=22 <25"
+  },
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon --trace-warnings src/index.js --env-file=.env",
@@ -41,6 +44,7 @@
     "node-fetch": "^3.3.2",
     "nodemailer": "^8.0.5",
     "npmlog": "^7.0.1",
+    "oidc-provider": "^9.8.5",
     "p-limit": "^7.2.0",
     "pdf-lib": "^1.17.1",
     "punycode": "^2.3.1",
@@ -63,5 +67,10 @@
   "description": "",
   "devDependencies": {
     "nodemon": "^3.1.14"
+  },
+  "allowScripts": {
+    "bcrypt@6.0.0": true,
+    "canvas@3.2.1": true,
+    "sharp@0.34.5": true
   }
 }
