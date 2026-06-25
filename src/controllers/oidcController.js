@@ -151,7 +151,7 @@ const getOidcLaunch = async (req, res) => {
     maxAge: 10 * 60 * 1000,
   });
 
-  res.redirect(302, `${moodleUrl}/login/index.php`);
+  return res.redirect(`${moodleUrl}/auth/oidc/`);
 };
 
 /*
@@ -262,6 +262,7 @@ const testMoodleLaunchByDni = async (dni = "40444044Q") => {
 
   return data;
 };
+
 
 module.exports = {
   postMoodleLaunch: catchAsync(postMoodleLaunch),
