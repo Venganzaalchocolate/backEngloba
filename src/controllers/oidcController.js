@@ -311,12 +311,10 @@ const getOidcInteraction = async (req, res) => {
       { depth: null }
     );
 
-    res.status(401).type("html").send(`
+    return res.status(401).type("html").send(`
       <h1>Acceso a Formación</h1>
       <p>Abre la plataforma desde app.engloba.org.es.</p>
     `);
-
-    return;
   }
 
   const browserSession = await OidcRecord.findOne({
@@ -339,12 +337,10 @@ const getOidcInteraction = async (req, res) => {
       path: "/oidc",
     });
 
-    res.status(401).type("html").send(`
+    return res.status(401).type("html").send(`
       <h1>Sesión de Formación expirada</h1>
       <p>Vuelve a abrir Formación desde app.engloba.org.es.</p>
     `);
-
-    return;
   }
 
   console.dir(
@@ -383,6 +379,7 @@ const getOidcInteraction = async (req, res) => {
   const provider = getOidcProvider();
 
   let details;
+
   try {
     details = await provider.interactionDetails(req, res);
   } catch (error) {
@@ -394,6 +391,10 @@ const getOidcInteraction = async (req, res) => {
     throw error;
   }
 
+  const promptName = details.prompt?.name || null;
+  const promptDetails = details.prompt?.details || {};
+  const sessionAccountId = details.session?.accountId || null;
+
   console.dir(
     {
       action: "oidc-interaction-details",
@@ -404,6 +405,10 @@ const getOidcInteraction = async (req, res) => {
       responseType: details.params.response_type || null,
       scope: details.params.scope || null,
       prompt: details.params.prompt || null,
+      promptName,
+      promptDetails,
+      grantId: details.grantId || null,
+      sessionAccountId,
       returnTo: details.returnTo || null,
       userId: String(user._id),
     },
@@ -424,37 +429,115 @@ const getOidcInteraction = async (req, res) => {
     throw new ClientError("Interacción OIDC no válida", 400);
   }
 
-  try {
-    await provider.interactionFinished(
-      req,
-      res,
-      {
-        login: {
-          accountId: String(user._id),
-          acr: "1",
-          remember: false,
-          ts: Math.floor(Date.now() / 1000),
-        },
-        consent: {},
+  let result;
+  let mergeWithLastSubmission = false;
+
+  if (promptName === "login") {
+    result = {
+      login: {
+        accountId: String(user._id),
+        acr: "1",
+        remember: false,
+        ts: Math.floor(Date.now() / 1000),
       },
-      {
-        mergeWithLastSubmission: false,
+    };
+  } else if (promptName === "consent") {
+    const accountId = String(sessionAccountId || user._id);
+    const clientId = details.params.client_id;
+
+    if (!clientId) {
+      throw new ClientError(
+        "La interacción OIDC no contiene client_id",
+        400
+      );
+    }
+
+    let grant;
+
+    if (details.grantId) {
+      grant = await provider.Grant.find(details.grantId);
+    }
+
+    if (!grant) {
+      grant = new provider.Grant({
+        accountId,
+        clientId,
+      });
+    }
+
+    if (Array.isArray(promptDetails.missingOIDCScope)) {
+      grant.addOIDCScope(promptDetails.missingOIDCScope.join(" "));
+    }
+
+    if (Array.isArray(promptDetails.missingOIDCClaims)) {
+      grant.addOIDCClaims(promptDetails.missingOIDCClaims);
+    }
+
+    if (
+      promptDetails.missingResourceScopes &&
+      typeof promptDetails.missingResourceScopes === "object"
+    ) {
+      for (const [resource, scopes] of Object.entries(
+        promptDetails.missingResourceScopes
+      )) {
+        if (Array.isArray(scopes) && scopes.length) {
+          grant.addResourceScope(resource, scopes.join(" "));
+        }
       }
+    }
+
+    const savedGrantId = await grant.save();
+
+    result = {
+      consent: details.grantId
+        ? {}
+        : {
+            grantId: savedGrantId,
+          },
+    };
+
+    mergeWithLastSubmission = true;
+  } else {
+    console.dir(
+      {
+        action: "oidc-interaction-unsupported-prompt",
+        uid: details.uid,
+        promptName,
+        clientId: details.params.client_id || null,
+        userId: String(user._id),
+      },
+      { depth: null }
     );
+
+    throw new ClientError(
+      `Prompt OIDC no soportado: ${promptName || "desconocido"}`,
+      400
+    );
+  }
+
+  try {
+    await provider.interactionFinished(req, res, result, {
+      mergeWithLastSubmission,
+    });
 
     console.dir(
       {
         action: "oidc-interaction-finished",
         uid: details.uid,
+        promptName,
         clientId: details.params.client_id || null,
         redirectUri: details.params.redirect_uri || null,
+        grantId: result?.consent?.grantId || details.grantId || null,
         userId: String(user._id),
       },
       { depth: null }
     );
+
+    return;
   } catch (error) {
     logOidcError("oidc-interaction-finish-error", error, {
       uid: details.uid,
+      promptName,
       clientId: details.params.client_id || null,
       redirectUri: details.params.redirect_uri || null,
       userId: String(user._id),
