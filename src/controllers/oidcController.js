@@ -442,7 +442,12 @@ const getOidcInteraction = async (req, res) => {
       },
     };
   } else if (promptName === "consent") {
-    const accountId = String(sessionAccountId || user._id);
+
+    if (!user?._id) {
+  throw new Error("OIDC browser session user is missing");
+}
+
+const accountId = String(user._id);
     const clientId = details.params.client_id;
 
     if (!clientId) {
