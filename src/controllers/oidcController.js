@@ -294,6 +294,7 @@ const getOidcInteraction = async (req, res) => {
   console.dir(
     {
       action: "oidc-interaction-request",
+      at: new Date().toISOString(),
       ...getRequestInfo(req),
       uid: req.params.uid || null,
       hasBrowserCookie: Boolean(browserToken),
@@ -306,6 +307,7 @@ const getOidcInteraction = async (req, res) => {
     console.dir(
       {
         action: "oidc-interaction-no-browser-cookie",
+        at: new Date().toISOString(),
         uid: req.params.uid || null,
       },
       { depth: null }
@@ -327,6 +329,7 @@ const getOidcInteraction = async (req, res) => {
     console.dir(
       {
         action: "oidc-interaction-browser-session-not-found",
+        at: new Date().toISOString(),
         uid: req.params.uid || null,
         browserTokenHash: shortHash(browserToken),
       },
@@ -346,6 +349,7 @@ const getOidcInteraction = async (req, res) => {
   console.dir(
     {
       action: "oidc-interaction-browser-session-found",
+      at: new Date().toISOString(),
       uid: req.params.uid || null,
       userId: String(browserSession.userId),
       expiresAt: browserSession.expiresAt,
@@ -361,6 +365,7 @@ const getOidcInteraction = async (req, res) => {
     console.dir(
       {
         action: "oidc-interaction-user-denied",
+        at: new Date().toISOString(),
         uid: req.params.uid || null,
         userId: browserSession.userId
           ? String(browserSession.userId)
@@ -398,6 +403,7 @@ const getOidcInteraction = async (req, res) => {
   console.dir(
     {
       action: "oidc-interaction-details",
+      at: new Date().toISOString(),
       uid: details.uid,
       expectedUid: req.params.uid,
       clientId: details.params.client_id || null,
@@ -410,7 +416,7 @@ const getOidcInteraction = async (req, res) => {
       grantId: details.grantId || null,
       sessionAccountId,
       returnTo: details.returnTo || null,
-      userId: String(user._id),
+      browserSessionUserId: String(user._id),
     },
     { depth: null }
   );
@@ -419,6 +425,7 @@ const getOidcInteraction = async (req, res) => {
     console.dir(
       {
         action: "oidc-interaction-uid-mismatch",
+        at: new Date().toISOString(),
         requestedUid: req.params.uid,
         providerUid: details.uid,
         userId: String(user._id),
@@ -429,25 +436,43 @@ const getOidcInteraction = async (req, res) => {
     throw new ClientError("Interacción OIDC no válida", 400);
   }
 
+  /*
+    La identidad de este acceso viene SIEMPRE de la sesión temporal
+    creada al canjear el ticket de Moodle.
+
+    sessionAccountId solo se conserva en logs para detectar si
+    oidc-provider arrastra una sesión previa de otra persona.
+  */
+  const accountId = String(user._id);
+
+  console.dir(
+    {
+      action: "oidc-account-selected",
+      at: new Date().toISOString(),
+      uid: details.uid,
+      promptName,
+      browserSessionUserId: String(user._id),
+      sessionAccountId: sessionAccountId
+        ? String(sessionAccountId)
+        : null,
+      selectedAccountId: accountId,
+    },
+    { depth: null }
+  );
+
   let result;
   let mergeWithLastSubmission = false;
 
   if (promptName === "login") {
     result = {
       login: {
-        accountId: String(user._id),
+        accountId,
         acr: "1",
         remember: false,
         ts: Math.floor(Date.now() / 1000),
       },
     };
   } else if (promptName === "consent") {
-
-    if (!user?._id) {
-  throw new Error("OIDC browser session user is missing");
-}
-
-const accountId = String(user._id);
     const clientId = details.params.client_id;
 
     if (!clientId) {
@@ -506,6 +531,7 @@ const accountId = String(user._id);
     console.dir(
       {
         action: "oidc-interaction-unsupported-prompt",
+        at: new Date().toISOString(),
         uid: details.uid,
         promptName,
         clientId: details.params.client_id || null,
@@ -528,12 +554,14 @@ const accountId = String(user._id);
     console.dir(
       {
         action: "oidc-interaction-finished",
+        at: new Date().toISOString(),
         uid: details.uid,
         promptName,
         clientId: details.params.client_id || null,
         redirectUri: details.params.redirect_uri || null,
         grantId: result?.consent?.grantId || details.grantId || null,
-        userId: String(user._id),
+        browserSessionUserId: String(user._id),
+        selectedAccountId: accountId,
       },
       { depth: null }
     );
@@ -546,6 +574,7 @@ const accountId = String(user._id);
       clientId: details.params.client_id || null,
       redirectUri: details.params.redirect_uri || null,
       userId: String(user._id),
+      selectedAccountId: accountId,
     });
 
     throw error;
