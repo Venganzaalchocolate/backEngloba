@@ -76,11 +76,48 @@ let oidcCallback;
   Deben ir antes del callback de oidc-provider porque este captura
   el resto de rutas bajo /oidc.
 */
+// app.use("/oidc", oidcPublicRoutes);
+
+// app.use("/oidc", (req, res, next) => {
+//   oidcCallback(req, res, next);
+// });
+
 app.use("/oidc", oidcPublicRoutes);
 
 app.use("/oidc", (req, res, next) => {
-  oidcCallback(req, res, next);
+  const startedAt = Date.now();
+
+  console.dir(
+    {
+      action: "oidc-provider-request",
+      method: req.method,
+      path: req.originalUrl || req.url,
+      host: req.get("host"),
+      referer: req.get("referer") || null,
+      hasCookieHeader: Boolean(req.headers.cookie),
+      userAgent: req.get("user-agent") || null,
+    },
+    { depth: null }
+  );
+
+  res.on("finish", () => {
+    console.dir(
+      {
+        action: "oidc-provider-response",
+        method: req.method,
+        path: req.originalUrl || req.url,
+        status: res.statusCode,
+        location: res.getHeader("location") || null,
+        durationMs: Date.now() - startedAt,
+      },
+      { depth: null }
+    );
+  });
+
+  next();
 });
+
+app.use("/oidc", (req, res, next) => oidcCallback(req, res, next));
 
 // Middleware para parsear JSON
 app.use(express.json());
