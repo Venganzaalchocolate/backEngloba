@@ -143,6 +143,11 @@ const initOidcProvider = async () => {
     throw new Error("OIDC_JWKS_BASE64 no contiene ninguna clave");
   }
 
+  const allowedMoodleResources = [
+    "https://graph.microsoft.com",
+    issuer,
+  ];
+
   const { Provider } = await import("oidc-provider");
 
   provider = new Provider(issuer, {
@@ -190,6 +195,42 @@ const initOidcProvider = async () => {
     features: {
       devInteractions: {
         enabled: false,
+      },
+
+      resourceIndicators: {
+        enabled: true,
+
+        async getResourceServerInfo(
+          _ctx,
+          resourceIndicator,
+          client
+        ) {
+          const isMoodleClient = client.clientId === clientId;
+          const isAllowedResource = allowedMoodleResources.includes(
+            resourceIndicator
+          );
+
+          console.dir(
+            {
+              action: "oidc-resource-indicator",
+              clientId: client.clientId,
+              resourceIndicator,
+              isMoodleClient,
+              isAllowedResource,
+            },
+            { depth: null }
+          );
+
+          if (!isMoodleClient || !isAllowedResource) {
+            return undefined;
+          }
+
+          return {
+            audience: resourceIndicator,
+            scope: "openid profile email",
+            accessTokenFormat: "opaque",
+          };
+        },
       },
     },
 
