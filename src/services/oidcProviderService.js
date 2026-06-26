@@ -199,6 +199,10 @@ const initOidcProvider = async () => {
       email: ["email", "email_verified"],
     },
 
+    // Moodle auth_oidc necesita preferred_username dentro del id_token
+    // para vincularlo con el username estable engloba_<User._id>.
+    conformIdTokenClaims: false,
+
     interactions: {
       url(_, interaction) {
         return `${issuer}/interaction/${interaction.uid}`;
