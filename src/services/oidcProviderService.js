@@ -19,25 +19,42 @@ class MongoAdapter {
     this.type = type;
   }
 
-  async upsert(id, payload, expiresIn) {
-    await OidcRecord.findOneAndUpdate(
+async upsert(id, payload, expiresIn) {
+  if (this.type === "IdToken") {
+    console.dir(
       {
-        type: this.type,
-        id,
+        action: "oidc-id-token-artifact",
+        artifactIdPresent: Boolean(id),
+        kind: payload?.kind || null,
+        clientId: payload?.clientId || null,
+        accountId: payload?.accountId || null,
+        audience: payload?.aud || null,
+        subject: payload?.sub || null,
+        noncePresent: Boolean(payload?.nonce),
+        nonceType: payload?.nonce ? typeof payload.nonce : null,
       },
-      {
-        type: this.type,
-        id,
-        payload,
-        expiresAt: new Date(Date.now() + Number(expiresIn) * 1000),
-      },
-      {
-        upsert: true,
-        new: true,
-        setDefaultsOnInsert: true,
-      }
+      { depth: null }
     );
   }
+
+  await OidcRecord.findOneAndUpdate(
+    {
+      type: this.type,
+      id,
+    },
+    {
+      type: this.type,
+      id,
+      payload,
+      expiresAt: new Date(Date.now() + Number(expiresIn) * 1000),
+    },
+    {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+    }
+  );
+}
 
   async find(id) {
     const record = await OidcRecord.findOne({
