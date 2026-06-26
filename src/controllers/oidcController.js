@@ -6,11 +6,21 @@ const { getOidcProvider } = require("../services/oidcProviderService");
 
 const OIDC_BROWSER_COOKIE = "engloba_oidc_session";
 
+/* =========================================================
+   HELPERS
+   ========================================================= */
+
 const hashToken = (value) =>
   crypto.createHash("sha256").update(value).digest("hex");
 
 const createToken = () =>
   crypto.randomBytes(48).toString("base64url");
+
+const shortHash = (value) => {
+  if (!value) return null;
+
+  return hashToken(String(value)).slice(0, 12);
+};
 
 const getCookie = (req, name) => {
   const cookies = String(req.headers.cookie || "")
@@ -27,24 +37,77 @@ const getCookie = (req, name) => {
   return decodeURIComponent(cookie.slice(name.length + 1));
 };
 
+const getRequestInfo = (req) => ({
+  method: req.method,
+  path: req.originalUrl || req.url,
+  host: req.get("host"),
+  referer: req.get("referer") || null,
+  userAgent: req.get("user-agent") || null,
+  hasCookieHeader: Boolean(req.headers.cookie),
+});
+
+const logOidcError = (action, error, extra = {}) => {
+  console.dir(
+    {
+      action,
+      ...extra,
+      message: error?.message || String(error),
+      name: error?.name || null,
+      status: error?.status || null,
+      details: error?.details || null,
+      stack: error?.stack || null,
+    },
+    { depth: null }
+  );
+};
+
+/* =========================================================
+   TICKET DE SALIDA DESDE LA APP
+   ========================================================= */
+
 /*
   Crea un ticket opaco, de un solo uso y válido durante dos minutos.
-  Lo usa tanto la ruta protegida de la app como la prueba local.
+  Lo usa la ruta protegida de la app para abrir Moodle.
 */
 const createMoodleLaunchForUser = async (userId) => {
   if (!userId) {
     throw new ClientError("Falta userId", 400);
   }
 
+  console.dir(
+    {
+      action: "oidc-launch-create-start",
+      userId: String(userId),
+    },
+    { depth: null }
+  );
+
   const user = await User.findById(userId)
-    .select("_id firstName lastName email employmentStatus")
+    .select("_id employmentStatus")
     .lean();
 
   if (!user) {
+    console.dir(
+      {
+        action: "oidc-launch-create-user-not-found",
+        userId: String(userId),
+      },
+      { depth: null }
+    );
+
     throw new ClientError("Usuario no encontrado", 404);
   }
 
   if (user.employmentStatus !== "activo") {
+    console.dir(
+      {
+        action: "oidc-launch-create-user-not-active",
+        userId: String(user._id),
+        employmentStatus: user.employmentStatus,
+      },
+      { depth: null }
+    );
+
     throw new ClientError(
       "Solo las personas trabajadoras activas pueden acceder a Formación",
       403
@@ -67,18 +130,40 @@ const createMoodleLaunchForUser = async (userId) => {
     expiresAt,
   });
 
+  const url = `${issuer}/launch?ticket=${encodeURIComponent(ticket)}`;
+
+  console.dir(
+    {
+      action: "oidc-launch-created",
+      userId: String(user._id),
+      ticketHash: shortHash(ticket),
+      expiresAt,
+      issuer,
+    },
+    { depth: null }
+  );
+
   return {
     userId: String(user._id),
-    url: `${issuer}/launch?ticket=${encodeURIComponent(ticket)}`,
+    url,
     expiresAt,
   };
 };
 
 /*
   La app llama a este endpoint usando su Bearer JWT habitual.
-  Devuelve una URL corta que se abrirá en una pestaña nueva.
+  Devuelve una URL temporal que se abrirá en una pestaña nueva.
 */
 const postMoodleLaunch = async (req, res) => {
+  console.dir(
+    {
+      action: "oidc-launch-api-request",
+      ...getRequestInfo(req),
+      authenticatedUserId: req.user?._id ? String(req.user._id) : null,
+    },
+    { depth: null }
+  );
+
   const data = await createMoodleLaunchForUser(req.user?._id);
 
   response(res, 200, {
@@ -86,13 +171,27 @@ const postMoodleLaunch = async (req, res) => {
   });
 };
 
+/* =========================================================
+   APERTURA DE MOODLE
+   ========================================================= */
+
 /*
-  Se abre en una pestaña nueva desde la app.
+  Se abre desde la nueva pestaña creada por la app.
   Consume el ticket y crea una cookie HttpOnly temporal en BackEngloba.
-  Después redirige a Moodle, que iniciará el flujo OIDC.
+  Después redirige a Moodle, que inicia el flujo OIDC.
 */
 const getOidcLaunch = async (req, res) => {
   const ticket = String(req.query.ticket || "").trim();
+
+  console.dir(
+    {
+      action: "oidc-launch-request",
+      ...getRequestInfo(req),
+      hasTicket: Boolean(ticket),
+      ticketHash: shortHash(ticket),
+    },
+    { depth: null }
+  );
 
   if (!ticket) {
     throw new ClientError("Ticket de acceso no válido", 400);
@@ -118,6 +217,15 @@ const getOidcLaunch = async (req, res) => {
   ).lean();
 
   if (!launch) {
+    console.dir(
+      {
+        action: "oidc-launch-ticket-rejected",
+        ticketHash: shortHash(ticket),
+        reason: "expired-used-or-not-found",
+      },
+      { depth: null }
+    );
+
     throw new ClientError(
       "El enlace de acceso ha expirado o ya fue utilizado",
       403
@@ -125,12 +233,13 @@ const getOidcLaunch = async (req, res) => {
   }
 
   const browserToken = createToken();
+  const browserExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
   await OidcRecord.create({
     type: "browser",
     id: hashToken(browserToken),
     userId: launch.userId,
-    expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    expiresAt: browserExpiresAt,
   });
 
   const issuer = String(process.env.OIDC_ISSUER || "");
@@ -143,6 +252,8 @@ const getOidcLaunch = async (req, res) => {
     throw new Error("Falta MOODLE_PUBLIC_URL en .env");
   }
 
+  const redirectUrl = `${moodleUrl}/auth/oidc/`;
+
   res.cookie(OIDC_BROWSER_COOKIE, browserToken, {
     httpOnly: true,
     secure: issuer.startsWith("https://"),
@@ -151,8 +262,26 @@ const getOidcLaunch = async (req, res) => {
     maxAge: 10 * 60 * 1000,
   });
 
-  return res.redirect(`${moodleUrl}/auth/oidc/`);
+  console.dir(
+    {
+      action: "oidc-launch-browser-session-created",
+      userId: String(launch.userId),
+      ticketHash: shortHash(ticket),
+      browserTokenHash: shortHash(browserToken),
+      browserExpiresAt,
+      cookieName: OIDC_BROWSER_COOKIE,
+      cookiePath: "/oidc",
+      redirectUrl,
+    },
+    { depth: null }
+  );
+
+  return res.redirect(redirectUrl);
 };
+
+/* =========================================================
+   INTERACCIÓN OIDC
+   ========================================================= */
 
 /*
   oidc-provider redirige aquí cuando Moodle solicita autorización.
@@ -162,7 +291,26 @@ const getOidcLaunch = async (req, res) => {
 const getOidcInteraction = async (req, res) => {
   const browserToken = getCookie(req, OIDC_BROWSER_COOKIE);
 
+  console.dir(
+    {
+      action: "oidc-interaction-request",
+      ...getRequestInfo(req),
+      uid: req.params.uid || null,
+      hasBrowserCookie: Boolean(browserToken),
+      browserTokenHash: shortHash(browserToken),
+    },
+    { depth: null }
+  );
+
   if (!browserToken) {
+    console.dir(
+      {
+        action: "oidc-interaction-no-browser-cookie",
+        uid: req.params.uid || null,
+      },
+      { depth: null }
+    );
+
     res.status(401).type("html").send(`
       <h1>Acceso a Formación</h1>
       <p>Abre la plataforma desde app.engloba.org.es.</p>
@@ -178,6 +326,15 @@ const getOidcInteraction = async (req, res) => {
   }).lean();
 
   if (!browserSession) {
+    console.dir(
+      {
+        action: "oidc-interaction-browser-session-not-found",
+        uid: req.params.uid || null,
+        browserTokenHash: shortHash(browserToken),
+      },
+      { depth: null }
+    );
+
     res.clearCookie(OIDC_BROWSER_COOKIE, {
       path: "/oidc",
     });
@@ -190,11 +347,33 @@ const getOidcInteraction = async (req, res) => {
     return;
   }
 
+  console.dir(
+    {
+      action: "oidc-interaction-browser-session-found",
+      uid: req.params.uid || null,
+      userId: String(browserSession.userId),
+      expiresAt: browserSession.expiresAt,
+    },
+    { depth: null }
+  );
+
   const user = await User.findById(browserSession.userId)
     .select("_id employmentStatus")
     .lean();
 
   if (!user || user.employmentStatus !== "activo") {
+    console.dir(
+      {
+        action: "oidc-interaction-user-denied",
+        uid: req.params.uid || null,
+        userId: browserSession.userId
+          ? String(browserSession.userId)
+          : null,
+        employmentStatus: user?.employmentStatus || null,
+      },
+      { depth: null }
+    );
+
     throw new ClientError(
       "Esta cuenta no tiene acceso a Formación",
       403
@@ -202,34 +381,93 @@ const getOidcInteraction = async (req, res) => {
   }
 
   const provider = getOidcProvider();
-  const details = await provider.interactionDetails(req, res);
+
+  let details;
+  try {
+    details = await provider.interactionDetails(req, res);
+  } catch (error) {
+    logOidcError("oidc-interaction-details-error", error, {
+      uid: req.params.uid || null,
+      userId: String(user._id),
+    });
+
+    throw error;
+  }
+
+  console.dir(
+    {
+      action: "oidc-interaction-details",
+      uid: details.uid,
+      expectedUid: req.params.uid,
+      clientId: details.params.client_id || null,
+      redirectUri: details.params.redirect_uri || null,
+      responseType: details.params.response_type || null,
+      scope: details.params.scope || null,
+      prompt: details.params.prompt || null,
+      returnTo: details.returnTo || null,
+      userId: String(user._id),
+    },
+    { depth: null }
+  );
 
   if (details.uid !== req.params.uid) {
+    console.dir(
+      {
+        action: "oidc-interaction-uid-mismatch",
+        requestedUid: req.params.uid,
+        providerUid: details.uid,
+        userId: String(user._id),
+      },
+      { depth: null }
+    );
+
     throw new ClientError("Interacción OIDC no válida", 400);
   }
 
-  await provider.interactionFinished(
-    req,
-    res,
-    {
-      login: {
-        accountId: String(user._id),
-        acr: "1",
-        remember: false,
-        ts: Math.floor(Date.now() / 1000),
+  try {
+    await provider.interactionFinished(
+      req,
+      res,
+      {
+        login: {
+          accountId: String(user._id),
+          acr: "1",
+          remember: false,
+          ts: Math.floor(Date.now() / 1000),
+        },
+        consent: {},
       },
-      consent: {},
-    },
-    {
-      mergeWithLastSubmission: false,
-    }
-  );
+      {
+        mergeWithLastSubmission: false,
+      }
+    );
+
+    console.dir(
+      {
+        action: "oidc-interaction-finished",
+        uid: details.uid,
+        clientId: details.params.client_id || null,
+        redirectUri: details.params.redirect_uri || null,
+        userId: String(user._id),
+      },
+      { depth: null }
+    );
+  } catch (error) {
+    logOidcError("oidc-interaction-finish-error", error, {
+      uid: details.uid,
+      clientId: details.params.client_id || null,
+      redirectUri: details.params.redirect_uri || null,
+      userId: String(user._id),
+    });
+
+    throw error;
+  }
 };
 
-/*
-  Prueba local: busca a Hermes en BackEngloba por DNI, crea el ticket
-  real y muestra la URL que luego devolverá la ruta de la aplicación.
-*/
+/* =========================================================
+   PRUEBA LOCAL
+   ========================================================= */
+
 const testMoodleLaunchByDni = async (dni = "40444044Q") => {
   const normalizedDni = String(dni || "").trim().toUpperCase();
 
@@ -248,21 +486,17 @@ const testMoodleLaunchByDni = async (dni = "40444044Q") => {
 
   console.dir(
     {
-      action: "moodle-launch-created",
-      dni: user.dni,
+      action: "moodle-launch-test-created",
       userId: String(user._id),
-      name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
-      email: user.email,
       employmentStatus: user.employmentStatus,
-      url: data.url,
       expiresAt: data.expiresAt,
+      url: data.url,
     },
     { depth: null }
   );
 
   return data;
 };
-
 
 module.exports = {
   postMoodleLaunch: catchAsync(postMoodleLaunch),
@@ -272,4 +506,3 @@ module.exports = {
   createMoodleLaunchForUser,
   testMoodleLaunchByDni,
 };
-
