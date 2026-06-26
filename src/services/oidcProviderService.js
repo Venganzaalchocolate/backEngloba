@@ -165,7 +165,66 @@ const initOidcProvider = async () => {
     issuer,
   ];
 
-  const { Provider } = await import("oidc-provider");
+  const oidcModule = await import("oidc-provider");
+
+  const {
+    Provider,
+    interactionPolicy,
+  } = oidcModule;
+
+  const {
+    Check,
+    base,
+  } = interactionPolicy;
+
+  /*
+    Política de interacción:
+    cada acceso de Moodle debe pasar por /oidc/interaction/:uid.
+
+    No permitimos que oidc-provider reutilice directamente una sesión
+    interna previa, porque la identidad válida es la de la sesión temporal
+    creada por /oidc/launch desde BackEngloba.
+  */
+  const policy = base();
+
+  const loginPrompt = policy.get("login");
+
+  if (!loginPrompt) {
+    throw new Error(
+      "No se ha podido obtener el prompt login de oidc-provider"
+    );
+  }
+
+  loginPrompt.checks.add(
+    new Check(
+      "engloba_launch_requires_fresh_login",
+      "Cada acceso desde Moodle debe validar el lanzamiento actual de BackEngloba",
+      (ctx) => {
+        const currentClientId = ctx.oidc.client?.clientId || null;
+        const resolvedLogin = ctx.oidc.result?.login || null;
+
+        /*
+          Cuando getOidcInteraction ya ha resuelto el login de esta
+          interacción, dejamos que el flujo continúe al consentimiento
+          o a la emisión del código.
+        */
+        if (resolvedLogin?.accountId) {
+          return Check.NO_NEED_TO_PROMPT;
+        }
+
+        /*
+          Solo forzamos este comportamiento para Moodle.
+          Así no cambiamos la política de futuros clientes OIDC.
+        */
+        if (currentClientId === clientId) {
+          return Check.REQUEST_PROMPT;
+        }
+
+        return Check.NO_NEED_TO_PROMPT;
+      }
+    ),
+    0
+  );
 
   provider = new Provider(issuer, {
     adapter: MongoAdapter,
@@ -199,11 +258,16 @@ const initOidcProvider = async () => {
       email: ["email", "email_verified"],
     },
 
-    // Moodle auth_oidc necesita preferred_username dentro del id_token
-    // para vincularlo con el username estable engloba_<User._id>.
+    /*
+      Moodle necesita preferred_username dentro del ID token
+      para resolver el username estable:
+      engloba_<User._id>
+    */
     conformIdTokenClaims: false,
 
     interactions: {
+      policy,
+
       url(_, interaction) {
         return `${issuer}/interaction/${interaction.uid}`;
       },
@@ -227,6 +291,7 @@ const initOidcProvider = async () => {
           client
         ) {
           const isMoodleClient = client.clientId === clientId;
+
           const isAllowedResource = allowedMoodleResources.includes(
             resourceIndicator
           );
@@ -270,12 +335,17 @@ const initOidcProvider = async () => {
 
       return {
         accountId: String(user._id),
+
         claims: async () => buildClaims(user),
       };
     },
   });
 
   provider.proxy = true;
+
+  console.log(
+    "[OIDC] Política de lanzamiento forzado activada para Moodle"
+  );
 
   console.log(`[OIDC] Provider preparado: ${issuer}`);
 
