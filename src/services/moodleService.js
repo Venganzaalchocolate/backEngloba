@@ -18,47 +18,99 @@ async function request(wsfunction, params = {}) {
 
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === "") return;
+
     body.append(key, String(value));
   });
 
-  const res = await fetch(`${MOODLE_BASE_URL}/webservice/rest/server.php`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-    },
-    body,
-    signal: AbortSignal.timeout(15000),
-    redirect: "error",
-  });
+  const url = `${MOODLE_BASE_URL}/webservice/rest/server.php`;
+
+  let res;
+
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body,
+      signal: AbortSignal.timeout(30000),
+      redirect: "manual",
+    });
+  } catch (error) {
+    const cause = error?.cause;
+
+    const err = new Error(
+      `No se pudo conectar con Moodle al ejecutar ${wsfunction}: ${
+        cause?.message || error?.message || "error de red desconocido"
+      }`
+    );
+
+    err.cause = cause || error;
+    err.moodleRequest = {
+      url,
+      wsfunction,
+      params: Object.fromEntries(
+        Object.entries(params).map(([key, value]) => [
+          key,
+          key.toLowerCase().includes("password") ? "***" : value,
+        ])
+      ),
+    };
+
+    throw err;
+  }
+
+  if (res.status >= 300 && res.status < 400) {
+    const err = new Error(
+      `Moodle ha respondido con una redirección HTTP ${res.status}`
+    );
+
+    err.status = res.status;
+    err.location = res.headers.get("location");
+    err.moodleRequest = {
+      url,
+      wsfunction,
+    };
+
+    throw err;
+  }
 
   const raw = await res.text();
 
   let result;
+
   try {
     result = JSON.parse(raw);
   } catch {
     const message = raw.match(/<MESSAGE>([\s\S]*?)<\/MESSAGE>/)?.[1]?.trim();
 
     const err = new Error(
-      message || `Moodle respondió algo no válido (${res.status}): ${raw.slice(0, 300)}`
+      message ||
+        `Moodle respondió algo no válido (${res.status}): ${raw.slice(0, 300)}`
     );
 
     err.status = res.status;
     err.details = raw;
+    err.moodleRequest = {
+      url,
+      wsfunction,
+    };
+
     throw err;
   }
 
   if (!res.ok || result?.exception) {
     const err = new Error(
       result?.message ||
-      result?.errorcode ||
-      "Error al conectar con Moodle"
+        result?.errorcode ||
+        "Error al conectar con Moodle"
     );
 
     err.status = res.status;
     err.details = result;
     err.moodleRequest = {
+      url,
       wsfunction,
       params: Object.fromEntries(
         Object.entries(params).map(([key, value]) => [

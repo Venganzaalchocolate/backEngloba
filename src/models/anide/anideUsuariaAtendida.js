@@ -1,6 +1,10 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
+/* =====================================================
+   ALIAS DE LA USUARIA PRINCIPAL
+===================================================== */
+
 const aliasSchema = new Schema(
   {
     firstName: {
@@ -35,6 +39,12 @@ const aliasSchema = new Schema(
   { _id: false }
 );
 
+/* =====================================================
+   ESTANCIA ANIDE
+   Se reutiliza tanto para la responsable como para
+   cada menor o persona dependiente.
+===================================================== */
+
 const stayAnideSchema = new Schema(
   {
     centro: {
@@ -53,13 +63,13 @@ const stayAnideSchema = new Schema(
 
     habitacionId: {
       type: Schema.Types.ObjectId,
-      default: null,
+      required: true,
       index: true,
     },
 
     camaId: {
       type: Schema.Types.ObjectId,
-      default: null,
+      required: true,
       index: true,
     },
 
@@ -79,32 +89,6 @@ const stayAnideSchema = new Schema(
       index: true,
     },
 
-    companions: {
-      children: {
-        type: Number,
-        default: 0,
-        min: 0,
-      },
-
-      dependents: {
-        type: Number,
-        default: 0,
-        min: 0,
-      },
-
-      adults: {
-        type: Number,
-        default: 0,
-        min: 0,
-      },
-
-      notes: {
-        type: String,
-        trim: true,
-        default: "",
-      },
-    },
-
     notes: {
       type: String,
       trim: true,
@@ -113,6 +97,68 @@ const stayAnideSchema = new Schema(
   },
   { _id: true }
 );
+
+/* =====================================================
+   FAMILIAR A CARGO
+   No es una usuaria independiente del panel general.
+   Pertenece a una responsable y tiene cama/histórico propio.
+===================================================== */
+
+const familyMemberSchema = new Schema(
+  {
+    active: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
+
+    firstName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    lastName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    birthday: {
+      type: Date,
+      default: null,
+    },
+
+    relationship: {
+      type: String,
+      required: true,
+      enum: ["child", "dependent"],
+    },
+
+    documentId: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: "",
+    },
+
+    notes: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    staysAnide: {
+      type: [stayAnideSchema],
+      default: [],
+    },
+  },
+  { _id: true }
+);
+
+/* =====================================================
+   USUARIA PRINCIPAL / RESPONSABLE FAMILIAR
+===================================================== */
 
 const anideUsuariaAtendidaSchema = new Schema(
   {
@@ -167,30 +213,9 @@ const anideUsuariaAtendidaSchema = new Schema(
       default: "",
     },
 
-    familyUnit: {
-      children: {
-        type: Number,
-        default: 0,
-        min: 0,
-      },
-
-      dependents: {
-        type: Number,
-        default: 0,
-        min: 0,
-      },
-
-      adults: {
-        type: Number,
-        default: 0,
-        min: 0,
-      },
-
-      notes: {
-        type: String,
-        trim: true,
-        default: "",
-      },
+    familyMembers: {
+      type: [familyMemberSchema],
+      default: [],
     },
 
     staysAnide: {

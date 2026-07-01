@@ -449,8 +449,6 @@ async function offerId(req, res) {
 
 
 
-
-
 module.exports = {
   offerList: catchAsync(offerList),
   offerCreate: catchAsync(offerCreate),

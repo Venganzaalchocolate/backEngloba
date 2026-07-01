@@ -364,64 +364,128 @@ const ensureSesameEmployeeForUser = async (userId, options = {}) => {
   if (!userId) throw new ClientError("Falta userId", 400);
 
   const { status = null } = options;
-
   const user = await User.findById(userId);
+
   if (!user) throw new ClientError("Usuario no encontrado", 404);
-  if (!user.firstName || !user.dni) throw new ClientError("El usuario no tiene los datos mínimos para crear/sincronizar en Sesame", 400);
+  if (!user.firstName || !user.dni) {
+    throw new ClientError("El usuario no tiene los datos mínimos para crear/sincronizar en Sesame", 400);
+  }
 
   let existingSesame = null;
 
-  if (user.userIdSesame) existingSesame = await sesameService.getEmployeeById(user.userIdSesame).catch(() => null);
+  if (user.userIdSesame) {
+    existingSesame = await sesameService.getEmployeeById(user.userIdSesame).catch(() => null);
+  }
 
-  if (!existingSesame) existingSesame = await findSesameEmployeeByUser(user);
+  if (!existingSesame) {
+    existingSesame = await findSesameEmployeeByUser(user);
+  }
 
-  const payload = { ...buildSesameEmployeeFromUser(user), ...(status ? { status } : {}) };
+  const payload = {
+    ...buildSesameEmployeeFromUser(user),
+    ...(status ? { status } : {}),
+  };
 
   if (existingSesame) {
     const sesameId = existingSesame?.data?.id || existingSesame?.id;
-    if (!sesameId) throw new ClientError("No se encontró el id del empleado en Sesame", 500);
+
+    if (!sesameId) {
+      throw new ClientError("No se encontró el id del empleado en Sesame", 500);
+    }
 
     const updated = await sesameService.updateEmployee(sesameId, payload);
 
     if (!user.userIdSesame || String(user.userIdSesame) !== String(sesameId)) {
-      await User.updateOne({ _id: user._id }, { $set: { userIdSesame: String(sesameId) } });
+      await User.updateOne(
+        { _id: user._id },
+        { $set: { userIdSesame: String(sesameId) } }
+      );
     }
 
-    return { action: "updated", sesameId: String(sesameId), data: updated };
+    return {
+      action: "updated",
+      sesameId: String(sesameId),
+      data: updated,
+    };
   }
 
   try {
     const created = await sesameService.createEmployee(payload);
     const createdId = created?.data?.id || created?.id;
-    if (!createdId) throw new ClientError("Sesame creó el empleado pero no devolvió un identificador reconocible", 500);
 
-    await User.updateOne({ _id: user._id }, { $set: { userIdSesame: String(createdId) } });
+    if (!createdId) {
+      throw new ClientError(
+        "Sesame creó el empleado pero no devolvió un identificador reconocible",
+        500
+      );
+    }
 
-    return { action: "created", sesameId: String(createdId), data: created };
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { userIdSesame: String(createdId) } }
+    );
+
+    return {
+      action: "created",
+      sesameId: String(createdId),
+      data: created,
+    };
   } catch (error) {
     try {
-      const byDni = await sesameService.listEmployees({ dni: normalizeDniSesame(user.dni), limit: 10 });
+      const byDni = await sesameService.listEmployees({
+        dni: normalizeDniSesame(user.dni),
+        limit: 10,
+      });
+
       const itemsByDni = byDni?.data || [];
 
       if (itemsByDni.length === 1) {
         const foundSesameId = itemsByDni[0]?.id;
-        if (!foundSesameId) throw new ClientError("Se encontró el usuario en Sesame pero sin id", 500);
 
-        await User.updateOne({ _id: user._id }, { $set: { userIdSesame: String(foundSesameId) } });
-
-        if (status) {
-          await sesameService.updateEmployee(foundSesameId, { ...buildSesameEmployeeFromUser(user), status });
+        if (!foundSesameId) {
+          throw new ClientError("Se encontró el usuario en Sesame pero sin id", 500);
         }
 
-        return { action: "linked-existing", sesameId: String(foundSesameId), data: itemsByDni[0] };
+        await User.updateOne(
+          { _id: user._id },
+          { $set: { userIdSesame: String(foundSesameId) } }
+        );
+
+        if (status) {
+          await sesameService.updateEmployee(foundSesameId, {
+            ...buildSesameEmployeeFromUser(user),
+            status,
+          });
+        }
+
+        return {
+          action: "linked-existing",
+          sesameId: String(foundSesameId),
+          data: itemsByDni[0],
+        };
       }
 
-      return { action: "not-created", sesameId: null, data: null };
-    } catch {
-      return { action: "not-created", sesameId: null, data: null };
+      return {
+        action: "not-created",
+        sesameId: null,
+        data: null,
+        message: error?.message || "Sesame no ha podido crear el empleado",
+      };
+    } catch (lookupError) {
+      return {
+        action: "not-created",
+        sesameId: null,
+        data: null,
+        message:
+          lookupError?.message ||
+          error?.message ||
+          "Sesame no ha podido crear ni enlazar el empleado",
+      };
     }
   }
 };
+
+
 const disableSesameEmployeeForUser = async (userId) => {
   if (!userId) throw new ClientError("Falta userId", 400);
 
@@ -1807,7 +1871,7 @@ const assignEmployeeToDispositiveSesameScopes = async ({
   const employeeSync = await ensureSesameEmployeeForUser(userId, { status: "active" });
 
   if (!employeeSync?.sesameId) {
-    throw new ClientError("No se pudo crear o activar el usuario en Sesame", 400);
+    throw new ClientError((employeeSync?.message)?`No se pudo crear o activar el usuario en Sesame. Error de sesame: ${employeeSync?.message}`:"No se pudo crear o activar el usuario en Sesame", 400);
   }
 
   const dispositive = await Dispositive.findById(dispositiveId)
@@ -2089,6 +2153,191 @@ const assignEmployeeOfficeIfNeededLocal = async ({ employeeIdSesame, officeId, i
 
   return { action: "assigned", data };
 };
+
+const withTimeout = (promise, ms, label = "Operación") => {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`${label} superó el timeout de ${ms}ms`)),
+        ms
+      )
+    ),
+  ]);
+};
+
+const inviteSesameUsersByActivePeriodDispositivesLocal = async ({
+  dryRun = true,
+  timeoutMs = 30000,
+} = {}) => {
+  const dispositiveIds = [
+    "6a39062f4585b957c5e27a84",
+    "6a3906534585b957c5e27aaf",
+  ];
+
+  const now = new Date();
+
+  const periods = await Periods.find({
+    dispositiveId: { $in: dispositiveIds },
+    active: true,
+    idUser: { $exists: true, $ne: null },
+    $or: [
+      { endDate: { $exists: false } },
+      { endDate: null },
+      { endDate: { $gte: now } },
+    ],
+  })
+    .select("_id idUser dispositiveId startDate endDate")
+    .lean();
+
+  const userIds = [
+    ...new Set(
+      periods
+        .map((period) => String(period.idUser || ""))
+        .filter(Boolean)
+    ),
+  ];
+
+  const results = {
+    dryRun,
+    timeoutMs,
+    dispositiveIds,
+    totalPeriods: periods.length,
+    totalUsers: userIds.length,
+    invited: [],
+    errors: [],
+  };
+
+  console.log("======================================");
+  console.log("[SESAME INVITE LOCAL] Inicio");
+  console.log("[SESAME INVITE LOCAL] dryRun:", dryRun);
+  console.log("[SESAME INVITE LOCAL] Periodos encontrados:", periods.length);
+  console.log("[SESAME INVITE LOCAL] Usuarios únicos:", userIds.length);
+  console.log("======================================");
+
+  for (let i = 0; i < userIds.length; i++) {
+    const userId = userIds[i];
+
+    console.log(
+      `[SESAME INVITE LOCAL] Procesando ${i + 1}/${userIds.length}:`,
+      userId
+    );
+
+    try {
+      const user = await User.findById(userId)
+        .select("_id firstName lastName email dni userIdSesame employmentStatus")
+        .lean();
+
+      if (!user) {
+        results.errors.push({
+          userId,
+          message: "Usuario no encontrado",
+        });
+
+        console.log("[SESAME INVITE LOCAL] Usuario no encontrado:", userId);
+        continue;
+      }
+
+      const userLabel = `${user.firstName || ""} ${user.lastName || ""}`.trim();
+
+      console.log(
+        "[SESAME INVITE LOCAL] Usuario:",
+        userLabel || "(sin nombre)",
+        user.email || "(sin email)"
+      );
+
+      if (dryRun) {
+        results.invited.push({
+          userId,
+          name: userLabel,
+          email: user.email || "",
+          dni: user.dni || "",
+          userIdSesame: user.userIdSesame || null,
+          employmentStatus: user.employmentStatus || "",
+          action: "dry-run",
+        });
+
+        console.log(
+          "[DRY RUN] Se invitaría a:",
+          userLabel || userId,
+          user.email || ""
+        );
+
+        continue;
+      }
+
+      const data = await withTimeout(
+        ensureSesameEmployeeForUser(userId, {
+          status: "active",
+        }),
+        timeoutMs,
+        `Sesame usuario ${userLabel || userId}`
+      );
+
+      if (data?.action === "not-created") {
+        results.errors.push({
+          userId,
+          name: userLabel,
+          email: user.email || "",
+          dni: user.dni || "",
+          userIdSesame: user.userIdSesame || null,
+          employmentStatus: user.employmentStatus || "",
+          action: data.action,
+          message: "Sesame no creó ni enlazó el usuario",
+          data,
+        });
+
+        console.log(
+          "[SESAME INVITE LOCAL] NOT CREATED:",
+          userLabel || userId,
+          user.email || ""
+        );
+
+        continue;
+      }
+
+      results.invited.push({
+        userId,
+        name: userLabel,
+        email: user.email || "",
+        dni: user.dni || "",
+        userIdSesame: data?.sesameId || user.userIdSesame || null,
+        employmentStatus: user.employmentStatus || "",
+        action: data?.action || "processed",
+        data,
+      });
+
+      console.log(
+        "[SESAME INVITE LOCAL] OK:",
+        userLabel || userId,
+        data?.action || "processed"
+      );
+    } catch (error) {
+      results.errors.push({
+        userId,
+        message: error?.message || "Error invitando usuario a Sesame",
+      });
+
+      console.log(
+        "[SESAME INVITE LOCAL] ERROR:",
+        userId,
+        error?.message || error
+      );
+
+      continue;
+    }
+  }
+
+  console.log("======================================");
+  console.log("[SESAME INVITE LOCAL] Fin");
+  console.log("[SESAME INVITE LOCAL] Invitados/procesados:", results.invited.length);
+  console.log("[SESAME INVITE LOCAL] Errores:", results.errors.length);
+  console.log("======================================");
+
+  return results;
+};
+
+
 
 
 
