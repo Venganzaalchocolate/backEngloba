@@ -3,7 +3,7 @@ const { User, Program, Periods, Leaves, Preferents, Dispositive, UserChangeReque
 const { catchAsync, response, ClientError } = require('../utils/indexUtils');
 const mongoose = require('mongoose');
 const { validateRequiredFields, createAccentInsensitiveRegex } = require('../utils/utils');
-const { uploadFileToDrive, getFileById, deleteFileById, gestionAutomaticaNominas, obtenerCarpetaContenedora } = require('./googleController');
+const { uploadFileToDrive, getFileById, deleteFileById, gestionAutomaticaNominas, obtenerCarpetaContenedora, } = require('./googleController');
 const { createUserWS, deleteUserByEmailWS, addUserToGroup, recreateCorporateEmailByUserId } = require('./workspaceController');
 const { sendWelcomeEmail } = require('./emailControllerGoogle');
 const { notifyPrlOfNewHiring } = require("./prlNotificationController");
@@ -1680,9 +1680,30 @@ const recreateCorporateEmail = async (req, res) => {
 
 
   const updatedUser = await User.findById(result.userId).lean();
-    if (updatedUser?.employmentStatus === "activo") {
-  queueSyncMoodleUserForUser(updatedUser._id);
-}
+
+   if (!updatedUser) {
+    throw new ClientError("Usuario no encontrado después de actualizar el email", 404);
+  }
+
+  if (updatedUser.employmentStatus === "activo") {
+    try {
+      const data=await ensureSesameEmployeeForUser(updatedUser._id);
+      console.log(data)
+    } catch (error) {
+      console.error("[RECREATE CORPORATE EMAIL] Sesame no se pudo actualizar:", {
+        userId: String(updatedUser._id),
+        email: updatedUser.email,
+        message: error?.message || error,
+      });
+    }
+    queueSyncOhsTrabajadorForUser(
+      updatedUser._id,
+      {},
+      { createIfMissing: false }
+    );
+    queueSyncMoodleUserForUser(updatedUser._id);
+  }
+
   response(res, 200, updatedUser);
 };
 

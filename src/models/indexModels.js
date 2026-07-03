@@ -29,6 +29,8 @@ const AnideUsuariaAtendida = require('./anide/anideUsuariaAtendida');
 const AnideCentro = require('./anide/anideCentro');
 const PeriodEndReason = require('./periodEndReason');
 const OidcRecord=require('./oidcRecord');
+const MoodleAssignment = require('./moodleAssignment');
+
 
 module.exports = {
     User,
@@ -60,5 +62,6 @@ module.exports = {
     AnideUsuariaAtendida,
     AnideCentro,
     PeriodEndReason,
-    OidcRecord
+    OidcRecord,
+    MoodleAssignment
 }

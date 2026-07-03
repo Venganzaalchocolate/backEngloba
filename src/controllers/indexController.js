@@ -26,7 +26,7 @@ const {
   userSignatureGet,
   userSignatureUpsert,
   userSignatureDelete,
-  
+
 } = require("./userController");
 
 // ----------------------------- LOGIN ----------------------------------------
@@ -271,8 +271,8 @@ const {
   postSesameEligibleManagersByEmployee,
   postSesameCreateDepartmentForUser,
   postSesameDeleteDepartment,
-postSesameAssignDispositiveDepartmentAdminToUser,
-postSesameRemoveDepartmentAdminRoleFromUser,
+  postSesameAssignDispositiveDepartmentAdminToUser,
+  postSesameRemoveDepartmentAdminRoleFromUser,
   postSesameToggleEmployeeForUser,
   postSesameInviteEmployeeForUser,
   postSesameGetOfficeManagers,
@@ -319,12 +319,12 @@ const {
 
 
 // ----------------------------- MODULE SCOPE -------------------------------
-const { 
-  upsertModuleScopeAccess, 
-  listModuleScopeAccess, 
-  updateModuleScopeAccess, 
-  deleteModuleScopeAccess, 
-  getUserModuleScopeAccess 
+const {
+  upsertModuleScopeAccess,
+  listModuleScopeAccess,
+  updateModuleScopeAccess,
+  deleteModuleScopeAccess,
+  getUserModuleScopeAccess
 } = require("./moduleScopeAccessController");
 
 
@@ -346,8 +346,16 @@ const {
 // ----------------------------- ANIDE CONTROLLER -------------------------------
 const { anideCentroManager, anideUsuariaManager, anideCentroOccupancy } = require("./anideController");
 
-    // ----------------------------- MOODLE CONTROLLER -------------------------------
-const { postMoodleTest } = require("./moodleController");
+// ----------------------------- MOODLE CONTROLLER -------------------------------
+const {
+  postMoodleTest,
+  postMoodleSyncUser,
+  postMoodleGetRoles,
+  postMoodleGetCourseUsers,
+  postMoodleManageCourseEnrolments,
+  postMoodleManageSystemRole,
+  postMoodleInfo,
+} = require("./moodleController");
 
 // ============================================================================
 // EXPORTS (sin duplicados, sin comas raras)
@@ -558,7 +566,7 @@ module.exports = {
   volunteerChronologyDelete,
 
 
-    // Sesame
+  // Sesame
   postSesameListEmployees,
   postSesameGetEmployee,
   postSesameGetEmployeeContext,
@@ -576,18 +584,18 @@ module.exports = {
   postSesameEligibleManagersByEmployee,
   postSesameCreateDepartmentForUser,
   postSesameDeleteDepartment,
-postSesameAssignDispositiveDepartmentAdminToUser,
-postSesameRemoveDepartmentAdminRoleFromUser,
-postSesameAssignEmployeeToDispositiveScopes,
+  postSesameAssignDispositiveDepartmentAdminToUser,
+  postSesameRemoveDepartmentAdminRoleFromUser,
+  postSesameAssignEmployeeToDispositiveScopes,
   postSesameToggleEmployeeForUser,
-postSesameInviteEmployeeForUser,
-postSesameGetOfficeManagers,
+  postSesameInviteEmployeeForUser,
+  postSesameGetOfficeManagers,
 
 
 
 
 
-    // Scoped roles
+  // Scoped roles
   handleScopedRole,
   listScopedRoles,
   getUserScopedRoles,
@@ -598,7 +606,7 @@ postSesameGetOfficeManagers,
   updateScopedRoleRule,
   deleteScopedRoleRule,
 
-    // Documentation Audit
+  // Documentation Audit
   getDocumentationAuditByUserAndDocument,
   getDocumentationAuditsByUser,
   postRegisterDocumentationAuditDownload,
@@ -616,7 +624,7 @@ postSesameGetOfficeManagers,
   removeWorkplaceFromDispositive,
   listDispositivesByWorkplace,
 
-    // Attended Users
+  // Attended Users
   createAttendedUser,
   listAttendedUsers,
   getAttendedUserById,
@@ -649,12 +657,17 @@ postSesameGetOfficeManagers,
 
 
   // ----------------------------- ANIDE CONTROLLER -------------------------------
-    anideCentroManager,
-    anideUsuariaManager,
-    anideCentroOccupancy,
+  anideCentroManager,
+  anideUsuariaManager,
+  anideCentroOccupancy,
 
-    // ----------------------------- MOODLE CONTROLLER -------------------------------
-
-    postMoodleTest,
+  // ----------------------------- MOODLE CONTROLLER -------------------------------
+  postMoodleTest,
+  postMoodleSyncUser,
+  postMoodleGetRoles,
+  postMoodleGetCourseUsers,
+  postMoodleManageCourseEnrolments,
+  postMoodleManageSystemRole,
+  postMoodleInfo
 };
 

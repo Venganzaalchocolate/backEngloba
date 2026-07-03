@@ -1,4 +1,7 @@
-const MOODLE_BASE_URL = String(process.env.MOODLE_BASE_URL || "").replace(/\/+$/, "");
+const MOODLE_BASE_URL = String(process.env.MOODLE_BASE_URL || "").replace(
+  /\/+$/,
+  ""
+);
 const MOODLE_API_TOKEN = String(process.env.MOODLE_API_TOKEN || "").trim();
 
 if (!MOODLE_BASE_URL) {
@@ -9,14 +12,14 @@ if (!MOODLE_API_TOKEN) {
   throw new Error("Falta MOODLE_API_TOKEN en .env");
 }
 
-async function request(wsfunction, params = {}) {
+async function request(wsfunction, payload = {}) {
   const body = new URLSearchParams({
     wstoken: MOODLE_API_TOKEN,
     wsfunction,
     moodlewsrestformat: "json",
   });
 
-  Object.entries(params).forEach(([key, value]) => {
+  Object.entries(payload).forEach(([key, value]) => {
     if (value === undefined || value === null || value === "") return;
 
     body.append(key, String(value));
@@ -50,8 +53,8 @@ async function request(wsfunction, params = {}) {
     err.moodleRequest = {
       url,
       wsfunction,
-      params: Object.fromEntries(
-        Object.entries(params).map(([key, value]) => [
+      body: Object.fromEntries(
+        Object.entries(payload).map(([key, value]) => [
           key,
           key.toLowerCase().includes("password") ? "***" : value,
         ])
@@ -112,8 +115,8 @@ async function request(wsfunction, params = {}) {
     err.moodleRequest = {
       url,
       wsfunction,
-      params: Object.fromEntries(
-        Object.entries(params).map(([key, value]) => [
+      body: Object.fromEntries(
+        Object.entries(payload).map(([key, value]) => [
           key,
           key.toLowerCase().includes("password") ? "***" : value,
         ])
@@ -128,39 +131,39 @@ async function request(wsfunction, params = {}) {
 
 const moodleService = {
   getUsersByField(field, values = []) {
-    const params = { field };
+    const payload = { field };
 
     values.forEach((value, index) => {
-      params[`values[${index}]`] = value;
+      payload[`values[${index}]`] = value;
     });
 
-    return request("core_user_get_users_by_field", params);
+    return request("core_user_get_users_by_field", payload);
   },
 
   createUser(data = {}) {
-    const params = {};
+    const payload = {};
 
     Object.entries(data).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== "") {
-        params[`users[0][${key}]`] = value;
+        payload[`users[0][${key}]`] = value;
       }
     });
 
-    return request("core_user_create_users", params);
+    return request("core_user_create_users", payload);
   },
 
   updateUser(id, data = {}) {
-    const params = {
+    const payload = {
       "users[0][id]": id,
     };
 
     Object.entries(data).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== "") {
-        params[`users[0][${key}]`] = value;
+        payload[`users[0][${key}]`] = value;
       }
     });
 
-    return request("core_user_update_users", params);
+    return request("core_user_update_users", payload);
   },
 
   getCoursesByField(field, value) {
@@ -176,12 +179,57 @@ const moodleService = {
     });
   },
 
-  enrolUser({ userId, courseId, roleId }) {
-    return request("enrol_manual_enrol_users", {
-      "enrolments[0][userid]": userId,
-      "enrolments[0][courseid]": courseId,
-      "enrolments[0][roleid]": roleId,
+  getEnrolledUsers(courseId) {
+    return request("core_enrol_get_enrolled_users", {
+      courseid: courseId,
     });
+  },
+
+  enrolUsers(enrolments = []) {
+    const payload = {};
+
+    enrolments.forEach((enrolment, index) => {
+      payload[`enrolments[${index}][userid]`] = enrolment.userId;
+      payload[`enrolments[${index}][courseid]`] = enrolment.courseId;
+      payload[`enrolments[${index}][roleid]`] = enrolment.roleId;
+    });
+
+    return request("enrol_manual_enrol_users", payload);
+  },
+
+  enrolUser({ userId, courseId, roleId }) {
+    return this.enrolUsers([
+      {
+        userId,
+        courseId,
+        roleId,
+      },
+    ]);
+  },
+
+  unenrolUsers(enrolments = []) {
+    const payload = {};
+
+    enrolments.forEach((enrolment, index) => {
+      payload[`enrolments[${index}][userid]`] = enrolment.userId;
+      payload[`enrolments[${index}][courseid]`] = enrolment.courseId;
+
+      if (enrolment.roleId) {
+        payload[`enrolments[${index}][roleid]`] = enrolment.roleId;
+      }
+    });
+
+    return request("enrol_manual_unenrol_users", payload);
+  },
+
+  unenrolUser({ userId, courseId, roleId }) {
+    return this.unenrolUsers([
+      {
+        userId,
+        courseId,
+        roleId,
+      },
+    ]);
   },
 
   getCourseCompletionStatus({ userId, courseId }) {
@@ -198,25 +246,69 @@ const moodleService = {
     });
   },
 
-assignRole({ userId, roleId, contextId, contextLevel, instanceId }) {
-  return request("core_role_assign_roles", {
-    "assignments[0][roleid]": roleId,
-    "assignments[0][userid]": userId,
-    "assignments[0][contextid]": contextId,
-    "assignments[0][contextlevel]": contextLevel,
-    "assignments[0][instanceid]": instanceId,
-  });
-},
+  assignRoles(assignments = []) {
+    const payload = {};
 
-unassignRole({ userId, roleId, contextId, contextLevel, instanceId }) {
-  return request("core_role_unassign_roles", {
-    "unassignments[0][roleid]": roleId,
-    "unassignments[0][userid]": userId,
-    "unassignments[0][contextid]": contextId,
-    "unassignments[0][contextlevel]": contextLevel,
-    "unassignments[0][instanceid]": instanceId,
-  });
-},
+    assignments.forEach((assignment, index) => {
+      payload[`assignments[${index}][roleid]`] = assignment.roleId;
+      payload[`assignments[${index}][userid]`] = assignment.userId;
+      payload[`assignments[${index}][contextid]`] = assignment.contextId;
+      payload[`assignments[${index}][contextlevel]`] = assignment.contextLevel;
+      payload[`assignments[${index}][instanceid]`] = assignment.instanceId;
+    });
+
+    return request("core_role_assign_roles", payload);
+  },
+
+  assignRole({ userId, roleId, contextId, contextLevel, instanceId }) {
+    return this.assignRoles([
+      {
+        userId,
+        roleId,
+        contextId,
+        contextLevel,
+        instanceId,
+      },
+    ]);
+  },
+
+  unassignRoles(unassignments = []) {
+    const payload = {};
+
+    unassignments.forEach((unassignment, index) => {
+      payload[`unassignments[${index}][roleid]`] = unassignment.roleId;
+      payload[`unassignments[${index}][userid]`] = unassignment.userId;
+      payload[`unassignments[${index}][contextid]`] = unassignment.contextId;
+      payload[`unassignments[${index}][contextlevel]`] = unassignment.contextLevel;
+      payload[`unassignments[${index}][instanceid]`] = unassignment.instanceId;
+    });
+
+    return request("core_role_unassign_roles", payload);
+  },
+
+  unassignRole({ userId, roleId, contextId, contextLevel, instanceId }) {
+    return this.unassignRoles([
+      {
+        userId,
+        roleId,
+        contextId,
+        contextLevel,
+        instanceId,
+      },
+    ]);
+  },
+
+  getSystemRoleUsers(roleId) {
+    return request("local_backengloba_get_system_role_users", {
+      roleid: roleId,
+    });
+  },
+
+  getUserSystemRoles(userId) {
+    return request("local_backengloba_get_user_system_roles", {
+      userid: userId,
+    });
+  },
 };
 
 module.exports = moodleService;

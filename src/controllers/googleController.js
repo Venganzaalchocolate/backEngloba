@@ -877,82 +877,7 @@ function pareceNombreNomina(name = '') {
   const normalized = String(name).trim().toUpperCase();
   return /^[XYZ0-9][0-9]{7}[A-Z]_\d{1,2}_\d{4}(?:_.+)?\.PDF$/.test(normalized);
 }
-async function flattenNominasSubfolders() {
-  const rootId = process.env.GOOGLE_DRIVE_NOMINAS;
-  if (!rootId) throw new Error('Falta process.env.GOOGLE_DRIVE_NOMINAS');
 
-  console.log('🚀 Revisando subcarpetas dentro de NOMINAS…');
-
-  const archivos = await listarArchivosEnSubcarpetasNominas(rootId, rootId);
-
-  if (!archivos.length) {
-    console.log('No hay archivos en subcarpetas de NOMINAS.');
-    return { moved: 0, skipped: 0 };
-  }
-
-  let moved = 0;
-  let skipped = 0;
-
-  for (const archivo of archivos) {
-    try {
-      const oldParent = archivo.parents?.[0];
-      if (!oldParent || oldParent === rootId) {
-        skipped++;
-        continue;
-      }
-
-      if (!pareceNombreNomina(archivo.name)) {
-        console.log(`⏭️ Omitido por nombre no esperado: ${archivo.name}`);
-        skipped++;
-        continue;
-      }
-
-      const nombreSinPDF = archivo.name.toUpperCase().replace('.PDF', '');
-      const partes = nombreSinPDF.split('_');
-      const dni = partes[0];
-
-      if (!validateDNIorNIE(dni)) {
-        console.log(`⏭️ Omitido por DNI/NIE inválido: ${archivo.name}`);
-        skipped++;
-        continue;
-      }
-
-      await moverYRenombrar(
-        archivo.id,
-        archivo.name,
-        rootId,
-        oldParent,
-        archivo.name
-      );
-
-      console.log(`✅ Movido a raíz NOMINAS: ${archivo.name}`);
-      moved++;
-    } catch (err) {
-      console.error(`❌ Error moviendo ${archivo.name}:`, err.message);
-      skipped++;
-    }
-  }
-
-  console.log(`🎉 Fin. Movidos: ${moved}. Omitidos: ${skipped}.`);
-  return { moved, skipped };
-}
-
-const prueba=async ()=>{
-
-
-  try {
-    console.log('🚀 Ejecutando limpieza local de subcarpetas de nóminas...');
-    const result = await flattenNominasSubfolders();
-    console.log('✅ Resultado:', result);
-    process.exit(0);
-  } catch (error) {
-    console.error('❌ Error ejecutando flattenNominasSubfolders:', error);
-    process.exit(1);
-  }
-
-}
-
-// prueba()
 
 
 module.exports = {
@@ -964,6 +889,7 @@ module.exports = {
   obtenerCarpetaContenedora,
   moveDriveFile, 
   adoptDriveFileIntoFiledrive,
-  appendFilesToArchiveOptimized
+  appendFilesToArchiveOptimized,
+
   
 };
