@@ -138,10 +138,12 @@ const validToken = async (req, res) => {
         });
         const scopedRoles = await getUserScopedRolesData(id);
         const attendedUsersScopes = await getUserModuleScopeAccessData(id, "attendedUsers");
+        const anideUsersScopes = await getUserModuleScopeAccessData(id, "anideOccupancyManager");
 
         const list = [
             ...scopedRoles,
             ...attendedUsersScopes,
+            ...anideUsersScopes
         ];
 
         response(res, 200, {
