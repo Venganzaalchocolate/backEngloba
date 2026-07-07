@@ -355,6 +355,7 @@ const {
   postMoodleManageCourseEnrolments,
   postMoodleManageSystemRole,
   postMoodleInfo,
+  postMoodleUndoAssignment,
 } = require("./moodleController");
 
 // ============================================================================
@@ -668,6 +669,7 @@ module.exports = {
   postMoodleGetCourseUsers,
   postMoodleManageCourseEnrolments,
   postMoodleManageSystemRole,
-  postMoodleInfo
+  postMoodleInfo,
+  postMoodleUndoAssignment
 };
 

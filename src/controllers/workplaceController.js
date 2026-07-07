@@ -653,6 +653,8 @@ const listDispositivesByWorkplace = async (req, res) => {
 
 //BORRAR
 
+
+
 module.exports = {
   createWorkplace: catchAsync(createWorkplace),
   listWorkplaces: catchAsync(listWorkplaces),

@@ -130,7 +130,9 @@ const groupSuffixMap = {
   psychology: "psico",
   education: "edu",
   tecnicos: "tec",
-  juridico: "jur"
+  juridico: "jur",
+  auxiliar:"aux",
+  referent:"ref",
 };
 
 const groupNamePrefixMap = {
@@ -141,6 +143,8 @@ const groupNamePrefixMap = {
   education: "Equipo de Educadores",
   coordination: "Equipo de Coordinadores",
   juridico: "Equipo jurídico",
+  auxiliar:"Equipo de auxiliares",
+  referent:"Equipo de Educadores Referentes",
   blank: "Subgrupo de",
 };
 
@@ -1723,6 +1727,67 @@ const syncWorkspaceOrgUnitForUser = async (userId) => {
 // FIN poner a usuarios en la unidad organizativa que tocan
 
 
+const pruebaTodosGruposSinExternos = async () => {
+  const result = {
+    totalGroups: 0,
+    updated: [],
+    errors: [],
+  };
+
+  let pageToken;
+
+  do {
+    const { data } = await directory.groups.list({
+      domain: DOMAIN,
+      maxResults: 200,
+      pageToken,
+    });
+
+    const groups = data.groups || [];
+    result.totalGroups += groups.length;
+
+    for (const group of groups) {
+      const groupEmail = String(group.email || "").trim().toLowerCase();  
+      if (!groupEmail) continue;
+
+      try {
+        await groupsSettings.groups.patch({
+          groupUniqueId: groupEmail,
+          requestBody: {
+            allowExternalMembers: "false",
+          },
+        });
+
+        result.updated.push({
+          email: groupEmail,
+          allowExternalMembers: "false",
+        });
+
+        console.log(`✅ Grupo actualizado: ${groupEmail}`);
+      } catch (err) {
+        const parsed = parseGoogleError(err);
+
+        result.errors.push({
+          email: groupEmail,
+          code: parsed.code,
+          reason: parsed.reason,
+          message: parsed.message,
+        });
+
+        console.error(`❌ Error actualizando ${groupEmail}:`, parsed);
+      }
+    }
+
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  console.log(
+    "Resultado pruebaTodosGruposSinExternos:",
+    JSON.stringify(result, null, 2)
+  );
+
+  return result;
+};
 
 module.exports = {
   addUserToGroup,

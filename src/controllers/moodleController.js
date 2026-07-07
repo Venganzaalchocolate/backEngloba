@@ -866,18 +866,19 @@ if (requestedLists.includes("courseAssignments")) {
     throw new ClientError("Falta courseId", 400);
   }
 
-  data.courseAssignments = await MoodleAssignment.find({
-    active: true,
-    assignmentType: "course-enrolment",
-    operation: "enrol",
-    courseId: Number(courseId),
-  })
-    .select(
-      "_id assignmentType operation courseId courseName roleId roleName criteria affectedCount selectedCount skippedCount errorCount active createdAt"
-    )
-    .sort({ createdAt: -1 })
-    .limit(50)
-    .lean();
+data.courseAssignments = await MoodleAssignment.find({
+  active: true,
+  assignmentType: "course-enrolment",
+  operation: "enrol",
+  courseId: Number(courseId),
+})
+  .select(
+    "_id assignmentType operation courseId courseName roleId roleName criteria affectedCount selectedCount skippedCount errorCount active createdAt"
+  )
+  .populate("criteria.userIds", "firstName lastName email")
+  .sort({ createdAt: -1 })
+  .limit(50)
+  .lean();
 }
 
 if (requestedLists.includes("systemRoleAssignments")) {
@@ -885,18 +886,19 @@ if (requestedLists.includes("systemRoleAssignments")) {
     throw new ClientError("Rol de sistema Moodle no permitido", 400);
   }
 
-  data.systemRoleAssignments = await MoodleAssignment.find({
-    active: true,
-    assignmentType: "system-role",
-    operation: "assign",
-    roleId: Number(roleId),
-  })
-    .select(
-      "_id assignmentType operation courseId courseName roleId roleName criteria affectedCount selectedCount skippedCount errorCount active createdAt"
-    )
-    .sort({ createdAt: -1 })
-    .limit(50)
-    .lean();
+data.systemRoleAssignments = await MoodleAssignment.find({
+  active: true,
+  assignmentType: "system-role",
+  operation: "assign",
+  roleId: Number(roleId),
+})
+  .select(
+    "_id assignmentType operation courseId courseName roleId roleName criteria affectedCount selectedCount skippedCount errorCount active createdAt"
+  )
+  .populate("criteria.userIds", "firstName lastName email")
+  .sort({ createdAt: -1 })
+  .limit(50)
+  .lean();
 }
   response(res, 200, data);
 };
@@ -1112,6 +1114,102 @@ const postMoodleManageSystemRole = async (req, res) => {
   });
 };
 
+const postMoodleUndoAssignment = async (req, res) => {
+  const { assignmentId } = req.body || {};
+
+  if (!assignmentId || !isValidObjectId(assignmentId)) {
+    throw new ClientError("assignmentId no válido", 400);
+  }
+
+  const assignment = await MoodleAssignment.findOne({
+    _id: assignmentId,
+    active: true,
+  }).lean();
+
+  if (!assignment) {
+    throw new ClientError("Asignación no encontrada o ya retirada", 404);
+  }
+
+  const affectedUsers = Array.isArray(assignment.affectedUsers)
+    ? assignment.affectedUsers
+    : [];
+
+  let undoOperation = "";
+
+  if (affectedUsers.length) {
+    if (assignment.assignmentType === "course-enrolment") {
+      undoOperation = "unenrol";
+
+      await moodleService.unenrolUsers(
+        affectedUsers.map((user) => ({
+          userId: Number(user.moodleId),
+          courseId: Number(assignment.courseId),
+        }))
+      );
+    }
+
+    if (assignment.assignmentType === "system-role") {
+      undoOperation = "unassign";
+
+      await moodleService.unassignRoles(
+        affectedUsers.map((user) => ({
+          userId: Number(user.moodleId),
+          roleId: Number(assignment.roleId),
+          contextId: MOODLE_SYSTEM_CONTEXT.contextId,
+        }))
+      );
+    }
+  }
+
+  if (!undoOperation) {
+    undoOperation =
+      assignment.assignmentType === "course-enrolment" ? "unenrol" : "unassign";
+  }
+
+  const undoAssignment = await MoodleAssignment.create({
+    active: false,
+    assignmentType: assignment.assignmentType,
+    operation: undoOperation,
+    courseId: assignment.courseId,
+    courseName: assignment.courseName || "",
+    roleId: Number(assignment.roleId),
+    roleName: assignment.roleName || "",
+
+    criteria: assignment.criteria,
+
+    affectedUsers,
+    affectedCount: affectedUsers.length,
+    selectedCount: assignment.selectedCount || affectedUsers.length,
+    skippedCount: 0,
+    errorCount: 0,
+
+    createdBy:
+      req.user?._id && isValidObjectId(req.user._id) ? req.user._id : null,
+  });
+
+  await MoodleAssignment.updateOne(
+    { _id: assignment._id },
+    {
+      $set: {
+        active: false,
+        undoneAt: new Date(),
+        undoneBy:
+          req.user?._id && isValidObjectId(req.user._id) ? req.user._id : null,
+        undoneByAssignment: undoAssignment._id,
+      },
+    }
+  );
+
+  response(res, 200, {
+    ok: true,
+    assignmentId: String(assignment._id),
+    undoAssignmentId: String(undoAssignment._id),
+    assignmentType: assignment.assignmentType,
+    operation: undoOperation,
+    affected: affectedUsers.length,
+  });
+};
+
 module.exports = {
   postMoodleTest: catchAsync(postMoodleTest),
   postMoodleSyncUser: catchAsync(postMoodleSyncUser),
@@ -1120,6 +1218,7 @@ module.exports = {
   postMoodleGetCourseUsers: catchAsync(postMoodleGetCourseUsers),
   postMoodleManageCourseEnrolments: catchAsync(postMoodleManageCourseEnrolments),
   postMoodleManageSystemRole: catchAsync(postMoodleManageSystemRole),
+  postMoodleUndoAssignment: catchAsync(postMoodleUndoAssignment),
 
   queueSyncMoodleUserForUser,
   syncMoodleUserForUser,
