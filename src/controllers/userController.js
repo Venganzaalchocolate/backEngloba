@@ -726,7 +726,7 @@ const UserDeleteId = async (req, res) => {
 // =========================
 const userPut = async (req, res) => {
   if (!req.body._id) throw new ClientError("El ID de usuario es requerido", 400);
-
+  console.log(req.body)
   const updateFields = {};
   const userId = toId(req.body._id);
 
@@ -877,6 +877,7 @@ if (req.body.employmentStatus === "ya no trabaja con nosotros") {
 } else if (updatedUser.employmentStatus === "activo") {
   queueSyncOhsTrabajadorForUser(userId, {}, { createIfMissing: false });
 }
+
 queueSyncMoodleUserForUser(updatedUser._id);
     if (req.body.personalHours || req.body.vacationHours) {
       const payload = {
@@ -1249,9 +1250,10 @@ const rehireUser = async (req, res) => {
   }
 
   let createdPeriod;
-
+  
   try {
     createdPeriod = await Periods.create(hiringDoc);
+    console.log(createdPeriod)
   } catch (error) {
     console.log("[rehireUser] Error creando periodo:", error?.message || error);
     throw new ClientError("No se pudo crear el nuevo periodo de contratación", 400);
@@ -1322,7 +1324,7 @@ const rehireUser = async (req, res) => {
   } catch (e) {
     console.log("[rehireUser] Workspace/Preferents non-blocking:", e?.message || e);
   }
-
+  console.log(updatedUser)
   return response(res, 200, {
     user: updatedUser,
     period: createdPeriod,

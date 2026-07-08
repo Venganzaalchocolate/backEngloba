@@ -493,10 +493,44 @@ const disableSesameEmployeeForUser = async (userId) => {
   if (!user) throw new ClientError("Usuario no encontrado", 404);
   if (!user.userIdSesame) return { action: "not-found" };
 
-  const payload = { ...buildSesameEmployeeFromUser(user), status: "inactive" };
-  const updated = await sesameService.updateEmployee(user.userIdSesame, payload);
+  const payload = {
+    companyId: SESAME_COMPANY_ID,
+    status: "inactive",
+    firstName: user.firstName,
+    lastName: user.lastName,
+  };
 
-  return { action: "disabled", sesameId: String(user.userIdSesame), data: updated };
+  try {
+    const updated = await sesameService.updateEmployee(user.userIdSesame, payload);
+
+    return {
+      action: "disabled",
+      sesameId: String(user.userIdSesame),
+      data: updated,
+    };
+  }  catch (error) {
+  console.error("[disableSesameEmployeeForUser] Sesame error FULL:", {
+    name: error?.name,
+    message: error?.message,
+    code: error?.code,
+    isAxiosError: error?.isAxiosError,
+
+    responseStatus: error?.response?.status,
+    responseData: error?.response?.data,
+    responseHeaders: error?.response?.headers,
+
+    requestMethod: error?.config?.method,
+    requestBaseURL: error?.config?.baseURL,
+    requestURL: error?.config?.url,
+    requestData: error?.config?.data,
+
+    cause: error?.cause,
+    stack: error?.stack,
+    payload,
+  });
+
+  throw error;
+}
 };
 
 const deleteSesameEmployeeForUser = async (userId) => {
