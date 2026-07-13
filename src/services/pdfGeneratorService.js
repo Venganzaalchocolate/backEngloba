@@ -17,6 +17,10 @@ const COLOR_TEXT = rgb(0, 0, 0);
 const COLOR_MUTED = hexToRgb("#6f7395");
 const COLOR_WHITE = rgb(1, 1, 1);
 
+const COLOR_NOTE = hexToRgb("#fff8dc");
+const COLOR_NOTE_BORDER = hexToRgb("#ead58f");
+const COLOR_NOTE_ACCENT = hexToRgb("#d3a62c");
+
 const PRL_RECIBI_EXTRA_TEXT = `La empresa, en cumplimiento de las obligaciones expresadas en los artículos 18 y 20 de la Ley 31/1995 de Prevención de Riesgos Laborales, “información, consulta y participación de los trabajadores” y “medidas de emergencia”, le ha entregado la información sobre los riesgos para la Seguridad y la Salud, las medidas y actividades de protección y prevención aplicables y las medidas de emergencia y primeros auxilios que afectan a su puesto de trabajo.
 
 Se le recuerda que, entre las obligaciones de los trabajadores en materia de Prevención de Riesgos definidas por la Ley, están las siguientes:
@@ -1022,18 +1026,45 @@ const generateReceiptTemplatePdf = async ({
   employeeContext = {},
 }) => {
   const pdfDoc = await PDFDocument.create();
-  let { page, y } = await addTemplatePage({ pdfDoc, isPreview });
+
+  let { page, y } = await addTemplatePage({
+    pdfDoc,
+    isPreview,
+  });
 
   const { width, height } = page.getSize();
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const font = await pdfDoc.embedFont(
+    StandardFonts.Helvetica
+  );
+
+  const fontBold = await pdfDoc.embedFont(
+    StandardFonts.HelveticaBold
+  );
+
   const marginX = 45;
   const contentW = width - marginX * 2;
-  const title = (template?.title || "Declaración de recepción").toUpperCase();
-  const titleSize = title.length > 70 ? 12.5 : title.length > 48 ? 13.5 : 15;
+
+  const title = (
+    template?.title ||
+    "Declaración de recepción"
+  ).toUpperCase();
+
+  const titleSize =
+    title.length > 70
+      ? 12.5
+      : title.length > 48
+        ? 13.5
+        : 15;
+
   let titleY = height - 132;
 
-  const titleLines = wrapTextLines(title, fontBold, titleSize, contentW);
+  const titleLines = wrapTextLines(
+    title,
+    fontBold,
+    titleSize,
+    contentW
+  );
 
   titleLines.slice(0, 3).forEach((line) => {
     page.drawText(line, {
@@ -1059,7 +1090,16 @@ const generateReceiptTemplatePdf = async ({
 
   y = 520;
 
-  let result = await drawTemplateSectionTitle({ pdfDoc, page, title: "DECLARA", x: marginX, y, fontBold, isPreview });
+  let result = await drawTemplateSectionTitle({
+    pdfDoc,
+    page,
+    title: "DECLARA",
+    x: marginX,
+    y,
+    fontBold,
+    isPreview,
+  });
+
   page = result.page;
   y = result.y;
 
@@ -1082,63 +1122,50 @@ const generateReceiptTemplatePdf = async ({
     y = result.y;
   }
 
-  const validAnswers = (answersSnapshot || []).filter((a) => a?.textApplied);
+  /*
+   * Compatibilidad:
+   * - usa blocks en plantillas nuevas;
+   * - usa questions en plantillas antiguas.
+   */
+  const blocks = [
+    ...(template?.blocks?.length
+      ? template.blocks
+      : (template?.questions || []).map(
+          (question) => ({
+            ...question,
+            type: "yesno",
+          })
+        )),
+  ].sort(
+    (a, b) =>
+      Number(a.order || 0) -
+      Number(b.order || 0)
+  );
 
-  for (let i = 0; i < validAnswers.length; i++) {
-    const item = validAnswers[i];
+  const answersByKey = new Map(
+    (answersSnapshot || []).map((item) => [
+      String(item.key),
+      item,
+    ])
+  );
 
-    result = await ensureTemplateSpace({ pdfDoc, page, y, needed: 110, isPreview });
-    page = result.page;
-    y = result.y;
+  let questionNumber = 0;
 
-    result = await drawTemplateText({
+  for (const block of blocks) {
+    /*
+     * Texto informativo.
+     */
+if (block.type === "text") {
+  if (!block.content) continue;
+
+  if (block.label) {
+    result = await drawTemplateSectionTitle({
       pdfDoc,
       page,
-      text: `${i + 1}. ${item.question || "Pregunta"}`,
+      title: block.label.toUpperCase(),
       x: marginX,
       y,
-      maxWidth: contentW,
-      font: fontBold,
-      size: 10,
-      color: COLOR_PRIMARY,
-      lineGap: 4,
-      paragraphGap: 4,
-      isPreview,
-    });
-
-    page = result.page;
-    y = result.y;
-
-    result = await drawTemplateText({
-      pdfDoc,
-      page,
-      text: `Respuesta: ${item.answer === "yes" ? "Sí" : "No"}`,
-      x: marginX + 12,
-      y,
-      maxWidth: contentW - 12,
-      font: fontBold,
-      size: 9.5,
-      color: COLOR_MUTED,
-      lineGap: 3,
-      paragraphGap: 4,
-      isPreview,
-    });
-
-    page = result.page;
-    y = result.y;
-
-    result = await drawTemplateText({
-      pdfDoc,
-      page,
-      text: item.textApplied,
-      x: marginX + 12,
-      y,
-      maxWidth: contentW - 12,
-      font,
-      size: 10,
-      color: COLOR_TEXT,
-      lineGap: 4,
-      paragraphGap: 10,
+      fontBold,
       isPreview,
     });
 
@@ -1146,8 +1173,221 @@ const generateReceiptTemplatePdf = async ({
     y = result.y;
   }
 
+  result = await drawTemplateText({
+    pdfDoc,
+    page,
+    text: block.content,
+    x: marginX,
+    y,
+    maxWidth: contentW,
+    font,
+    size: 10,
+    color: COLOR_TEXT,
+    lineGap: 4,
+    paragraphGap: 8,
+    isPreview,
+  });
+
+  page = result.page;
+  y = result.y - 4;
+
+  continue;
+}
+
+    /*
+     * Nota destacada.
+     */
+if (block.type === "note") {
+  if (!block.content) continue;
+
+  const paragraphs = String(block.content)
+    .split(/\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  const noteLines = [];
+
+  paragraphs.forEach((paragraph, index) => {
+    noteLines.push(
+      ...wrapTextLines(
+        paragraph,
+        font,
+        9.7,
+        contentW - 34
+      )
+    );
+
+    if (index < paragraphs.length - 1) {
+      noteLines.push(null);
+    }
+  });
+
+  const lineHeight = 13;
+
+  const noteHeight = Math.max(
+    48,
+    noteLines.length * lineHeight + 22
+  );
+
+  result = await ensureTemplateSpace({
+    pdfDoc,
+    page,
+    y,
+    needed: noteHeight + 12,
+    isPreview,
+  });
+
+  page = result.page;
+  y = result.y;
+
+  const boxTop = y + 4;
+  const boxY = boxTop - noteHeight;
+
+  drawBox({
+    page,
+    x: marginX,
+    y: boxY,
+    width: contentW,
+    height: noteHeight,
+    color: COLOR_NOTE,
+    borderColor: COLOR_NOTE_BORDER,
+    borderWidth: 1,
+  });
+
+  page.drawRectangle({
+    x: marginX,
+    y: boxY,
+    width: 5,
+    height: noteHeight,
+    color: COLOR_NOTE_ACCENT,
+  });
+
+  let noteY = boxTop - 17;
+
+  for (const line of noteLines) {
+    if (line) {
+      page.drawText(line, {
+        x: marginX + 17,
+        y: noteY,
+        size: 9.7,
+        font,
+        color: COLOR_TEXT,
+      });
+    }
+
+    noteY -= lineHeight;
+  }
+
+  y = boxY - 20;
+
+  continue;
+}
+
+    /*
+     * Pregunta Sí/No.
+     */
+    if (block.type === "yesno") {
+      const answer = answersByKey.get(
+        String(block.key)
+      );
+
+      /*
+       * Las preguntas opcionales sin respuesta
+       * no se muestran en el PDF.
+       */
+      if (!answer) continue;
+
+      questionNumber += 1;
+
+      result = await ensureTemplateSpace({
+        pdfDoc,
+        page,
+        y,
+        needed: 90,
+        isPreview,
+      });
+
+      page = result.page;
+      y = result.y;
+
+      result = await drawTemplateText({
+        pdfDoc,
+        page,
+        text:
+          `${questionNumber}. ` +
+          `${block.label || answer.question || "Pregunta"}`,
+        x: marginX,
+        y,
+        maxWidth: contentW,
+        font: fontBold,
+        size: 10,
+        color: COLOR_PRIMARY,
+        lineGap: 4,
+        paragraphGap: 4,
+        isPreview,
+      });
+
+      page = result.page;
+      y = result.y;
+
+      result = await drawTemplateText({
+        pdfDoc,
+        page,
+        text:
+          `Respuesta: ${
+            answer.answer === "yes"
+              ? "Sí"
+              : "No"
+          }`,
+        x: marginX + 12,
+        y,
+        maxWidth: contentW - 12,
+        font: fontBold,
+        size: 9.5,
+        color: COLOR_MUTED,
+        lineGap: 3,
+        paragraphGap: 4,
+        isPreview,
+      });
+
+      page = result.page;
+      y = result.y;
+
+      if (answer.textApplied) {
+        result = await drawTemplateText({
+          pdfDoc,
+          page,
+          text: answer.textApplied,
+          x: marginX + 12,
+          y,
+          maxWidth: contentW - 12,
+          font,
+          size: 10,
+          color: COLOR_TEXT,
+          lineGap: 4,
+          paragraphGap: 8,
+          isPreview,
+        });
+
+        page = result.page;
+        y = result.y;
+      }
+
+      y -= 4;
+    }
+  }
+
   if (template?.finalText) {
-    result = await drawTemplateSectionTitle({ pdfDoc, page, title: "CIERRE", x: marginX, y, fontBold, isPreview });
+    result = await drawTemplateSectionTitle({
+      pdfDoc,
+      page,
+      title: "CIERRE",
+      x: marginX,
+      y,
+      fontBold,
+      isPreview,
+    });
+
     page = result.page;
     y = result.y;
 
@@ -1169,7 +1409,14 @@ const generateReceiptTemplatePdf = async ({
     y = result.y;
   }
 
-  result = await ensureTemplateSpace({ pdfDoc, page, y, needed: 145, isPreview });
+  result = await ensureTemplateSpace({
+    pdfDoc,
+    page,
+    y,
+    needed: 145,
+    isPreview,
+  });
+
   page = result.page;
 
   const signatureY = 85;
@@ -1184,43 +1431,59 @@ const generateReceiptTemplatePdf = async ({
     borderColor: COLOR_SOFT,
   });
 
-  page.drawText("En prueba de conformidad, se firma este documento en la fecha indicada.", {
-    x: marginX + 14,
-    y: signatureY + 78,
-    size: 9.5,
-    font,
-    color: COLOR_PRIMARY,
-  });
+  page.drawText(
+    "En prueba de conformidad, se firma este documento en la fecha indicada.",
+    {
+      x: marginX + 14,
+      y: signatureY + 78,
+      size: 9.5,
+      font,
+      color: COLOR_PRIMARY,
+    }
+  );
 
   page.drawLine({
-    start: { x: marginX + 14, y: signatureY + 66 },
-    end: { x: width - marginX - 14, y: signatureY + 66 },
+    start: {
+      x: marginX + 14,
+      y: signatureY + 66,
+    },
+    end: {
+      x: width - marginX - 14,
+      y: signatureY + 66,
+    },
     thickness: 1,
     color: COLOR_WHITE,
   });
 
-  page.drawText("Firma electrónica de recepción", {
-    x: marginX + 14,
-    y: signatureY + 40,
-    size: 10.5,
-    font: fontBold,
-    color: COLOR_PRIMARY,
-  });
+  page.drawText(
+    "Firma electrónica de recepción",
+    {
+      x: marginX + 14,
+      y: signatureY + 40,
+      size: 10.5,
+      font: fontBold,
+      color: COLOR_PRIMARY,
+    }
+  );
 
-  await addSignatureToRecibiPdf(pdfDoc, userAux, {
-    x: 300,
-    y: signatureY - 6,
-    boxWidth: 230,
-    boxHeight: 64,
-  });
+  await addSignatureToRecibiPdf(
+    pdfDoc,
+    userAux,
+    {
+      x: 300,
+      y: signatureY - 6,
+      boxWidth: 230,
+      boxHeight: 64,
+    }
+  );
 
   const pages = pdfDoc.getPages();
 
-  for (let i = 0; i < pages.length; i++) {
+  for (let index = 0; index < pages.length; index++) {
     await drawTemplateFooter({
       pdfDoc,
-      page: pages[i],
-      pageNumber: i + 1,
+      page: pages[index],
+      pageNumber: index + 1,
       totalPages: pages.length,
     });
   }

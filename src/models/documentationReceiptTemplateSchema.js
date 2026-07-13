@@ -1,6 +1,66 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
+const receiptBlockSchema = new Schema(
+  {
+    type: {
+      type: String,
+      enum: ["yesno", "text", "note"],
+      required: true,
+    },
+
+    key: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    label: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    content: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    required: {
+      type: Boolean,
+      default: true,
+    },
+
+    yesText: {
+      type: String,
+      default: "",
+    },
+
+    noText: {
+      type: String,
+      default: "",
+    },
+
+    blocksSignatureIfAnswer: {
+      type: String,
+      enum: ["yes", "no", null],
+      default: null,
+    },
+
+    blockMessage: {
+      type: String,
+      default: "",
+    },
+
+    order: {
+      type: Number,
+      default: 0,
+    },
+  },
+  { _id: false }
+);
+
 const questionSchema = new Schema(
   {
     key: {
@@ -85,9 +145,14 @@ const documentationReceiptTemplateSchema = new Schema(
       default: [],
     },
 
+    blocks: {
+      type: [receiptBlockSchema],
+      default: [],
+    },
+
     finalText: {
       type: String,
-      default: 'Y para que así conste, firma digitalmente el presente recibí.',
+      default: 'Y para que así conste, firma digitalmente el presente documento.',
     },
   },
   { timestamps: true }

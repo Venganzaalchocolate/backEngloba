@@ -129,11 +129,28 @@ const registerDocumentationAuditSignComplete = async ({
   fileId,
   driveId,
   signedAt = new Date(),
+  templateId = null,
+  answersSnapshot = [],
   meta = null,
 }) => {
   const userObjectId = toId(userId, 'userId');
-  const documentationObjectId = toId(documentationId, 'documentationId');
+  const documentationObjectId = toId(
+    documentationId,
+    'documentationId'
+  );
   const fileObjectId = toId(fileId, 'fileId');
+
+  const receipt = {
+    fileId: fileObjectId,
+    driveId,
+    signedAt,
+    templateId: templateId
+      ? toId(templateId, 'templateId')
+      : null,
+    answersSnapshot: Array.isArray(answersSnapshot)
+      ? answersSnapshot
+      : [],
+  };
 
   let audit = await UserDocumentationAudit.findOne({
     userId: userObjectId,
@@ -147,13 +164,7 @@ const registerDocumentationAuditSignComplete = async ({
       assignedAt: signedAt,
       acknowledged: true,
       acknowledgedAt: signedAt,
-      receipts: [
-        {
-          fileId: fileObjectId,
-          driveId,
-          signedAt,
-        },
-      ],
+      receipts: [receipt],
       events: [
         {
           type: 'sign_complete',
@@ -170,12 +181,7 @@ const registerDocumentationAuditSignComplete = async ({
 
   audit.acknowledged = true;
   audit.acknowledgedAt = signedAt;
-
-  audit.receipts.push({
-    fileId: fileObjectId,
-    driveId,
-    signedAt,
-  });
+  audit.receipts.push(receipt);
 
   audit.events.push({
     type: 'sign_complete',
@@ -186,6 +192,7 @@ const registerDocumentationAuditSignComplete = async ({
   });
 
   await audit.save();
+
   return audit;
 };
 
@@ -298,17 +305,31 @@ const postRegisterDocumentationAuditSignRequest = async (req, res) => {
 // ======================================================
 // Endpoint para registrar firma completada
 // ======================================================
-const postRegisterDocumentationAuditSignComplete = async (req, res) => {
-  const { userId, documentationId, fileId, driveId, signedAt, meta } = req.body || {};
-
-  const audit = await registerDocumentationAuditSignComplete({
+const postRegisterDocumentationAuditSignComplete = async (req,res) => {
+  const {
     userId,
     documentationId,
     fileId,
     driveId,
-    signedAt: signedAt ? new Date(signedAt) : new Date(),
+    signedAt,
+    templateId,
+    answersSnapshot,
     meta,
-  });
+  } = req.body || {};
+
+  const audit =
+    await registerDocumentationAuditSignComplete({
+      userId,
+      documentationId,
+      fileId,
+      driveId,
+      signedAt: signedAt
+        ? new Date(signedAt)
+        : new Date(),
+      templateId,
+      answersSnapshot,
+      meta,
+    });
 
   response(res, 200, audit);
 };

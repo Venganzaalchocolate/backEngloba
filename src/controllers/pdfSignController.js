@@ -32,6 +32,7 @@ const {
 
 const {
   getActiveReceiptTemplateForDocumentation,
+  getTemplateBlocks,
   validateReceiptAnswers,
   buildReceiptAnswersSnapshot,
 } = require("./documentationReceiptTemplateController");
@@ -159,34 +160,53 @@ const getEmployeeReceiptContext = async ({ userId, email }) => {
 
 const requestSignature = async (req, res) => {
   const { userId, docType, docId, meta } = req.body || {};
-  if (!userId || !docType || !docId) throw new ClientError("Parámetros insuficientes", 400);
+
+  if (!userId || !docType || !docId) {
+    throw new ClientError("Parámetros insuficientes", 400);
+  }
 
   const config = docTypeConfig[docType];
-  if (!config) throw new ClientError("Tipo de documento no soportado", 400);
+
+  if (!config) {
+    throw new ClientError("Tipo de documento no soportado", 400);
+  }
 
   const user = await User.findById(userId);
-  if (!user) throw new ClientError("Usuario no encontrado", 404);
 
-  let cleanMeta = meta || {};
+  if (!user) {
+    throw new ClientError("Usuario no encontrado", 404);
+  }
+
+  const cleanMeta = { ...(meta || {}) };
 
   if (docType === "recibi") {
-    const template = await getActiveReceiptTemplateForDocumentation(docId);
+    const template =
+      await getActiveReceiptTemplateForDocumentation(docId);
 
     if (template) {
+      const answers = cleanMeta.answers || [];
+
       validateReceiptAnswers({
         template,
-        answers: cleanMeta.answers || [],
+        answers,
       });
 
-      cleanMeta.answersSnapshot = buildReceiptAnswersSnapshot({
-        template,
-        answers: cleanMeta.answers || [],
-      });
+      cleanMeta.templateId = template._id;
+
+      cleanMeta.answersSnapshot =
+        buildReceiptAnswersSnapshot({
+          template,
+          answers,
+        });
     }
   }
 
   const otp = await OneTimeCode.findOneAndUpdate(
-    { userId, docType, docId },
+    {
+      userId,
+      docType,
+      docId,
+    },
     {
       $set: {
         code: generarCodigoTemporal(),
@@ -197,7 +217,10 @@ const requestSignature = async (req, res) => {
         meta: cleanMeta,
       },
     },
-    { upsert: true, new: true }
+    {
+      upsert: true,
+      new: true,
+    }
   );
 
   if (docType === "recibi") {
@@ -206,19 +229,25 @@ const requestSignature = async (req, res) => {
       documentationId: docId,
       meta: {
         otpId: otp._id,
-        hasAnswers: Array.isArray(cleanMeta.answers) && cleanMeta.answers.length > 0,
+        templateId: cleanMeta.templateId || null,
+        hasAnswers:
+          Array.isArray(cleanMeta.answers) &&
+          cleanMeta.answers.length > 0,
       },
     });
   }
 
-  const textoPlano = `Tu código de verificación para firmar ${config.emailTitle} es: ${otp.code}. Válido 5 minutos.`;
+  const textoPlano =
+    `Tu código de verificación para firmar ${config.emailTitle} ` +
+    `es: ${otp.code}. Válido 5 minutos.`;
 
   await sendEmail(
     user.email,
     config.emailSubject,
     textoPlano,
     generateEmailHTML({
-      logoUrl: "https://app.engloba.org.es/graphic/logotipo_blanco.png",
+      logoUrl:
+        "https://app.engloba.org.es/graphic/logotipo_blanco.png",
       title: `Código para firma de ${config.emailTitle}`,
       greetingName: user.firstName || user.nombre,
       bodyText: "Este es tu código de un solo uso.",
@@ -227,7 +256,9 @@ const requestSignature = async (req, res) => {
     })
   );
 
-  return response(res, 200, { fileId: otp._id });
+  return response(res, 200, {
+    fileId: otp._id,
+  });
 };
 
 /* ======================================================
@@ -236,23 +267,40 @@ const requestSignature = async (req, res) => {
    - recibi sin plantilla: genera recibí normal.
    - recibi con plantilla: genera recibí personalizado.
 ====================================================== */
-
 const confirmSignature = async (req, res) => {
   const { userId, fileId, code } = req.body || {};
-  if (!userId || !fileId || !code) throw new ClientError("Faltan parámetros", 400);
+
+  if (!userId || !fileId || !code) {
+    throw new ClientError("Faltan parámetros", 400);
+  }
 
   const otp = await OneTimeCode.findById(fileId);
-  if (!otp || otp.userId.toString() !== userId) throw new ClientError("Código inválido o expirado", 403);
+
+  if (!otp || otp.userId.toString() !== userId) {
+    throw new ClientError(
+      "Código inválido o expirado",
+      403
+    );
+  }
 
   if (otp.attempts >= 3) {
     await OneTimeCode.deleteOne({ _id: fileId });
-    throw new ClientError("Máximo de intentos excedido", 403);
+
+    throw new ClientError(
+      "Máximo de intentos excedido",
+      403
+    );
   }
 
   if (otp.code !== code) {
     otp.attempts += 1;
+
     await otp.save();
-    if (otp.attempts >= 3) await OneTimeCode.deleteOne({ _id: fileId });
+
+    if (otp.attempts >= 3) {
+      await OneTimeCode.deleteOne({ _id: fileId });
+    }
+
     throw new ClientError("Código incorrecto", 403);
   }
 
@@ -264,119 +312,202 @@ const confirmSignature = async (req, res) => {
     signature: 1,
   });
 
-  if (!userAux) throw new ClientError("Usuario no encontrado", 404);
+  if (!userAux) {
+    throw new ClientError("Usuario no encontrado", 404);
+  }
 
   let signedBuffer;
   let mimeType = "application/pdf";
   let folderId = null;
   let generatedFileName = null;
   let documentationAux = null;
+  let receiptTemplateId = null;
   let answersSnapshot = [];
 
   if (otp.docType === "recibi") {
-    documentationAux = await Documentation.findById(otp.docId, {
-      name: 1,
-      requiresSignature: 1,
-      modeloPDF: 1,
-      categoryFiles: 1,
-    });
+    documentationAux = await Documentation.findById(
+      otp.docId,
+      {
+        name: 1,
+        requiresSignature: 1,
+        modeloPDF: 1,
+        categoryFiles: 1,
+      }
+    );
 
-    if (!documentationAux) throw new ClientError("Documento de documentación no encontrado", 404);
-    if (!documentationAux.requiresSignature) throw new ClientError("Este documento no requiere firma de recibí", 400);
+    if (!documentationAux) {
+      throw new ClientError(
+        "Documento de documentación no encontrado",
+        404
+      );
+    }
+
+    if (!documentationAux.requiresSignature) {
+      throw new ClientError(
+        "Este documento no requiere firma de recibí",
+        400
+      );
+    }
 
     const fechaRecibi = new Date();
     const documentName = documentationAux.name;
-    const template = await getActiveReceiptTemplateForDocumentation(otp.docId);
+
+    const template =
+      await getActiveReceiptTemplateForDocumentation(
+        otp.docId
+      );
 
     if (!template) {
-      const canSignResult = await canUserSignDocumentationReceipt({
-        userId,
-        documentationId: otp.docId,
-      });
+      const canSignResult =
+        await canUserSignDocumentationReceipt({
+          userId,
+          documentationId: otp.docId,
+        });
 
       if (!canSignResult?.canSign) {
-        throw new ClientError("No puedes firmar el recibí sin haber descargado antes el documento oficial.", 400);
+        throw new ClientError(
+          "No puedes firmar el recibí sin haber descargado antes el documento oficial.",
+          400
+        );
       }
     }
 
     let pdfDocRecibi;
 
     if (template) {
+      const answers = otp.meta?.answers || [];
+
       validateReceiptAnswers({
         template,
-        answers: otp.meta?.answers || [],
+        answers,
       });
 
-      answersSnapshot = buildReceiptAnswersSnapshot({
-        template,
-        answers: otp.meta?.answers || [],
-      });
+      receiptTemplateId =
+        otp.meta?.templateId || template._id;
 
-      const employeeContext = await getEmployeeReceiptContext({ userId });
+      answersSnapshot = Array.isArray(
+        otp.meta?.answersSnapshot
+      )
+        ? otp.meta.answersSnapshot
+        : buildReceiptAnswersSnapshot({
+            template,
+            answers,
+          });
 
-      pdfDocRecibi = await generateReceiptTemplatePdf({
-        userAux,
-        documentName,
-        template,
-        answersSnapshot,
-        fechaRecibi,
-        isPreview: false,
-        employeeContext,
-      });
+      const employeeContext =
+        await getEmployeeReceiptContext({
+          userId,
+        });
+
+      pdfDocRecibi =
+        await generateReceiptTemplatePdf({
+          userAux,
+          documentName,
+          template,
+          answersSnapshot,
+          fechaRecibi,
+          isPreview: false,
+          employeeContext,
+        });
     } else {
-      const description = otp.meta?.description || `Conforme a recibido y leído ${documentName}.`;
+      const description =
+        otp.meta?.description ||
+        `Conforme a recibido y leído ${documentName}.`;
 
       pdfDocRecibi = await generateRecibiPdf({
         userAux,
         documentName,
         description,
         fechaRecibi,
-        includePrlExtraText: documentationAux?.categoryFiles === "PRL",
+        includePrlExtraText:
+          documentationAux.categoryFiles === "PRL",
       });
 
-      await addSignatureToRecibiPdf(pdfDocRecibi, userAux, {
-        y: documentationAux?.categoryFiles === "PRL" ? 98 : 136,
-      });
+      await addSignatureToRecibiPdf(
+        pdfDocRecibi,
+        userAux,
+        {
+          y:
+            documentationAux.categoryFiles === "PRL"
+              ? 98
+              : 136,
+        }
+      );
     }
 
-    signedBuffer = Buffer.from(await pdfDocRecibi.save());
+    signedBuffer = Buffer.from(
+      await pdfDocRecibi.save()
+    );
+
     mimeType = "application/pdf";
     folderId = process.env.GOOGLE_DRIVE_RECIBIS;
+
     generatedFileName = buildRecibiFileName({
       documentName,
       dni: userAux.dni,
       date: fechaRecibi,
     });
   } else {
-    const { file: driveFile, stream } = await getFileById(otp.docId);
-    const originalBuffer = await streamToBuffer(stream);
-    mimeType = driveFile?.mimeType || "application/pdf";
-    folderId = driveFile?.parents?.[0] || null;
+    const {
+      file: driveFile,
+      stream,
+    } = await getFileById(otp.docId);
+
+    const originalBuffer =
+      await streamToBuffer(stream);
+
+    mimeType =
+      driveFile?.mimeType || "application/pdf";
+
+    folderId =
+      driveFile?.parents?.[0] || null;
 
     let pdfDoc;
 
     try {
-      pdfDoc = await PDFDocument.load(originalBuffer);
-    } catch (err) {
-      console.error("[confirmSignature] Error al cargar PDF:", err?.message || err);
-      throw new ClientError("El PDF original no se pudo leer (posiblemente corrupto).", 400);
+      pdfDoc = await PDFDocument.load(
+        originalBuffer
+      );
+    } catch (error) {
+      console.error(
+        "[confirmSignature] Error al cargar PDF:",
+        error?.message || error
+      );
+
+      throw new ClientError(
+        "El PDF original no se pudo leer (posiblemente corrupto).",
+        400
+      );
     }
 
     try {
-      await addSignatureToPdf(pdfDoc, userAux, {
-        boxWidth: 220,
-        boxHeight: 70,
-        offsetX: 40,
-        offsetY: 35,
-        opacity: 0.35,
-        margin: 6,
-      });
-    } catch (e) {
-      console.error("[confirmSignature] Error al pintar firma:", e?.message || e);
-      throw new ClientError("Error al firmar el documento", 500);
+      await addSignatureToPdf(
+        pdfDoc,
+        userAux,
+        {
+          boxWidth: 220,
+          boxHeight: 70,
+          offsetX: 40,
+          offsetY: 35,
+          opacity: 0.35,
+          margin: 6,
+        }
+      );
+    } catch (error) {
+      console.error(
+        "[confirmSignature] Error al pintar firma:",
+        error?.message || error
+      );
+
+      throw new ClientError(
+        "Error al firmar el documento",
+        500
+      );
     }
 
-    signedBuffer = Buffer.from(await pdfDoc.save());
+    signedBuffer = Buffer.from(
+      await pdfDoc.save()
+    );
   }
 
   const fecha = new Date();
@@ -386,56 +517,97 @@ const confirmSignature = async (req, res) => {
       ? `${userAux.dni}_${otp.meta.month}_${otp.meta.year}_signed.pdf`
       : otp.docType === "recibi"
         ? generatedFileName
-        : `${userAux.dni}_${fecha.toISOString().slice(0, 10)}_${otp.docType}_signed.pdf`;
+        : `${userAux.dni}_${fecha
+            .toISOString()
+            .slice(0, 10)}_${otp.docType}_signed.pdf`;
 
   let uploaded;
 
   try {
     uploaded = await uploadFileToDrive(
-      { buffer: signedBuffer, mimetype: mimeType },
+      {
+        buffer: signedBuffer,
+        mimetype: mimeType,
+      },
       folderId,
       signedName
     );
-  } catch (err) {
-    console.error("[confirmSignature] Error al subir PDF:", err?.message || err);
-    throw new ClientError("Error al subir documento firmado", 500);
+  } catch (error) {
+    console.error(
+      "[confirmSignature] Error al subir PDF:",
+      error?.message || error
+    );
+
+    throw new ClientError(
+      "Error al subir documento firmado",
+      500
+    );
   }
 
-  if (!uploaded?.id) throw new ClientError("Error al subir documento firmado", 500);
+  if (!uploaded?.id) {
+    throw new ClientError(
+      "Error al subir documento firmado",
+      500
+    );
+  }
 
-  await OneTimeCode.deleteOne({ _id: fileId });
+  await OneTimeCode.deleteOne({
+    _id: fileId,
+  });
 
   const dateInSpain = new Date();
 
   if (otp.docType === "payroll") {
     const updatedUser = await User.findOneAndUpdate(
-      { _id: userId, "payrolls._id": otp.meta.id },
+      {
+        _id: userId,
+        "payrolls._id": otp.meta.id,
+      },
       {
         $set: {
           "payrolls.$.sign": uploaded.id,
-          "payrolls.$.datetimeSign": dateInSpain,
+          "payrolls.$.datetimeSign":
+            dateInSpain,
         },
       },
-      { new: true }
-    ).populate({ path: "files.filesId", model: "Filedrive" });
+      {
+        new: true,
+      }
+    ).populate({
+      path: "files.filesId",
+      model: "Filedrive",
+    });
 
     if (!updatedUser) {
-      await deleteFileById(uploaded.id).catch(() => {});
-      throw new ClientError("No se pudo actualizar la nómina firmada en el usuario", 500);
+      await deleteFileById(
+        uploaded.id
+      ).catch(() => {});
+
+      throw new ClientError(
+        "No se pudo actualizar la nómina firmada en el usuario",
+        500
+      );
     }
 
-    return response(res, 200, { data: updatedUser });
+    return response(res, 200, {
+      data: updatedUser,
+    });
   }
 
   if (otp.docType === "recibi") {
-    const attachResult = await attachGeneratedOfficialFileToUser({
-      userId,
-      documentationId: otp.docId,
-      driveId: uploaded.id,
-      description: documentationAux?.name || "Recibí firmado",
-      date: dateInSpain,
-      category: documentationAux?.categoryFiles || "Oficial",
-    });
+    const attachResult =
+      await attachGeneratedOfficialFileToUser({
+        userId,
+        documentationId: otp.docId,
+        driveId: uploaded.id,
+        description:
+          documentationAux?.name ||
+          "Recibí firmado",
+        date: dateInSpain,
+        category:
+          documentationAux?.categoryFiles ||
+          "Oficial",
+      });
 
     await registerDocumentationAuditSignComplete({
       userId,
@@ -443,28 +615,36 @@ const confirmSignature = async (req, res) => {
       fileId: attachResult.newFile._id,
       driveId: uploaded.id,
       signedAt: dateInSpain,
+      templateId: receiptTemplateId,
+      answersSnapshot,
       meta: {
         fileName: signedName,
-        answersSnapshot,
       },
     });
 
     return response(res, 200, {
-      message: "Recibí firmado correctamente",
+      message:
+        "Recibí firmado correctamente",
       data: attachResult.updatedUser,
     });
   }
 
   if (otp.docType === "contract") {
     return response(res, 200, {
-      message: "Contrato firmado correctamente",
-      data: { id: uploaded.id },
+      message:
+        "Contrato firmado correctamente",
+      data: {
+        id: uploaded.id,
+      },
     });
   }
 
   return response(res, 200, {
-    message: "Documento firmado correctamente",
-    data: { id: uploaded.id },
+    message:
+      "Documento firmado correctamente",
+    data: {
+      id: uploaded.id,
+    },
   });
 };
 
@@ -473,35 +653,86 @@ const confirmSignature = async (req, res) => {
    Usa como usuario de prueba a hermes.conrad@engloba.org.es.
 ====================================================== */
 
-const previewReceiptTemplate = async (req, res) => {
-  const { documentationId, answers } = req.body || {};
-  if (!documentationId) throw new ClientError("Falta documentationId", 400);
+const previewReceiptTemplate = async (
+  req,
+  res
+) => {
+  const {
+    documentationId,
+    answers,
+  } = req.body || {};
 
-  const template = await getActiveReceiptTemplateForDocumentation(documentationId);
-  if (!template) throw new ClientError("Este documento no tiene plantilla activa", 404);
+  if (!documentationId) {
+    throw new ClientError(
+      "Falta documentationId",
+      400
+    );
+  }
 
-  const documentationAux = await Documentation.findById(documentationId, { name: 1 }).lean();
-  if (!documentationAux) throw new ClientError("Documento de documentación no encontrado", 404);
+  const template =
+    await getActiveReceiptTemplateForDocumentation(
+      documentationId
+    );
 
-  const fakeAnswers = Array.isArray(answers) && answers.length
-    ? answers
-    : (template.questions || []).map((q) => ({
-        key: q.key,
-        answer: q.blocksSignatureIfAnswer === "yes" ? "no" : "yes",
-      }));
+  if (!template) {
+    throw new ClientError(
+      "Este documento no tiene plantilla activa",
+      404
+    );
+  }
+
+  const documentationAux =
+    await Documentation.findById(
+      documentationId,
+      {
+        name: 1,
+      }
+    ).lean();
+
+  if (!documentationAux) {
+    throw new ClientError(
+      "Documento de documentación no encontrado",
+      404
+    );
+  }
+
+  const questions = getTemplateBlocks(
+    template
+  ).filter(
+    (block) => block.type === "yesno"
+  );
+
+  const fakeAnswers =
+    Array.isArray(answers) &&
+    answers.length > 0
+      ? answers
+      : questions.map((question) => ({
+          key: question.key,
+          answer:
+            question.blocksSignatureIfAnswer ===
+            "yes"
+              ? "no"
+              : "yes",
+        }));
 
   validateReceiptAnswers({
     template,
     answers: fakeAnswers,
   });
 
-  const answersSnapshot = buildReceiptAnswersSnapshot({
-    template,
-    answers: fakeAnswers,
-  });
+  const answersSnapshot =
+    buildReceiptAnswersSnapshot({
+      template,
+      answers: fakeAnswers,
+    });
 
-  const previewUser = await User.findOne({ email: "hermes.conrad@engloba.org.es" })
-    .select("dni firstName lastName apafa signature email")
+  const previewUser = await User.findOne({
+    email:
+      "hermes.conrad@engloba.org.es",
+  })
+    .select(
+      "dni firstName lastName apafa signature email"
+    )
     .lean();
 
   const userAux = previewUser || {
@@ -509,31 +740,51 @@ const previewReceiptTemplate = async (req, res) => {
     lastName: "Conrad",
     dni: "00000000T",
     apafa: false,
-    signature: { strokes: [] },
+    signature: {
+      strokes: [],
+    },
   };
 
-  const employeeContext = await getEmployeeReceiptContext({
-    userId: previewUser?._id,
-    email: "hermes.conrad@engloba.org.es",
-  });
+  const employeeContext =
+    await getEmployeeReceiptContext({
+      userId: previewUser?._id,
+      email:
+        "hermes.conrad@engloba.org.es",
+    });
 
   const fechaRecibi = new Date();
 
-  const pdfDoc = await generateReceiptTemplatePdf({
-    userAux,
-    documentName: documentationAux.name,
-    template,
-    answersSnapshot,
-    fechaRecibi,
-    isPreview: true,
-    employeeContext,
-  });
+  const pdfDoc =
+    await generateReceiptTemplatePdf({
+      userAux,
+      documentName:
+        documentationAux.name,
+      template,
+      answersSnapshot,
+      fechaRecibi,
+      isPreview: true,
+      employeeContext,
+    });
 
-  const buffer = Buffer.from(await pdfDoc.save());
-  const fileName = `preview_recibi_${sanitizeFileName(documentationAux.name)}.pdf`;
+  const buffer = Buffer.from(
+    await pdfDoc.save()
+  );
 
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  const fileName =
+    `preview_recibi_${sanitizeFileName(
+      documentationAux.name
+    )}.pdf`;
+
+  res.setHeader(
+    "Content-Type",
+    "application/pdf"
+  );
+
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${fileName}"`
+  );
+
   res.send(buffer);
 };
 

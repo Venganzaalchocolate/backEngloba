@@ -44,27 +44,61 @@ const auditEventSchema = new Schema(
   { _id: false }
 );
 
+const receiptAnswerSchema = new Schema(
+  {
+    key: {
+      type: String,
+      required: true,
+    },
+
+    question: {
+      type: String,
+      required: true,
+    },
+
+    answer: {
+      type: String,
+      enum: ["yes", "no"],
+      required: true,
+    },
+
+    textApplied: {
+      type: String,
+      default: "",
+    },
+  },
+  { _id: false }
+);
+
 // Aquí guardamos los recibís firmados asociados a este documento.
 // Lo dejo separado para no tener que rebuscar luego dentro de events.
 const receiptSchema = new Schema(
   {
-    // Filedrive creado para el recibí firmado
     fileId: {
       type: Schema.Types.ObjectId,
-      ref: 'Filedrive',
+      ref: "Filedrive",
       required: true,
     },
 
-    // id real en Drive del recibí
     driveId: {
       type: String,
       required: true,
     },
 
-    // fecha de firma
     signedAt: {
       type: Date,
       required: true,
+    },
+
+    templateId: {
+      type: Schema.Types.ObjectId,
+      ref: "DocumentationReceiptTemplate",
+      default: null,
+    },
+
+    answersSnapshot: {
+      type: [receiptAnswerSchema],
+      default: [],
     },
   },
   { _id: false }
