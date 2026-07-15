@@ -5,7 +5,7 @@ function capitalizeWords(str = '') {
     .replace(/(^|\s)\p{L}/gu, (match) => match.toUpperCase());
 }
 
-export function buildSesameOpsPlainText(name = '', supportEmail = 'web@engloba.org.es') {
+export function buildSesameOpsPlainText(name = '', supportEmail = 'comunicacion@engloba.org.es') {
   return (
 `Hola ${name},
 
@@ -57,7 +57,7 @@ export function buildSesameOpsHtmlEmail(
   name = '',
   {
     logoUrl = '',
-    supportEmail = 'web@engloba.org.es'
+    supportEmail = 'comunicacion@engloba.org.es'
   } = {}
 ) {
   return `<!DOCTYPE html>
@@ -306,7 +306,7 @@ export function buildSesameHtmlEmail(name = '', corpEmail = '', logoUrl = '') {
       </ol>
 
       <p>¿Dudas? Escríbenos a&nbsp;
-        <a href="mailto:web@engloba.org.es" style="color:#4f529f;font-weight:bold">web@engloba.org.es</a>.
+        <a href="mailto:comunicacion@engloba.org.es" style="color:#4f529f;font-weight:bold">comunicacion@engloba.org.es</a>.
       </p>
 
       <p>¡Gracias por tu colaboración!</p>
@@ -2170,7 +2170,7 @@ export function buildSesameInactiveByLeavePlainText(
     actualEndLeaveDate = '',
     centers = [],
     notes = '',
-    supportEmail = 'web@engloba.org.es',
+    supportEmail = 'comunicacion@engloba.org.es',
   } = {}
 ) {
   const start = formatDateEs(startLeaveDate);
@@ -2227,7 +2227,7 @@ export function buildSesameInactiveByLeaveHtmlEmail(
     centers = [],
     notes = '',
     logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
-    supportEmail = 'web@engloba.org.es',
+    supportEmail = 'comunicacion@engloba.org.es',
   } = {}
 ) {
   const start = formatDateEs(startLeaveDate);
@@ -2376,7 +2376,7 @@ export function buildLeaveExpectedEndReminderPlainText(
     actualEndLeaveDate = '',
     centers = [],
     notes = '',
-    supportEmail = 'web@engloba.org.es',
+    supportEmail = 'comunicacion@engloba.org.es',
   } = {}
 ) {
   const start = formatDateEs(startLeaveDate);
@@ -2436,7 +2436,7 @@ export function buildLeaveExpectedEndReminderHtmlEmail(
     centers = [],
     notes = '',
     logoUrl = 'https://app.engloba.org.es/graphic/logotipo_blanco.png',
-    supportEmail = 'web@engloba.org.es',
+    supportEmail = 'comunicacion@engloba.org.es',
   } = {}
 ) {
   const start = formatDateEs(startLeaveDate);
@@ -3825,7 +3825,7 @@ export function buildSesameNoClockInsPlainText({
   from = "",
   to = "",
   dispositiveName = "",
-  supportEmail = "web@engloba.org.es",
+  supportEmail = "comunicacion@engloba.org.es",
 } = {}) {
   const copy = getSesameNoClockInsCopy({
     recipientType,
@@ -3878,7 +3878,7 @@ export function buildSesameNoClockInsHtmlEmail({
   from = "",
   to = "",
   dispositiveName = "",
-  supportEmail = "web@engloba.org.es",
+  supportEmail = "comunicacion@engloba.org.es",
   logoUrl =
     "https://app.engloba.org.es/graphic/logotipo_blanco.png",
 } = {}) {
