@@ -264,14 +264,20 @@ const ensureMoodleUserForUser = async (userId) => {
     };
   }
 
-  const created = await moodleService.createUser({
-    ...payload,
+const {
+  suspended,
+  ...createPayload
+} = payload;
+
+const created = await moodleService.createUser({
+  ...createPayload,
+  password: `Moodle${crypto.randomBytes(16).toString("hex")}Aa!`,
+});
     /*
       Moodle exige una contraseña al crear la cuenta aunque el método
       de acceso sea OIDC. No se usa para el inicio de sesión OIDC.
     */
-    password: `Moodle${crypto.randomBytes(16).toString("hex")}Aa!`,
-  });
+
 
   const moodleId = created[0]?.id;
 
