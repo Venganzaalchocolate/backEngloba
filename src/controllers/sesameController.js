@@ -1,9 +1,19 @@
-const { User, Dispositive, Workplace, SesameResponsibility, Leaves, Periods } = require("../models/indexModels");
+const { User, Dispositive, Workplace, SesameResponsibility, Leaves, Periods, SesameWorkEntryAlert, } = require("../models/indexModels");
 const sesameService = require("../services/sesameServices");
 const { catchAsync, response, ClientError } = require("../utils/indexUtils");
 const {
   queueSyncOhsTrabajadorForUser,
 } = require("./ohsController");
+
+const {
+  sendEmail,
+} = require("./emailControllerGoogle");
+
+const {
+  buildSesameOpenEntryAlertSubject,
+  buildSesameOpenEntryAlertPlainText,
+  buildSesameOpenEntryAlertHtmlEmail,
+} = require("../templates/emailTemplates");
 
 const SESAME_COMPANY_ID = process.env.SESAME_COMPANY_ID;
 
@@ -2372,7 +2382,911 @@ const inviteSesameUsersByActivePeriodDispositivesLocal = async ({
 };
 
 
+// ============================================================================
+// AVISOS AUTOMÁTICOS DE FICHAJES ABIERTOS EN SESAME
+//
+// 12 horas -> trabajador/a
+// 24 horas -> responsable o coordinador/a
+// 48 horas -> web@engloba.org.es y comunicacion@engloba.org.es
+// ============================================================================
 
+const SESAME_ALERT_LOOKBACK_DAYS = 3;
+const SESAME_ALERT_PAGE_LIMIT = 200;
+
+const SESAME_ALERT_ADMIN_EMAILS = [
+  "web@engloba.org.es",
+  "comunicacion@engloba.org.es",
+];
+
+const SESAME_ALERT_FIELDS = {
+  "12h": "employee12hNotifiedAt",
+  "24h": "responsible24hNotifiedAt",
+  "48h": "admin48hNotifiedAt",
+};
+
+const normalizeSesameAlertEmail = (email = "") =>
+  String(email || "").trim().toLowerCase();
+
+const uniqueSesameAlertEmails = (emails = []) =>
+  Array.from(
+    new Set(
+      emails
+        .map(normalizeSesameAlertEmail)
+        .filter((email) => email && email.includes("@"))
+    )
+  );
+
+const getSesameAlertFullName = (person = {}) =>
+  [
+    person?.firstName,
+    person?.lastName,
+    person?.secondLastName,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+const formatSesameAlertQueryDate = (date) => {
+  const parts = new Intl.DateTimeFormat("es-ES", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  return `${year}-${month}-${day}`;
+};
+
+const formatSesameAlertDateTime = (date) =>
+  new Intl.DateTimeFormat("es-ES", {
+    timeZone: "Europe/Madrid",
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
+
+const formatSesameAlertElapsedTime = (milliseconds) => {
+  const totalMinutes = Math.floor(milliseconds / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  const parts = [];
+
+  if (days) parts.push(`${days} d`);
+
+  parts.push(`${hours} h`);
+  parts.push(`${minutes} min`);
+
+  return parts.join(" ");
+};
+
+const getSesameAlertExpirationDate = () =>
+  new Date(
+    Date.now() +
+      30 * 24 * 60 * 60 * 1000
+  );
+
+/*
+ * Obtiene los fichajes de los últimos tres días,
+ * recorriendo todas las páginas de Sesame.
+ */
+const getSesameWorkEntriesForAlerts = async () => {
+  const now = new Date();
+
+  const fromDate = new Date(
+    now.getTime() -
+      SESAME_ALERT_LOOKBACK_DAYS *
+        24 *
+        60 *
+        60 *
+        1000
+  );
+
+  const from =
+    formatSesameAlertQueryDate(fromDate);
+
+  const to =
+    formatSesameAlertQueryDate(now);
+
+  const workEntries = [];
+
+  let page = 1;
+
+  while (true) {
+    const result =
+      await sesameService.listWorkEntries({
+        from,
+        to,
+        onlyReturn: "not_deleted",
+        limit: SESAME_ALERT_PAGE_LIMIT,
+        page,
+      });
+
+    const entries = Array.isArray(result?.data)
+      ? result.data
+      : [];
+
+    workEntries.push(...entries);
+
+    const lastPage =
+      Number(result?.meta?.lastPage) || 0;
+
+    if (
+      !entries.length ||
+      (lastPage && page >= lastPage) ||
+      (!lastPage &&
+        entries.length < SESAME_ALERT_PAGE_LIMIT)
+    ) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return {
+    now,
+    from,
+    to,
+    workEntries,
+  };
+};
+
+/*
+ * Elimina de Mongo los registros cuyo fichaje
+ * ya tiene una salida registrada en Sesame.
+ */
+const cleanupResolvedSesameWorkEntryAlerts =
+  async (workEntries, logger = console) => {
+    const resolvedIds = Array.from(
+      new Set(
+        workEntries
+          .filter(
+            (entry) =>
+              entry?.id &&
+              entry?.workEntryOut?.date
+          )
+          .map((entry) => String(entry.id))
+      )
+    );
+
+    if (!resolvedIds.length) {
+      return 0;
+    }
+
+    const result =
+      await SesameWorkEntryAlert.deleteMany({
+        workEntryId: {
+          $in: resolvedIds,
+        },
+      });
+
+    const deleted =
+      result?.deletedCount || 0;
+
+    if (deleted) {
+      logger.log(
+        `[SESAME ALERT] Registros eliminados porque el fichaje ya está cerrado: ${deleted}`
+      );
+    }
+
+    return deleted;
+  };
+
+/*
+ * Devuelve únicamente fichajes abiertos
+ * que ya hayan superado las 12 horas.
+ */
+const getOpenSesameEntriesOver12Hours = ({
+  workEntries,
+  now,
+}) =>
+  workEntries
+    .map((entry) => {
+      const clockInValue =
+        entry?.workEntryIn?.date;
+
+      if (
+        !entry?.id ||
+        !clockInValue ||
+        entry?.workEntryOut?.date
+      ) {
+        return null;
+      }
+
+      const clockInDate =
+        new Date(clockInValue);
+
+      if (
+        Number.isNaN(clockInDate.getTime())
+      ) {
+        return null;
+      }
+
+      const elapsedMilliseconds =
+        now.getTime() -
+        clockInDate.getTime();
+
+      const elapsedHours =
+        elapsedMilliseconds /
+        (60 * 60 * 1000);
+
+      if (elapsedHours < 12) {
+        return null;
+      }
+
+      return {
+        entry,
+        clockInDate,
+        elapsedMilliseconds,
+        elapsedHours,
+      };
+    })
+    .filter(Boolean)
+    .sort(
+      (a, b) =>
+        b.elapsedMilliseconds -
+        a.elapsedMilliseconds
+    );
+
+/*
+ * Relaciona el empleado de Sesame con el usuario local.
+ */
+const getSesameAlertUsersMap =
+  async (openEntries) => {
+    const sesameIds = Array.from(
+      new Set(
+        openEntries
+          .map(({ entry }) =>
+            String(entry?.employee?.id || "")
+          )
+          .filter(Boolean)
+      )
+    );
+
+    const emails = Array.from(
+      new Set(
+        openEntries
+          .map(({ entry }) =>
+            normalizeSesameAlertEmail(
+              entry?.employee?.email
+            )
+          )
+          .filter(Boolean)
+      )
+    );
+
+    const orConditions = [];
+
+    if (sesameIds.length) {
+      orConditions.push({
+        userIdSesame: {
+          $in: sesameIds,
+        },
+      });
+    }
+
+    if (emails.length) {
+      orConditions.push({
+        email: {
+          $in: emails,
+        },
+      });
+    }
+
+    if (!orConditions.length) {
+      return {
+        users: [],
+        bySesameId: new Map(),
+        byEmail: new Map(),
+      };
+    }
+
+    const users = await User.find({
+      $or: orConditions,
+    })
+      .select(
+        "_id userIdSesame firstName lastName email email_personal employmentStatus"
+      )
+      .lean();
+
+    const bySesameId = new Map();
+    const byEmail = new Map();
+
+    for (const user of users) {
+      if (user.userIdSesame) {
+        bySesameId.set(
+          String(user.userIdSesame),
+          user
+        );
+      }
+
+      if (user.email) {
+        byEmail.set(
+          normalizeSesameAlertEmail(user.email),
+          user
+        );
+      }
+    }
+
+    return {
+      users,
+      bySesameId,
+      byEmail,
+    };
+  };
+
+const getLocalUserForSesameAlert = (
+  entry,
+  usersMap
+) =>
+  usersMap.bySesameId.get(
+    String(entry?.employee?.id || "")
+  ) ||
+  usersMap.byEmail.get(
+    normalizeSesameAlertEmail(
+      entry?.employee?.email
+    )
+  ) ||
+  null;
+
+/*
+ * Obtiene el dispositivo actual y sus responsables.
+ *
+ * Prioridad:
+ * 1. Responsables del dispositivo.
+ * 2. Coordinadores, únicamente cuando no hay responsables.
+ */
+const getSesameAlertDeviceContexts =
+  async (users) => {
+    const userIds = users
+      .map((user) => user?._id)
+      .filter(Boolean);
+
+    const contexts = new Map();
+
+    if (!userIds.length) {
+      return contexts;
+    }
+
+    const now = new Date();
+
+    const periods = await Periods.find({
+      idUser: {
+        $in: userIds,
+      },
+
+      active: true,
+
+      startDate: {
+        $lte: now,
+      },
+
+      $or: [
+        {
+          endDate: {
+            $exists: false,
+          },
+        },
+        {
+          endDate: null,
+        },
+        {
+          endDate: {
+            $gte: now,
+          },
+        },
+      ],
+    })
+      .select("idUser dispositiveId")
+      .populate({
+        path: "dispositiveId",
+
+        select:
+          "name responsible coordinators",
+
+        populate: [
+          {
+            path: "responsible",
+            select:
+              "firstName lastName email",
+          },
+          {
+            path: "coordinators",
+            select:
+              "firstName lastName email",
+          },
+        ],
+      })
+      .lean();
+
+    for (const period of periods) {
+      const userId =
+        String(period.idUser || "");
+
+      const dispositive =
+        period.dispositiveId;
+
+      if (!userId || !dispositive) {
+        continue;
+      }
+
+      if (!contexts.has(userId)) {
+        contexts.set(userId, {
+          dispositiveNames: [],
+          managers: [],
+        });
+      }
+
+      const context =
+        contexts.get(userId);
+
+      if (dispositive.name) {
+        context.dispositiveNames.push(
+          dispositive.name
+        );
+      }
+
+      const managers =
+        dispositive.responsible?.length
+          ? dispositive.responsible
+          : dispositive.coordinators || [];
+
+      context.managers.push(...managers);
+    }
+
+    for (const context of contexts.values()) {
+      context.dispositiveNames =
+        Array.from(
+          new Set(
+            context.dispositiveNames
+          )
+        );
+
+      const managersById =
+        new Map();
+
+      for (const manager of context.managers) {
+        if (!manager?._id) continue;
+
+        managersById.set(
+          String(manager._id),
+          manager
+        );
+      }
+
+      context.managers =
+        Array.from(
+          managersById.values()
+        );
+    }
+
+    return contexts;
+  };
+
+/*
+ * Envía un nivel de aviso únicamente cuando:
+ * - se ha alcanzado el umbral;
+ * - hay destinatarios;
+ * - ese nivel todavía no se había enviado.
+ */
+const sendSesameOpenEntryAlertOnce =
+  async ({
+    entry,
+    alertRecord,
+    alertType,
+    recipientType,
+    recipientName,
+    recipients,
+    thresholdHours,
+    employeeName,
+    clockInDate,
+    elapsedTime,
+    dispositiveName,
+    logger = console,
+  }) => {
+    const notificationField =
+      SESAME_ALERT_FIELDS[alertType];
+
+    if (!notificationField) {
+      throw new Error(
+        `Tipo de aviso Sesame no válido: ${alertType}`
+      );
+    }
+
+    if (
+      alertRecord?.[notificationField]
+    ) {
+      return {
+        sent: false,
+        reason: "already-sent",
+      };
+    }
+
+    const emails =
+      uniqueSesameAlertEmails(recipients);
+
+    if (!emails.length) {
+      logger.warn(
+        `[SESAME ALERT ${alertType}] Sin destinatarios para ${employeeName}`
+      );
+
+      return {
+        sent: false,
+        reason: "no-recipients",
+      };
+    }
+
+    const templateData = {
+      recipientType,
+      recipientName,
+      employeeName,
+      thresholdHours,
+      clockIn:
+        formatSesameAlertDateTime(
+          clockInDate
+        ),
+      elapsedTime,
+      dispositiveName,
+    };
+
+    const subject =
+      buildSesameOpenEntryAlertSubject(
+        templateData
+      );
+
+    const text =
+      buildSesameOpenEntryAlertPlainText(
+        templateData
+      );
+
+    const html =
+      buildSesameOpenEntryAlertHtmlEmail(
+        templateData
+      );
+
+    await sendEmail(
+      emails,
+      subject,
+      text,
+      html
+    );
+
+    const now = new Date();
+
+    await SesameWorkEntryAlert.findOneAndUpdate(
+      {
+        workEntryId:
+          String(entry.id),
+      },
+      {
+        $setOnInsert: {
+          employeeId:
+            String(
+              entry?.employee?.id || ""
+            ),
+
+          clockInDate,
+        },
+
+        $set: {
+          [notificationField]: now,
+          lastSeenOpenAt: now,
+          expiresAt:
+            getSesameAlertExpirationDate(),
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+      }
+    );
+
+    logger.log(
+      `[SESAME ALERT ${alertType}] Enviado para ${employeeName} a ${emails.join(", ")}`
+    );
+
+    return {
+      sent: true,
+      recipients: emails,
+    };
+  };
+
+/*
+ * ============================================================================
+ * FUNCIÓN REAL LLAMADA POR EL CRON
+ * ============================================================================
+ */
+const processSesameOpenEntryAlerts =
+  async ({ logger = console } = {}) => {
+    const {
+      now,
+      from,
+      to,
+      workEntries,
+    } =
+      await getSesameWorkEntriesForAlerts();
+
+    const deletedAlerts =
+      await cleanupResolvedSesameWorkEntryAlerts(
+        workEntries,
+        logger
+      );
+
+    const openEntries =
+      getOpenSesameEntriesOver12Hours({
+        workEntries,
+        now,
+      });
+
+    const results = {
+      from,
+      to,
+      checked: workEntries.length,
+      openOver12Hours:
+        openEntries.length,
+      sent12h: 0,
+      sent24h: 0,
+      sent48h: 0,
+      deletedAlerts,
+      errors: [],
+    };
+
+    if (!openEntries.length) {
+      logger.log(
+        "[SESAME ALERT] No hay fichajes abiertos superiores a 12 horas."
+      );
+
+      return results;
+    }
+
+    const usersMap =
+      await getSesameAlertUsersMap(
+        openEntries
+      );
+
+    const deviceContexts =
+      await getSesameAlertDeviceContexts(
+        usersMap.users
+      );
+
+    for (const item of openEntries) {
+      const {
+        entry,
+        clockInDate,
+        elapsedMilliseconds,
+        elapsedHours,
+      } = item;
+
+      const sesameEmployee =
+        entry.employee || {};
+
+      const localUser =
+        getLocalUserForSesameAlert(
+          entry,
+          usersMap
+        );
+
+      const context =
+        localUser?._id
+          ? deviceContexts.get(
+              String(localUser._id)
+            )
+          : null;
+
+      const employeeName =
+        getSesameAlertFullName(
+          sesameEmployee
+        ) ||
+        getSesameAlertFullName(
+          localUser
+        ) ||
+        "Persona no identificada";
+
+      const employeeEmails =
+        uniqueSesameAlertEmails([
+          localUser?.email,
+          sesameEmployee.email,
+        ]);
+
+      const managers =
+        context?.managers || [];
+
+      const managerEmails =
+        uniqueSesameAlertEmails(
+          managers.map(
+            (manager) =>
+              manager?.email
+          )
+        );
+
+      const managerNames =
+        managers
+          .map(
+            getSesameAlertFullName
+          )
+          .filter(Boolean)
+          .join(", ");
+
+      const dispositiveName =
+        context?.dispositiveNames
+          ?.join(", ") ||
+        "Sin dispositivo identificado";
+
+      const elapsedTime =
+        formatSesameAlertElapsedTime(
+          elapsedMilliseconds
+        );
+
+      const alertRecord =
+        await SesameWorkEntryAlert.findOne({
+          workEntryId:
+            String(entry.id),
+        }).lean();
+
+      /*
+       * Mantiene viva la caducidad mientras
+       * el fichaje siga apareciendo abierto.
+       */
+      if (alertRecord) {
+        await SesameWorkEntryAlert.updateOne(
+          {
+            _id: alertRecord._id,
+          },
+          {
+            $set: {
+              lastSeenOpenAt:
+                new Date(),
+              expiresAt:
+                getSesameAlertExpirationDate(),
+            },
+          }
+        );
+      }
+
+      const alerts = [
+        {
+          enabled:
+            elapsedHours >= 12,
+
+          alertType: "12h",
+
+          recipientType:
+            "employee",
+
+          recipientName:
+            localUser?.firstName ||
+            sesameEmployee.firstName ||
+            "",
+
+          recipients:
+            employeeEmails,
+
+          thresholdHours: 12,
+        },
+
+        {
+          enabled:
+            elapsedHours >= 24,
+
+          alertType: "24h",
+
+          recipientType:
+            "responsible",
+
+          recipientName:
+            managerNames ||
+            "equipo responsable",
+
+          recipients:
+            managerEmails,
+
+          thresholdHours: 24,
+        },
+
+        {
+          enabled:
+            elapsedHours >= 48,
+
+          alertType: "48h",
+
+          recipientType: "hr",
+
+          recipientName: "equipo",
+
+          recipients:
+            SESAME_ALERT_ADMIN_EMAILS,
+
+          thresholdHours: 48,
+        },
+      ];
+
+      for (const alert of alerts) {
+        if (!alert.enabled) continue;
+
+        try {
+          const sentResult =
+            await sendSesameOpenEntryAlertOnce({
+              entry,
+              alertRecord,
+              ...alert,
+              employeeName,
+              clockInDate,
+              elapsedTime,
+              dispositiveName,
+              logger,
+            });
+
+          if (!sentResult.sent) {
+            continue;
+          }
+
+          if (
+            alert.alertType === "12h"
+          ) {
+            results.sent12h += 1;
+          }
+
+          if (
+            alert.alertType === "24h"
+          ) {
+            results.sent24h += 1;
+          }
+
+          if (
+            alert.alertType === "48h"
+          ) {
+            results.sent48h += 1;
+          }
+        } catch (error) {
+          const errorData = {
+            workEntryId:
+              String(entry.id),
+            employeeName,
+            alertType:
+              alert.alertType,
+            message:
+              error?.message ||
+              String(error),
+          };
+
+          results.errors.push(
+            errorData
+          );
+
+          logger.error(
+            `[SESAME ALERT ${alert.alertType}] Error con ${employeeName}:`,
+            error?.message || error
+          );
+        }
+      }
+    }
+
+    logger.log(
+      "[SESAME ALERT] Proceso finalizado:",
+      {
+        checked:
+          results.checked,
+        openOver12Hours:
+          results.openOver12Hours,
+        sent12h:
+          results.sent12h,
+        sent24h:
+          results.sent24h,
+        sent48h:
+          results.sent48h,
+        deletedAlerts:
+          results.deletedAlerts,
+        errors:
+          results.errors.length,
+      }
+    );
+
+    return results;
+  };
 
 
 
@@ -2427,6 +3341,8 @@ module.exports = {
   createSesameDepartmentForDispositive,
   updateSesameDepartmentForDispositive,
   deleteSesameDepartmentForDispositive,
+
+  processSesameOpenEntryAlerts,
 
   postSesameAssignDispositiveDepartmentAdminToUser: catchAsync(postSesameAssignDispositiveDepartmentAdminToUser),
   postSesameRemoveDepartmentAdminRoleFromUser: catchAsync(postSesameRemoveDepartmentAdminRoleFromUser),

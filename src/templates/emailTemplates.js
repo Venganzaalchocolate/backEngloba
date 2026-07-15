@@ -3447,3 +3447,276 @@ export function buildHiringHrReminderHtmlEmail({
 </body>
 </html>`;
 }
+
+const SESAME_WEB_URL = "https://app.sesametime.com";
+
+function getSesameOpenEntryAlertCopy({
+  recipientType,
+  recipientName = "",
+  employeeName = "",
+  thresholdHours = 8,
+}) {
+  if (recipientType === "employee") {
+    return {
+      greeting: `Hola ${recipientName || employeeName},`,
+      title: "Tienes un fichaje abierto en Sesame",
+      message:
+        `Hemos detectado que llevas más de ${thresholdHours} horas ` +
+        "con un fichaje abierto en Sesame.",
+      action:
+        "Revisa tu fichaje. Si has olvidado registrar la salida, accede a Sesame y solicita o realiza la corrección correspondiente.",
+      note:
+        "Este aviso es automático y no modifica ni cierra tu fichaje.",
+    };
+  }
+
+  if (recipientType === "responsible") {
+    return {
+      greeting: `Hola ${recipientName || "equipo"},`,
+      title: "Fichaje abierto pendiente de revisión",
+      message:
+        `${employeeName} mantiene un fichaje abierto desde hace más de ` +
+        `${thresholdHours} horas.`,
+      action:
+        "Revisa la incidencia con la persona trabajadora y comprueba si debe registrar o solicitar una corrección de salida.",
+      note:
+        "Este aviso es automático y el fichaje no ha sido modificado.",
+    };
+  }
+
+  return {
+    greeting: "Hola,",
+    title: "Incidencia prolongada de fichaje en Sesame",
+    message:
+      `${employeeName} mantiene un fichaje abierto desde hace más de ` +
+      `${thresholdHours} horas.`,
+    action:
+      "Se recomienda revisar la incidencia y contactar con la persona trabajadora o con su responsable.",
+    note:
+      "Este aviso es automático y el fichaje no ha sido cerrado ni modificado.",
+  };
+}
+
+export function buildSesameOpenEntryAlertSubject({
+  recipientType,
+  employeeName = "",
+  thresholdHours = 8,
+}) {
+  if (recipientType === "employee") {
+    return `Aviso: llevas más de ${thresholdHours} horas con un fichaje abierto`;
+  }
+
+  if (recipientType === "responsible") {
+    return `Aviso Sesame: fichaje abierto de ${employeeName}`;
+  }
+
+  return `Incidencia Sesame: fichaje abierto de ${employeeName}`;
+}
+
+export function buildSesameOpenEntryAlertPlainText({
+  recipientType,
+  recipientName = "",
+  employeeName = "",
+  thresholdHours = 8,
+  clockIn = "",
+  elapsedTime = "",
+  dispositiveName = "",
+}) {
+  const copy = getSesameOpenEntryAlertCopy({
+    recipientType,
+    recipientName,
+    employeeName,
+    thresholdHours,
+  });
+
+  return `${copy.greeting}
+
+${copy.message}
+
+DATOS DEL FICHAJE
+• Persona trabajadora: ${employeeName || "No disponible"}
+• Entrada registrada: ${clockIn || "No disponible"}
+• Tiempo transcurrido: ${elapsedTime || `Más de ${thresholdHours} horas`}
+• Dispositivo: ${dispositiveName || "No disponible"}
+
+${copy.action}
+
+${copy.note}
+
+Acceso a Sesame:
+${SESAME_WEB_URL}
+
+Para cualquier incidencia:
+web@engloba.org.es
+comunicacion@engloba.org.es
+
+Asociación Engloba`;
+}
+
+export function buildSesameOpenEntryAlertHtmlEmail({
+  recipientType,
+  recipientName = "",
+  employeeName = "",
+  thresholdHours = 8,
+  clockIn = "",
+  elapsedTime = "",
+  dispositiveName = "",
+  logoUrl = "https://app.engloba.org.es/graphic/logotipo_blanco.png",
+}) {
+  const copy = getSesameOpenEntryAlertCopy({
+    recipientType,
+    recipientName,
+    employeeName,
+    thresholdHours,
+  });
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>${copy.title}</title>
+</head>
+
+<body style="
+  margin:0;
+  padding:0;
+  background:#ededed;
+  font-family:Arial,sans-serif;
+  color:#333;
+  line-height:1.5;
+">
+  <div style="
+    max-width:640px;
+    margin:40px auto;
+    background:#ffffff;
+    border-radius:12px;
+    overflow:hidden;
+    box-shadow:0 8px 24px rgba(0,0,0,.08);
+  ">
+    <div style="
+      padding:30px 24px;
+      text-align:center;
+      color:#ffffff;
+      background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);
+    ">
+    <div style="
+  padding:30px 24px;
+  text-align:center;
+  color:#ffffff;
+  background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);
+">
+  ${
+    logoUrl
+      ? `
+        <img
+          src="${logoUrl}"
+          alt="Asociación Engloba"
+          width="140"
+          style="
+            display:block;
+            width:140px;
+            max-width:100%;
+            height:auto;
+            margin:0 auto 16px;
+            border:0;
+          "
+        >
+      `
+      : ""
+  }
+
+  <h1 style="margin:0;font-size:24px;">
+    ${copy.title}
+  </h1>
+
+  <p style="margin:8px 0 0;font-size:14px;">
+    Sesame · Control horario
+  </p>
+</div>
+
+    </div>
+
+    <div style="padding:32px 38px;font-size:16px;">
+      <p>${copy.greeting}</p>
+
+      <p>${copy.message}</p>
+
+      <div style="
+        margin:24px 0;
+        padding:18px;
+        background:#f5f6ff;
+        border-left:5px solid #4f529f;
+        border-radius:8px;
+      ">
+        <p style="margin:0 0 8px;">
+          <strong>Persona trabajadora:</strong>
+          ${employeeName || "No disponible"}
+        </p>
+
+        <p style="margin:0 0 8px;">
+          <strong>Entrada registrada:</strong>
+          ${clockIn || "No disponible"}
+        </p>
+
+        <p style="margin:0 0 8px;">
+          <strong>Tiempo transcurrido:</strong>
+          ${elapsedTime || `Más de ${thresholdHours} horas`}
+        </p>
+
+        <p style="margin:0;">
+          <strong>Dispositivo:</strong>
+          ${dispositiveName || "No disponible"}
+        </p>
+      </div>
+
+      <p>${copy.action}</p>
+
+      <p style="
+        padding:12px;
+        background:#fff4d6;
+        border-radius:8px;
+        font-size:14px;
+      ">
+        <strong>Importante:</strong> ${copy.note}
+      </p>
+
+      <div style="text-align:center;margin:28px 0;">
+        <a
+          href="${SESAME_WEB_URL}"
+          target="_blank"
+          style="
+            display:inline-block;
+            padding:13px 26px;
+            border-radius:30px;
+            background:#4f529f;
+            color:#ffffff;
+            text-decoration:none;
+            font-weight:bold;
+          "
+        >
+          Abrir Sesame
+        </a>
+      </div>
+
+      <p style="font-size:14px;color:#666;">
+        Para cualquier incidencia puedes escribir a
+        <a href="mailto:web@engloba.org.es">web@engloba.org.es</a>
+        o
+        <a href="mailto:comunicacion@engloba.org.es">
+          comunicacion@engloba.org.es
+        </a>.
+      </p>
+    </div>
+
+    <div style="
+      padding:18px;
+      text-align:center;
+      background:#bec3f4;
+      font-size:13px;
+    ">
+      Asociación Engloba · Aviso automático de control horario
+    </div>
+  </div>
+</body>
+</html>`;
+}

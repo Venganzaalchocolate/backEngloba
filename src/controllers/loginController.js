@@ -33,7 +33,7 @@ const login = async (req, res) => {
     // } else {
     // 2. Generar código de un solo uso
     const codigo = generarCodigoTemporal();
-
+    console.log(codigo)
     // 3. Actualizar (o crear) documento en MongoDB con upsert
     await OneTimeCode.findOneAndUpdate(
         { userId: user._id },
@@ -45,6 +45,7 @@ const login = async (req, res) => {
         { upsert: true, new: true }
     );
 
+    
     // 5. Enviar el email al usuario con el código
     const asunto = "Tu código de verificación";
     const textoPlano = `Este es tu código de verificación de un solo uso: ${codigo}. Es válido durante 5 minutos.`;
@@ -58,7 +59,13 @@ const login = async (req, res) => {
         footerText: "Gracias por usar nuestra plataforma. Si tienes dudas, contáctanos."
     });
 
-    await sendEmail(user.email, asunto, textoPlano, htmlContent);
+    console.log('pasa')
+    try {
+      const emailSent= await sendEmail(user.email, asunto, textoPlano, htmlContent);  
+    } catch (error) {
+        console.log(error)
+    }
+    
 
     // 6. Responder
     response(res, 200, {

@@ -30,6 +30,7 @@ const AnideCentro = require('./anide/anideCentro');
 const PeriodEndReason = require('./periodEndReason');
 const OidcRecord=require('./oidcRecord');
 const MoodleAssignment = require('./moodleAssignment');
+const SesameWorkEntryAlert = require("./sesameWorkEntryAlert");
 
 
 module.exports = {
@@ -63,5 +64,6 @@ module.exports = {
     AnideCentro,
     PeriodEndReason,
     OidcRecord,
-    MoodleAssignment
+    MoodleAssignment,
+    SesameWorkEntryAlert
 }

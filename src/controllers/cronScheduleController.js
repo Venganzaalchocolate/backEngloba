@@ -8,10 +8,15 @@ const {
 } = require('./leaveController');
 const { processHrHiringStartReminders } = require('./hiringController');
 
+const {
+  processSesameOpenEntryAlerts,
+} = require("./sesameController");
+
 let isRunning = false;
 let isRunningDisableVolunteers = false;
 let isRunningLeaves = false;
 let isRunningHiringReminders = false;
+let isRunningSesameAlerts = false;
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -124,4 +129,56 @@ if (isDev) {
       isRunningHiringReminders = false;
     }
   }, { timezone: 'Europe/Madrid' });
+  // Cada hora: revisar fichajes abiertos en Sesame
+cron.schedule(
+  "0 * * * *",
+  async () => {
+    if (isRunningSesameAlerts) {
+      console.log(
+        "🕑 La revisión de fichajes abiertos en Sesame todavía está ejecutándose."
+      );
+      return;
+    }
+
+    isRunningSesameAlerts = true;
+
+    console.log(
+      "▶️ Iniciando revisión de fichajes abiertos en Sesame..."
+    );
+
+    try {
+      const result =
+        await processSesameOpenEntryAlerts();
+
+      console.log(
+        "✅ Revisión de fichajes abiertos en Sesame finalizada:",
+        {
+          checked: result?.checked ?? 0,
+          openOver12Hours:
+            result?.openOver12Hours ?? 0,
+          sent12h:
+            result?.sent12h ?? 0,
+          sent24h:
+            result?.sent24h ?? 0,
+          sent48h:
+            result?.sent48h ?? 0,
+          deletedAlerts:
+            result?.deletedAlerts ?? 0,
+          errors:
+            result?.errors?.length ?? 0,
+        }
+      );
+    } catch (error) {
+      console.error(
+        "❌ Error revisando fichajes abiertos en Sesame:",
+        error?.message || error
+      );
+    } finally {
+      isRunningSesameAlerts = false;
+    }
+  },
+  {
+    timezone: "Europe/Madrid",
+  }
+);
 }
