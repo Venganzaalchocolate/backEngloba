@@ -3720,3 +3720,762 @@ export function buildSesameOpenEntryAlertHtmlEmail({
 </body>
 </html>`;
 }
+
+// ============================================================================
+// AVISO MENSUAL: PERSONAS SIN FICHAJES EN SESAME
+//
+// Plantillas individuales:
+// - Trabajador/a.
+// - Responsable o coordinación.
+//
+// Plantillas resumen:
+// - Un único correo con la lista completa.
+// ============================================================================
+
+const escapeSesameNoClockInsHtml = (value = "") =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+const getSesameNoClockInsCopy = ({
+  recipientType = "employee",
+  employeeName = "",
+  days = 30,
+  from = "",
+  to = "",
+} = {}) => {
+  if (recipientType === "responsible") {
+    return {
+      title: "Revisión de fichajes de un trabajador",
+
+      subject:
+        `Sesame · ${employeeName} sin fichajes durante los últimos ${days} días`,
+
+      intro:
+        `En la revisión mensual de Sesame no se ha detectado ningún fichaje de ` +
+        `${employeeName} entre el ${from} y el ${to}.`,
+
+      message:
+        `Según los datos disponibles en la aplicación de Engloba, tampoco consta ` +
+        `actualmente una baja activa que justifique la ausencia de fichajes.`,
+
+      action:
+        `Por favor, comprueba si la persona sigue prestando servicio, si debe ` +
+        `utilizar Sesame y si existe alguna circunstancia que explique la falta ` +
+        `de registros. Si se trata de una incidencia, será necesario revisar o ` +
+        `regularizar los fichajes correspondientes.`,
+    };
+  }
+
+  return {
+    title: "Revisión de tus fichajes en Sesame",
+
+    subject:
+      `Sesame · No se han detectado fichajes durante los últimos ${days} días`,
+
+    intro:
+      `En la revisión mensual de Sesame no se ha detectado ningún fichaje tuyo ` +
+      `entre el ${from} y el ${to}.`,
+
+    message:
+      `Este aviso no implica necesariamente que exista un incumplimiento. Puede ` +
+      `deberse a una incidencia técnica, una incorporación reciente, un cambio ` +
+      `en tu situación laboral o a que los registros no se hayan realizado ` +
+      `correctamente.`,
+
+    action:
+      `Revisa tus fichajes en Sesame. Si has trabajado durante este periodo y ` +
+      `los registros no aparecen, comunícalo a la persona responsable de tu ` +
+      `dispositivo para que pueda revisarse y regularizarse la situación.`,
+  };
+};
+
+// ============================================================================
+// CORREO INDIVIDUAL: ASUNTO
+// ============================================================================
+
+export function buildSesameNoClockInsSubject({
+  recipientType = "employee",
+  employeeName = "",
+  days = 30,
+  from = "",
+  to = "",
+} = {}) {
+  return getSesameNoClockInsCopy({
+    recipientType,
+    employeeName,
+    days,
+    from,
+    to,
+  }).subject;
+}
+
+// ============================================================================
+// CORREO INDIVIDUAL: TEXTO PLANO
+// ============================================================================
+
+export function buildSesameNoClockInsPlainText({
+  recipientType = "employee",
+  recipientName = "",
+  employeeName = "",
+  days = 30,
+  from = "",
+  to = "",
+  dispositiveName = "",
+  supportEmail = "web@engloba.org.es",
+} = {}) {
+  const copy = getSesameNoClockInsCopy({
+    recipientType,
+    employeeName,
+    days,
+    from,
+    to,
+  });
+
+  const employeeLine =
+    recipientType === "responsible"
+      ? `• Trabajador/a: ${employeeName}\n`
+      : "";
+
+  return `Hola ${recipientName || "equipo"},
+
+${copy.intro}
+
+${copy.message}
+
+${copy.action}
+
+DATOS DE LA REVISIÓN
+
+${employeeLine}• Periodo comprobado: ${from} - ${to}
+• Días revisados: ${days}
+• Dispositivo: ${dispositiveName || "Sin dispositivo identificado"}
+
+Puedes acceder a Sesame desde:
+https://app.sesametime.com
+
+Para cualquier incidencia técnica:
+${supportEmail}
+
+Un saludo,
+Asociación Engloba
+
+Este es un aviso automático generado durante la revisión mensual de fichajes.`;
+}
+
+// ============================================================================
+// CORREO INDIVIDUAL: HTML
+// ============================================================================
+
+export function buildSesameNoClockInsHtmlEmail({
+  recipientType = "employee",
+  recipientName = "",
+  employeeName = "",
+  days = 30,
+  from = "",
+  to = "",
+  dispositiveName = "",
+  supportEmail = "web@engloba.org.es",
+  logoUrl =
+    "https://app.engloba.org.es/graphic/logotipo_blanco.png",
+} = {}) {
+  const copy = getSesameNoClockInsCopy({
+    recipientType,
+    employeeName,
+    days,
+    from,
+    to,
+  });
+
+  const safeRecipientName =
+    escapeSesameNoClockInsHtml(
+      recipientName || "equipo"
+    );
+
+  const safeEmployeeName =
+    escapeSesameNoClockInsHtml(
+      employeeName || "Persona no identificada"
+    );
+
+  const safeDispositiveName =
+    escapeSesameNoClockInsHtml(
+      dispositiveName ||
+        "Sin dispositivo identificado"
+    );
+
+  const safeFrom =
+    escapeSesameNoClockInsHtml(from);
+
+  const safeTo =
+    escapeSesameNoClockInsHtml(to);
+
+  const safeSupportEmail =
+    escapeSesameNoClockInsHtml(
+      supportEmail
+    );
+
+  const safeLogoUrl =
+    escapeSesameNoClockInsHtml(
+      logoUrl
+    );
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${escapeSesameNoClockInsHtml(copy.title)}</title>
+</head>
+
+<body style="
+  margin:0;
+  padding:0;
+  background:#ededed;
+  font-family:Arial,sans-serif;
+  color:#333333;
+  line-height:1.55;
+">
+  <div style="
+    max-width:660px;
+    margin:40px auto;
+    background:#ffffff;
+    border-radius:12px;
+    overflow:hidden;
+    box-shadow:0 8px 24px rgba(0,0,0,.08);
+  ">
+
+    <div style="
+      padding:30px 24px;
+      text-align:center;
+      color:#ffffff;
+      background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);
+    ">
+      ${
+        safeLogoUrl
+          ? `<img
+              src="${safeLogoUrl}"
+              alt="Asociación Engloba"
+              width="140"
+              style="
+                display:block;
+                width:140px;
+                max-width:100%;
+                height:auto;
+                margin:0 auto 16px;
+                border:0;
+              "
+            >`
+          : ""
+      }
+
+      <h1 style="
+        margin:0;
+        font-size:24px;
+        line-height:1.3;
+      ">
+        ${escapeSesameNoClockInsHtml(copy.title)}
+      </h1>
+
+      <p style="
+        margin:8px 0 0;
+        font-size:14px;
+        opacity:.92;
+      ">
+        Sesame · Control horario
+      </p>
+    </div>
+
+    <div style="
+      padding:34px 38px;
+      font-size:16px;
+    ">
+      <p style="margin:0 0 18px;">
+        Hola <strong>${safeRecipientName}</strong>,
+      </p>
+
+      <p style="margin:0 0 18px;">
+        ${escapeSesameNoClockInsHtml(copy.intro)}
+      </p>
+
+      <div style="
+        margin:24px 0;
+        padding:18px 20px;
+        background:#f5f6ff;
+        border-left:5px solid #50529f;
+        border-radius:8px;
+      ">
+        <p style="margin:0;">
+          ${escapeSesameNoClockInsHtml(copy.message)}
+        </p>
+      </div>
+
+      <p style="margin:0 0 24px;">
+        ${escapeSesameNoClockInsHtml(copy.action)}
+      </p>
+
+      <div style="
+        margin:24px 0;
+        padding:18px 20px;
+        border:1px solid #e2e4f7;
+        border-radius:10px;
+      ">
+        <h2 style="
+          margin:0 0 14px;
+          color:#50529f;
+          font-size:18px;
+        ">
+          Datos de la revisión
+        </h2>
+
+        ${
+          recipientType === "responsible"
+            ? `<p style="margin:6px 0;">
+                <strong>Trabajador/a:</strong>
+                ${safeEmployeeName}
+              </p>`
+            : ""
+        }
+
+        <p style="margin:6px 0;">
+          <strong>Periodo comprobado:</strong>
+          ${safeFrom} - ${safeTo}
+        </p>
+
+        <p style="margin:6px 0;">
+          <strong>Días revisados:</strong>
+          ${Number(days) || 30}
+        </p>
+
+        <p style="margin:6px 0;">
+          <strong>Dispositivo:</strong>
+          ${safeDispositiveName}
+        </p>
+      </div>
+
+      <div style="
+        margin:28px 0;
+        text-align:center;
+      ">
+        <a
+          href="https://app.sesametime.com"
+          target="_blank"
+          style="
+            display:inline-block;
+            padding:13px 26px;
+            border-radius:40px;
+            background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);
+            color:#ffffff;
+            font-weight:bold;
+            text-decoration:none;
+          "
+        >
+          Abrir Sesame
+        </a>
+      </div>
+
+      <p style="
+        margin:26px 0 0;
+        color:#555555;
+        font-size:14px;
+      ">
+        Para incidencias técnicas:
+        <a
+          href="mailto:${safeSupportEmail}"
+          style="
+            color:#50529f;
+            font-weight:bold;
+            text-decoration:none;
+          "
+        >
+          ${safeSupportEmail}
+        </a>
+      </p>
+
+      <p style="margin:24px 0 0;">
+        Un saludo,<br>
+        <strong>Asociación Engloba</strong>
+      </p>
+    </div>
+
+    <div style="
+      padding:18px 20px;
+      background:#bec3f4;
+      text-align:center;
+      font-size:13px;
+    ">
+      Aviso automático generado durante la revisión mensual de fichajes.
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+// ============================================================================
+// CORREO RESUMEN: ASUNTO
+// ============================================================================
+
+export function buildSesameNoClockInsSummarySubject({
+  total = 0,
+  days = 30,
+} = {}) {
+  return (
+    `Sesame · ${total} personas sin fichajes ` +
+    `durante los últimos ${days} días`
+  );
+}
+
+// ============================================================================
+// CORREO RESUMEN: TEXTO PLANO
+//
+// Cada elemento de employees:
+// {
+//   employeeName,
+//   employeeEmail,
+//   dispositiveName,
+//   managerNames,
+//   managerEmails
+// }
+// ============================================================================
+
+export function buildSesameNoClockInsSummaryPlainText({
+  days = 30,
+  from = "",
+  to = "",
+  employees = [],
+} = {}) {
+  const items =
+    Array.isArray(employees)
+      ? employees
+      : [];
+
+  const employeeLines =
+    items
+      .map(
+        (employee, index) =>
+          `${index + 1}. ${employee.employeeName || "Persona no identificada"}
+   Correo: ${employee.employeeEmail || "Sin correo"}
+   Dispositivo: ${employee.dispositiveName || "Sin dispositivo identificado"}
+   Responsable / coordinación: ${employee.managerNames || "Sin responsable ni coordinación asignada"}
+   Correo responsable / coordinación: ${employee.managerEmails || "Sin correo"}`
+      )
+      .join("\n\n");
+
+  return `Hola,
+
+La revisión mensual de Sesame ha detectado ${items.length} personas activas que no tienen fichajes registrados durante los últimos ${days} días y que no constan con una baja activa en la aplicación de Engloba.
+
+Periodo comprobado: ${from} - ${to}
+
+PERSONAS DETECTADAS
+
+${employeeLines || "No se han detectado personas sin fichajes."}
+
+Este correo es informativo. Los avisos individuales al trabajador y a la persona responsable o, en su ausencia, a la coordinación del dispositivo, se gestionan por separado.
+
+Un saludo,
+Asociación Engloba`;
+}
+
+// ============================================================================
+// CORREO RESUMEN: HTML
+// ============================================================================
+
+export function buildSesameNoClockInsSummaryHtmlEmail({
+  days = 30,
+  from = "",
+  to = "",
+  employees = [],
+  logoUrl =
+    "https://app.engloba.org.es/graphic/logotipo_blanco.png",
+} = {}) {
+  const items =
+    Array.isArray(employees)
+      ? employees
+      : [];
+
+  const safeLogoUrl =
+    escapeSesameNoClockInsHtml(
+      logoUrl
+    );
+
+  const rows =
+    items
+      .map((employee) => {
+        const employeeName =
+          escapeSesameNoClockInsHtml(
+            employee.employeeName ||
+              "Persona no identificada"
+          );
+
+        const employeeEmail =
+          escapeSesameNoClockInsHtml(
+            employee.employeeEmail ||
+              "Sin correo"
+          );
+
+        const dispositiveName =
+          escapeSesameNoClockInsHtml(
+            employee.dispositiveName ||
+              "Sin dispositivo identificado"
+          );
+
+        const managerNames =
+          escapeSesameNoClockInsHtml(
+            employee.managerNames ||
+              "Sin responsable ni coordinación asignada"
+          );
+
+        const managerEmails =
+          escapeSesameNoClockInsHtml(
+            employee.managerEmails ||
+              "Sin correo"
+          );
+
+        return `
+          <tr>
+            <td style="
+              padding:12px;
+              vertical-align:top;
+              border:1px solid #dedff0;
+            ">
+              <strong>${employeeName}</strong>
+            </td>
+
+            <td style="
+              padding:12px;
+              vertical-align:top;
+              border:1px solid #dedff0;
+              word-break:break-word;
+            ">
+              ${employeeEmail}
+            </td>
+
+            <td style="
+              padding:12px;
+              vertical-align:top;
+              border:1px solid #dedff0;
+            ">
+              ${dispositiveName}
+            </td>
+
+            <td style="
+              padding:12px;
+              vertical-align:top;
+              border:1px solid #dedff0;
+            ">
+              <strong>${managerNames}</strong><br>
+
+              <span style="
+                color:#666666;
+                font-size:13px;
+                word-break:break-word;
+              ">
+                ${managerEmails}
+              </span>
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Resumen mensual de fichajes Sesame</title>
+</head>
+
+<body style="
+  margin:0;
+  padding:0;
+  background:#ededed;
+  font-family:Arial,sans-serif;
+  color:#333333;
+  line-height:1.5;
+">
+  <div style="
+    max-width:960px;
+    margin:40px auto;
+    background:#ffffff;
+    border-radius:12px;
+    overflow:hidden;
+    box-shadow:0 8px 24px rgba(0,0,0,.08);
+  ">
+
+    <div style="
+      padding:30px 24px;
+      text-align:center;
+      color:#ffffff;
+      background:linear-gradient(90deg,#4f529f 0%,#8f96d0 100%);
+    ">
+      ${
+        safeLogoUrl
+          ? `<img
+              src="${safeLogoUrl}"
+              alt="Asociación Engloba"
+              width="140"
+              style="
+                display:block;
+                width:140px;
+                max-width:100%;
+                height:auto;
+                margin:0 auto 16px;
+                border:0;
+              "
+            >`
+          : ""
+      }
+
+      <h1 style="
+        margin:0;
+        font-size:24px;
+        line-height:1.3;
+      ">
+        Resumen mensual de personas sin fichajes
+      </h1>
+
+      <p style="
+        margin:8px 0 0;
+        font-size:14px;
+        opacity:.92;
+      ">
+        Sesame · Control horario
+      </p>
+    </div>
+
+    <div style="
+      padding:34px 38px;
+      font-size:16px;
+    ">
+      <p style="margin:0 0 18px;">
+        Hola,
+      </p>
+
+      <p style="margin:0 0 18px;">
+        La revisión mensual de Sesame ha detectado
+        <strong>${items.length} personas activas</strong>
+        que no tienen fichajes registrados durante los últimos
+        <strong>${Number(days) || 30} días</strong>
+        y que no constan con una baja activa en la aplicación de Engloba.
+      </p>
+
+      <div style="
+        margin:22px 0;
+        padding:16px 18px;
+        background:#f5f6ff;
+        border-left:5px solid #50529f;
+        border-radius:8px;
+      ">
+        <strong>Periodo comprobado:</strong>
+        ${escapeSesameNoClockInsHtml(from)}
+        -
+        ${escapeSesameNoClockInsHtml(to)}
+      </div>
+
+      <div style="
+        margin:24px 0;
+        overflow-x:auto;
+      ">
+        <table
+          role="presentation"
+          width="100%"
+          cellspacing="0"
+          cellpadding="0"
+          style="
+            width:100%;
+            border-collapse:collapse;
+            border:1px solid #dedff0;
+            font-size:14px;
+          "
+        >
+          <thead>
+            <tr style="
+              background:#50529f;
+              color:#ffffff;
+            ">
+              <th style="
+                padding:12px;
+                text-align:left;
+                border:1px solid #686aaf;
+              ">
+                Trabajador/a
+              </th>
+
+              <th style="
+                padding:12px;
+                text-align:left;
+                border:1px solid #686aaf;
+              ">
+                Correo
+              </th>
+
+              <th style="
+                padding:12px;
+                text-align:left;
+                border:1px solid #686aaf;
+              ">
+                Dispositivo
+              </th>
+
+              <th style="
+                padding:12px;
+                text-align:left;
+                border:1px solid #686aaf;
+              ">
+                Responsable / coordinación
+              </th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${
+              rows ||
+              `<tr>
+                <td
+                  colspan="4"
+                  style="
+                    padding:22px;
+                    text-align:center;
+                    border:1px solid #dedff0;
+                  "
+                >
+                  No se han detectado personas sin fichajes.
+                </td>
+              </tr>`
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <p style="
+        margin:24px 0 0;
+        color:#555555;
+        font-size:14px;
+      ">
+        Este correo es informativo. Los avisos individuales al trabajador
+        y a la persona responsable o, en su ausencia, a la coordinación
+        del dispositivo, se gestionan por separado.
+      </p>
+
+      <p style="margin:24px 0 0;">
+        Un saludo,<br>
+        <strong>Asociación Engloba</strong>
+      </p>
+    </div>
+
+    <div style="
+      padding:18px 20px;
+      background:#bec3f4;
+      text-align:center;
+      font-size:13px;
+    ">
+      Revisión mensual automática de fichajes Sesame
+    </div>
+  </div>
+</body>
+</html>`;
+}

@@ -10,6 +10,7 @@ const { processHrHiringStartReminders } = require('./hiringController');
 
 const {
   processSesameOpenEntryAlerts,
+  processMonthlySesameNoClockInsAlerts,
 } = require("./sesameController");
 
 let isRunning = false;
@@ -17,6 +18,55 @@ let isRunningDisableVolunteers = false;
 let isRunningLeaves = false;
 let isRunningHiringReminders = false;
 let isRunningSesameAlerts = false;
+let isRunningMonthlySesameNoClockIns = false;
+
+const runMonthlySesameNoClockIns = async (origin = "cron") => {
+  if (isRunningMonthlySesameNoClockIns) {
+    console.log(
+      "🕑 La revisión mensual de personas sin fichajes ya está ejecutándose."
+    );
+    return;
+  }
+
+  isRunningMonthlySesameNoClockIns = true;
+
+  console.log(
+    `▶️ Iniciando revisión mensual de personas sin fichajes en Sesame (${origin})...`
+  );
+
+  try {
+    const result = await processMonthlySesameNoClockInsAlerts({
+      days: 30,
+    });
+
+    console.log(
+      "✅ Revisión mensual de personas sin fichajes finalizada:",
+      {
+        origin,
+        from: result?.from ?? null,
+        to: result?.to ?? null,
+        activeSesameEmployees: result?.activeSesameEmployees ?? 0,
+        workEntries: result?.workEntries ?? 0,
+        withoutClockIns: result?.withoutClockIns ?? 0,
+        eligible: result?.eligible ?? 0,
+        sentEmployeeEmails: result?.sentEmployeeEmails ?? 0,
+        sentManagerEmails: result?.sentManagerEmails ?? 0,
+        summaryEmployees: result?.summaryEmployees ?? 0,
+        summaryEmailSent: result?.summaryEmailSent ?? false,
+        skippedActiveLeave: result?.skippedActiveLeave?.length ?? 0,
+        skippedNoManager: result?.skippedNoManager?.length ?? 0,
+        errors: result?.errors?.length ?? 0,
+      }
+    );
+  } catch (error) {
+    console.error(
+      "❌ Error en la revisión mensual de personas sin fichajes:",
+      error?.message || error
+    );
+  } finally {
+    isRunningMonthlySesameNoClockIns = false;
+  }
+};
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -177,6 +227,32 @@ cron.schedule(
       isRunningSesameAlerts = false;
     }
   },
+  { timezone: "Europe/Madrid",});
+  // Ejecución puntual: 15/07/2026 a las 14:45, hora de Madrid
+const sesameFirstRunDateTime = new Date("2026-07-15T14:45:00+02:00");
+const millisecondsUntilFirstRun = sesameFirstRunDateTime.getTime() - Date.now();
+
+if (millisecondsUntilFirstRun > 0) {
+  console.log(
+    `🕒 Revisión inicial de Sesame programada para ${sesameFirstRunDateTime.toLocaleString(
+      "es-ES",
+      { timeZone: "Europe/Madrid" }
+    )}`
+  );
+
+  setTimeout(() => {
+    runMonthlySesameNoClockIns("ejecución inicial programada");
+  }, millisecondsUntilFirstRun);
+} else {
+  console.log(
+    "ℹ️ La fecha de la ejecución inicial de Sesame ya ha pasado."
+  );
+}
+
+// Día 1 de cada mes a las 03:30
+cron.schedule(
+  "30 3 1 * *",
+  () => runMonthlySesameNoClockIns("cron mensual"),
   {
     timezone: "Europe/Madrid",
   }

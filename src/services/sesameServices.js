@@ -164,7 +164,6 @@ const sesameService = {
   },
 
   assignEmployeeManager(data = {}) {
-    console.log(data)
     return request("POST", "/core/v3/employee-managers", { data });
   },
 

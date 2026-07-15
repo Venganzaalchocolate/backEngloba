@@ -13,6 +13,14 @@ const {
   buildSesameOpenEntryAlertSubject,
   buildSesameOpenEntryAlertPlainText,
   buildSesameOpenEntryAlertHtmlEmail,
+
+  buildSesameNoClockInsSubject,
+  buildSesameNoClockInsPlainText,
+  buildSesameNoClockInsHtmlEmail,
+
+  buildSesameNoClockInsSummarySubject,
+  buildSesameNoClockInsSummaryPlainText,
+  buildSesameNoClockInsSummaryHtmlEmail,
 } = require("../templates/emailTemplates");
 
 const SESAME_COMPANY_ID = process.env.SESAME_COMPANY_ID;
@@ -3288,6 +3296,418 @@ const processSesameOpenEntryAlerts =
     return results;
   };
 
+// ============================================================================
+// REVISIÓN MENSUAL DE PERSONAS SIN FICHAJES EN SESAME
+// ============================================================================
+// ============================================================================
+// REVISIÓN MENSUAL DE PERSONAS SIN FICHAJES EN SESAME
+// ============================================================================
+
+const SESAME_NO_CLOCK_INS_DAYS = 30;
+const SESAME_NO_CLOCK_INS_PAGE_LIMIT = 200;
+const SESAME_NO_CLOCK_INS_SUMMARY_EMAILS = [
+  "web@engloba.org.es",
+  "comunicacion@engloba.org.es",
+];
+
+const formatSesameNoClockInsDisplayDate = (date) =>
+  new Intl.DateTimeFormat("es-ES", {
+    timeZone: "Europe/Madrid",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+
+const getSesameWorkEntriesForNoClockIns = async ({
+  days = SESAME_NO_CLOCK_INS_DAYS,
+} = {}) => {
+  const now = new Date();
+  const fromDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const from = formatSesameAlertQueryDate(fromDate);
+  const to = formatSesameAlertQueryDate(now);
+  const workEntries = [];
+
+  let page = 1;
+
+  while (true) {
+    const result = await sesameService.listWorkEntries({
+      from,
+      to,
+      onlyReturn: "not_deleted",
+      limit: SESAME_NO_CLOCK_INS_PAGE_LIMIT,
+      page,
+    });
+
+    const entries = Array.isArray(result?.data) ? result.data : [];
+    const lastPage = Number(result?.meta?.lastPage) || 0;
+
+    workEntries.push(...entries);
+
+    if (
+      !entries.length ||
+      (lastPage && page >= lastPage) ||
+      (!lastPage && entries.length < SESAME_NO_CLOCK_INS_PAGE_LIMIT)
+    ) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return {
+    now,
+    from,
+    to,
+    fromDisplay: formatSesameNoClockInsDisplayDate(fromDate),
+    toDisplay: formatSesameNoClockInsDisplayDate(now),
+    workEntries,
+  };
+};
+
+const sendSesameNoClockInsIndividualEmail = async ({
+  recipientType,
+  recipients,
+  recipientName,
+  employeeName,
+  dispositiveName,
+  days,
+  from,
+  to,
+}) => {
+  const emails = uniqueSesameAlertEmails(recipients);
+
+  if (!emails.length) {
+    return { sent: false, reason: "no-recipients" };
+  }
+
+  const templateData = {
+    recipientType,
+    recipientName,
+    employeeName,
+    dispositiveName,
+    days,
+    from,
+    to,
+  };
+
+  await sendEmail(
+    emails,
+    buildSesameNoClockInsSubject(templateData),
+    buildSesameNoClockInsPlainText(templateData),
+    buildSesameNoClockInsHtmlEmail(templateData)
+  );
+
+  return { sent: true, recipients: emails };
+};
+
+const processMonthlySesameNoClockInsAlerts = async ({
+  days = SESAME_NO_CLOCK_INS_DAYS,
+  logger = console,
+  dryRun = false,
+} = {}) => {
+  const activeSesameEmployees = await getActiveSesameEmployeesLocal();
+
+  const {
+    now,
+    from,
+    to,
+    fromDisplay,
+    toDisplay,
+    workEntries,
+  } = await getSesameWorkEntriesForNoClockIns({ days });
+
+  const employeeIdsWithClockIns = new Set(
+    workEntries
+      .filter((entry) => entry?.employee?.id && entry?.workEntryIn?.date)
+      .map((entry) => String(entry.employee.id))
+  );
+
+  const sesameEmployeesWithoutClockIns = activeSesameEmployees.filter(
+    (employee) =>
+      employee?.id &&
+      !employeeIdsWithClockIns.has(String(employee.id))
+  );
+
+  const sesameEmployeeIds = sesameEmployeesWithoutClockIns.map((employee) =>
+    String(employee.id)
+  );
+
+  const localUsers = sesameEmployeeIds.length
+    ? await User.find({
+        userIdSesame: { $in: sesameEmployeeIds },
+      })
+        .select(
+          "_id userIdSesame firstName lastName email employmentStatus"
+        )
+        .lean()
+    : [];
+
+  const localUserBySesameId = new Map(
+    localUsers.map((user) => [String(user.userIdSesame), user])
+  );
+
+  const localUserIds = localUsers.map((user) => user._id);
+
+  const usersOnActiveLeave = localUserIds.length
+    ? await Leaves.distinct("idUser", {
+        idUser: { $in: localUserIds },
+        active: { $ne: false },
+        startLeaveDate: { $lte: now },
+        $or: [
+          { actualEndLeaveDate: { $exists: false } },
+          { actualEndLeaveDate: null },
+          { actualEndLeaveDate: { $gt: now } },
+        ],
+      })
+    : [];
+
+  const activeLeaveUserIds = new Set(usersOnActiveLeave.map(String));
+
+  /*
+   * Devuelve responsables del dispositivo.
+   * Solo utiliza coordinadores cuando no existen responsables.
+   */
+  const deviceContexts = await getSesameAlertDeviceContexts(localUsers);
+  const summaryEmployees = [];
+
+  const results = {
+    dryRun,
+    days,
+    from,
+    to,
+    fromDisplay,
+    toDisplay,
+    activeSesameEmployees: activeSesameEmployees.length,
+    workEntries: workEntries.length,
+    withoutClockIns: sesameEmployeesWithoutClockIns.length,
+    eligible: 0,
+    sentEmployeeEmails: 0,
+    sentManagerEmails: 0,
+    summaryEmailSent: false,
+    summaryEmployees: 0,
+    skippedActiveLeave: [],
+    skippedNoLocalUser: [],
+    skippedInactiveLocalUser: [],
+    skippedNoEmployeeEmail: [],
+    skippedNoManager: [],
+    errors: [],
+    employees: summaryEmployees,
+  };
+
+  for (const sesameEmployee of sesameEmployeesWithoutClockIns) {
+    const sesameEmployeeId = String(sesameEmployee.id);
+    const localUser = localUserBySesameId.get(sesameEmployeeId);
+
+    const employeeName =
+      getSesameAlertFullName(sesameEmployee) ||
+      getSesameAlertFullName(localUser) ||
+      "Persona no identificada";
+
+    if (!localUser) {
+      results.skippedNoLocalUser.push({
+        sesameEmployeeId,
+        employeeName,
+        employeeEmail: sesameEmployee.email || "",
+      });
+      continue;
+    }
+
+    if (localUser.employmentStatus !== "activo") {
+      results.skippedInactiveLocalUser.push({
+        userId: String(localUser._id),
+        sesameEmployeeId,
+        employeeName,
+        employmentStatus: localUser.employmentStatus || "",
+      });
+      continue;
+    }
+
+    if (activeLeaveUserIds.has(String(localUser._id))) {
+      results.skippedActiveLeave.push({
+        userId: String(localUser._id),
+        sesameEmployeeId,
+        employeeName,
+      });
+      continue;
+    }
+
+    results.eligible += 1;
+
+    const context = deviceContexts.get(String(localUser._id));
+    const dispositiveName =
+      context?.dispositiveNames?.join(", ") ||
+      "Sin dispositivo identificado";
+
+    const managers = context?.managers || [];
+    const managerEmails = uniqueSesameAlertEmails(
+      managers.map((manager) => manager?.email)
+    );
+
+    const managerNames = managers
+      .map(getSesameAlertFullName)
+      .filter(Boolean)
+      .join(", ");
+
+    const employeeEmail =
+      localUser.email || sesameEmployee.email || "";
+
+    summaryEmployees.push({
+      userId: String(localUser._id),
+      sesameEmployeeId,
+      employeeName,
+      employeeEmail: employeeEmail || "Sin correo",
+      dispositiveName,
+      managerNames:
+        managerNames || "Sin responsable ni coordinación asignada",
+      managerEmails: managerEmails.join(", "),
+    });
+
+    // Correo al trabajador
+    if (!employeeEmail) {
+      results.skippedNoEmployeeEmail.push({
+        userId: String(localUser._id),
+        sesameEmployeeId,
+        employeeName,
+      });
+    } else if (!dryRun) {
+      try {
+        const sent = await sendSesameNoClockInsIndividualEmail({
+          recipientType: "employee",
+          recipients: [employeeEmail],
+          recipientName:
+            localUser.firstName || sesameEmployee.firstName || "",
+          employeeName,
+          dispositiveName,
+          days,
+          from: fromDisplay,
+          to: toDisplay,
+        });
+
+        if (sent.sent) {
+          results.sentEmployeeEmails += 1;
+          logger.log(
+            `[SESAME SIN FICHAJES] Aviso enviado al trabajador: ${employeeName}`
+          );
+        }
+      } catch (error) {
+        results.errors.push({
+          type: "employee",
+          userId: String(localUser._id),
+          employeeName,
+          message: error?.message || String(error),
+        });
+
+        logger.error(
+          `[SESAME SIN FICHAJES] Error enviando email a ${employeeName}:`,
+          error?.message || error
+        );
+      }
+    }
+
+    // Correo al responsable o, si no existe, a coordinación
+    if (!managerEmails.length) {
+      results.skippedNoManager.push({
+        userId: String(localUser._id),
+        sesameEmployeeId,
+        employeeName,
+        dispositiveName,
+      });
+
+      logger.warn(
+        `[SESAME SIN FICHAJES] Sin responsable ni coordinación para ${employeeName}`
+      );
+    } else if (!dryRun) {
+      try {
+        const sent = await sendSesameNoClockInsIndividualEmail({
+          recipientType: "responsible",
+          recipients: managerEmails,
+          recipientName: managerNames || "equipo responsable",
+          employeeName,
+          dispositiveName,
+          days,
+          from: fromDisplay,
+          to: toDisplay,
+        });
+
+        if (sent.sent) {
+          results.sentManagerEmails += 1;
+          logger.log(
+            `[SESAME SIN FICHAJES] Aviso enviado al responsable/coordinación de ${employeeName}`
+          );
+        }
+      } catch (error) {
+        results.errors.push({
+          type: "manager",
+          userId: String(localUser._id),
+          employeeName,
+          message: error?.message || String(error),
+        });
+
+        logger.error(
+          `[SESAME SIN FICHAJES] Error avisando al responsable de ${employeeName}:`,
+          error?.message || error
+        );
+      }
+    }
+  }
+
+  results.summaryEmployees = summaryEmployees.length;
+
+  // Un único correo resumen a Web y Comunicación
+  if (summaryEmployees.length && !dryRun) {
+    const summaryTemplateData = {
+      days,
+      from: fromDisplay,
+      to: toDisplay,
+      total: summaryEmployees.length,
+      employees: summaryEmployees,
+    };
+
+    try {
+      await sendEmail(
+        SESAME_NO_CLOCK_INS_SUMMARY_EMAILS,
+        buildSesameNoClockInsSummarySubject(summaryTemplateData),
+        buildSesameNoClockInsSummaryPlainText(summaryTemplateData),
+        buildSesameNoClockInsSummaryHtmlEmail(summaryTemplateData)
+      );
+
+      results.summaryEmailSent = true;
+
+      logger.log(
+        `[SESAME SIN FICHAJES] Resumen enviado con ${summaryEmployees.length} personas a ${SESAME_NO_CLOCK_INS_SUMMARY_EMAILS.join(", ")}`
+      );
+    } catch (error) {
+      results.errors.push({
+        type: "summary",
+        message: error?.message || String(error),
+      });
+
+      logger.error(
+        "[SESAME SIN FICHAJES] Error enviando el resumen general:",
+        error?.message || error
+      );
+    }
+  }
+
+  logger.log("[SESAME SIN FICHAJES] Proceso mensual finalizado:", {
+    from: results.from,
+    to: results.to,
+    activeSesameEmployees: results.activeSesameEmployees,
+    workEntries: results.workEntries,
+    withoutClockIns: results.withoutClockIns,
+    eligible: results.eligible,
+    sentEmployeeEmails: results.sentEmployeeEmails,
+    sentManagerEmails: results.sentManagerEmails,
+    summaryEmployees: results.summaryEmployees,
+    summaryEmailSent: results.summaryEmailSent,
+    skippedActiveLeave: results.skippedActiveLeave.length,
+    skippedNoManager: results.skippedNoManager.length,
+    errors: results.errors.length,
+  });
+
+  return results;
+};
+
 
 
 module.exports = {
@@ -3343,6 +3763,7 @@ module.exports = {
   deleteSesameDepartmentForDispositive,
 
   processSesameOpenEntryAlerts,
+  processMonthlySesameNoClockInsAlerts,
 
   postSesameAssignDispositiveDepartmentAdminToUser: catchAsync(postSesameAssignDispositiveDepartmentAdminToUser),
   postSesameRemoveDepartmentAdminRoleFromUser: catchAsync(postSesameRemoveDepartmentAdminRoleFromUser),

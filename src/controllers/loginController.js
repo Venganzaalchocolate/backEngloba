@@ -33,7 +33,7 @@ const login = async (req, res) => {
     // } else {
     // 2. Generar código de un solo uso
     const codigo = generarCodigoTemporal();
-    console.log(codigo)
+    
     // 3. Actualizar (o crear) documento en MongoDB con upsert
     await OneTimeCode.findOneAndUpdate(
         { userId: user._id },
@@ -59,7 +59,7 @@ const login = async (req, res) => {
         footerText: "Gracias por usar nuestra plataforma. Si tienes dudas, contáctanos."
     });
 
-    console.log('pasa')
+    
     try {
       const emailSent= await sendEmail(user.email, asunto, textoPlano, htmlContent);  
     } catch (error) {
