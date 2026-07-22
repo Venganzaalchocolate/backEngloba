@@ -36,6 +36,7 @@ const moduleScopeRoutes = require("./routes/moduleScopeRoutes");
 const documentationReceiptTemplaterRoutes = require("./routes/documentationReceiptTemplaterRoutes");
 const anideCentroManagerRoutes = require("./routes/anideRoutes");
 const moodleRoutes = require("./routes/moodleRoutes");
+const communicationPublicationRoutes = require("./routes/communicationPublicationRoutes");
 
 const {
   oidcApiRoutes,
@@ -169,6 +170,7 @@ app.use("/api", documentationReceiptTemplaterRoutes);
 app.use("/api", anideCentroManagerRoutes);
 app.use("/api", oidcApiRoutes);
 app.use("/api", moodleRoutes);
+app.use("/api", communicationPublicationRoutes);
 
 /* ----------  Manejador de errores ---------- */
 app.use((err, req, res, next) => {

@@ -358,6 +358,19 @@ const {
   postMoodleUndoAssignment,
 } = require("./moodleController");
 
+
+  // ----------------------------- COMUNICACION CONTROLLER -------------------------------
+  const {
+  getWordpressPosts,
+  getInstagramMedia,
+  getCommunicationConnections,
+  postCreateCommunicationPublication,
+  getCommunicationPublications,
+  getCommunicationPublicationById,
+  postUpdateCommunicationPublication,
+  postDeleteCommunicationPublication,
+  } = require("./communicationPublicationController");
+
 // ============================================================================
 // EXPORTS (sin duplicados, sin comas raras)
 // ============================================================================
@@ -670,6 +683,16 @@ module.exports = {
   postMoodleManageCourseEnrolments,
   postMoodleManageSystemRole,
   postMoodleInfo,
-  postMoodleUndoAssignment
+  postMoodleUndoAssignment,
+
+  // ----------------------------- COMUNICACION CONTROLLER -------------------------------
+  getWordpressPosts,
+  getInstagramMedia,
+  getCommunicationConnections,
+  postCreateCommunicationPublication,
+  getCommunicationPublications,
+  getCommunicationPublicationById,
+  postUpdateCommunicationPublication,
+  postDeleteCommunicationPublication,
 };
 

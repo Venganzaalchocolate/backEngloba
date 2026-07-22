@@ -31,6 +31,7 @@ const PeriodEndReason = require('./periodEndReason');
 const OidcRecord=require('./oidcRecord');
 const MoodleAssignment = require('./moodleAssignment');
 const SesameWorkEntryAlert = require("./sesameWorkEntryAlert");
+const CommunicationPublication = require("./communicationPublication");
 
 
 module.exports = {
@@ -65,5 +66,6 @@ module.exports = {
     PeriodEndReason,
     OidcRecord,
     MoodleAssignment,
-    SesameWorkEntryAlert
+    SesameWorkEntryAlert,
+    CommunicationPublication
 }
