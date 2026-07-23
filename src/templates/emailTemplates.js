@@ -4479,3 +4479,431 @@ export function buildSesameNoClockInsSummaryHtmlEmail({
 </body>
 </html>`;
 }
+
+/* =========================================================
+   PUBLICACIÓN COMPLETADA EN WORDPRESS E INSTAGRAM
+========================================================= */
+
+export function buildCommunicationPublicationCompletedPlainText({
+  title = "",
+  programs = [],
+  dispositives = [],
+  wordpressUrl = "",
+  instagramUrl = "",
+  appUrl = "https://app.engloba.org.es",
+  supportEmail = "comunicacion@engloba.org.es",
+} = {}) {
+  const programList = programs.length
+    ? programs.map((program) => `• ${program}`).join("\n")
+    : "• Sin programas asociados";
+
+  const dispositiveList = dispositives.length
+    ? dispositives.map((dispositive) => `• ${dispositive}`).join("\n")
+    : "• Sin dispositivos asociados";
+
+  return `Hola:
+
+La siguiente publicación ya está disponible tanto en la web de Asociación Engloba como en Instagram.
+
+TÍTULO
+${title}
+
+PROGRAMAS
+${programList}
+
+DISPOSITIVOS
+${dispositiveList}
+
+ENLACES
+• Noticia en WordPress: ${wordpressUrl}
+• Publicación en Instagram: ${instagramUrl}
+• Aplicación de Engloba: ${appUrl}
+
+Este correo es meramente informativo y no requiere ninguna acción.
+
+Un saludo,
+
+Departamento de Comunicación y Desarrollo Tecnológico
+Asociación Engloba
+
+Contacto: ${supportEmail}`;
+}
+
+
+export function buildCommunicationPublicationCompletedHtmlEmail({
+  title = "",
+  programs = [],
+  dispositives = [],
+  wordpressUrl = "",
+  instagramUrl = "",
+  appUrl = "https://app.engloba.org.es",
+  logoUrl = "https://app.engloba.org.es/graphic/logotipo_blanco.png",
+  supportEmail = "comunicacion@engloba.org.es",
+} = {}) {
+  const escapeHtml = (value = "") =>
+    String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+
+  const safeTitle = escapeHtml(title);
+
+  const programsHtml = programs.length
+    ? programs
+        .map(
+          (program) => `
+            <span class="tag">${escapeHtml(program)}</span>
+          `
+        )
+        .join("")
+    : `<span class="empty">Sin programas asociados</span>`;
+
+  const dispositivesHtml = dispositives.length
+    ? dispositives
+        .map(
+          (dispositive) => `
+            <span class="tag">${escapeHtml(dispositive)}</span>
+          `
+        )
+        .join("")
+    : `<span class="empty">Sin dispositivos asociados</span>`;
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Publicación completada</title>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #ededed;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #333333;
+      line-height: 1.55;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    .container {
+      max-width: 680px;
+      margin: 40px auto;
+      overflow: hidden;
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    }
+
+    .header {
+      padding: 28px 24px;
+      color: #ffffff;
+      text-align: center;
+      background: linear-gradient(
+        90deg,
+        #4f529f 0%,
+        #8f96d0 100%
+      );
+    }
+
+    .logo {
+      display: block;
+      width: 150px;
+      max-width: 100%;
+      height: auto;
+      margin: 0 auto 12px;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+    }
+
+    .header p {
+      margin: 6px 0 0;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    .content {
+      padding: 32px 36px;
+      font-size: 16px;
+    }
+
+    .content p {
+      margin: 0 0 16px;
+    }
+
+    .publication-title {
+      margin: 20px 0;
+      padding: 18px;
+      color: #333333;
+      font-size: 19px;
+      font-weight: 700;
+      line-height: 1.4;
+      background: #f8f9ff;
+      border: 1px solid #e3e5fa;
+      border-left: 5px solid #4f529f;
+      border-radius: 10px;
+    }
+
+    .section {
+      margin: 22px 0 0;
+    }
+
+    .section h2 {
+      margin: 0 0 10px;
+      color: #4f529f;
+      font-size: 17px;
+    }
+
+    .block {
+      padding: 14px 16px;
+      background: #f8f9ff;
+      border: 1px solid #e7e9ff;
+      border-radius: 10px;
+    }
+
+    .tag {
+      display: inline-block;
+      margin: 3px 4px 3px 0;
+      padding: 5px 10px;
+      color: #4f529f;
+      font-size: 13px;
+      font-weight: 700;
+      background: #eef0ff;
+      border: 1px solid #dfe2ff;
+      border-radius: 999px;
+    }
+
+    .empty {
+      color: #777777;
+      font-size: 14px;
+      font-style: italic;
+    }
+
+    .buttons {
+      margin: 28px 0 12px;
+      text-align: center;
+    }
+
+    .button-table {
+      margin: 8px auto;
+    }
+
+    .button-cell {
+      background: #4f529f;
+      border-radius: 40px;
+    }
+
+    .button {
+      display: inline-block;
+      padding: 12px 22px;
+      color: #ffffff !important;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none !important;
+      background: linear-gradient(
+        90deg,
+        #4f529f 0%,
+        #8f96d0 100%
+      );
+      border-radius: 40px;
+    }
+
+    .notice {
+      margin-top: 24px;
+      padding: 13px 15px;
+      color: #555555;
+      font-size: 14px;
+      background: #fff8e8;
+      border: 1px solid #f3d38a;
+      border-radius: 10px;
+    }
+
+    .signature {
+      margin-top: 24px;
+      color: #555555;
+    }
+
+    .link {
+      color: #4f529f;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .footer {
+      padding: 18px 16px;
+      color: #444444;
+      font-size: 13px;
+      text-align: center;
+      background: #bec3f4;
+    }
+
+    @media only screen and (max-width: 600px) {
+      .container {
+        margin: 0;
+        border-radius: 0;
+      }
+
+      .content {
+        padding: 24px 20px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+
+    <div class="header">
+      ${
+        logoUrl
+          ? `<img
+              src="${escapeHtml(logoUrl)}"
+              alt="Asociación Engloba"
+              class="logo"
+            >`
+          : ""
+      }
+
+      <h1>Publicación completada</h1>
+
+      <p>
+        La actividad ya está publicada en la web y en Instagram
+      </p>
+    </div>
+
+    <div class="content">
+      <p>Hola:</p>
+
+      <p>
+        Os informamos de que la siguiente publicación ya está
+        disponible tanto en la <strong>web de Asociación Engloba</strong>
+        como en <strong>Instagram</strong>.
+      </p>
+
+      <div class="publication-title">
+        ${safeTitle}
+      </div>
+
+      <div class="section">
+        <h2>Programas relacionados</h2>
+
+        <div class="block">
+          ${programsHtml}
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Dispositivos relacionados</h2>
+
+        <div class="block">
+          ${dispositivesHtml}
+        </div>
+      </div>
+
+      <div class="buttons">
+
+        <table
+          role="presentation"
+          cellspacing="0"
+          cellpadding="0"
+          align="center"
+          class="button-table"
+        >
+          <tr>
+            <td class="button-cell">
+              <a
+                href="${escapeHtml(wordpressUrl)}"
+                target="_blank"
+                rel="noopener"
+                class="button"
+              >
+                Ver noticia en WordPress ▸
+              </a>
+            </td>
+          </tr>
+        </table>
+
+        <table
+          role="presentation"
+          cellspacing="0"
+          cellpadding="0"
+          align="center"
+          class="button-table"
+        >
+          <tr>
+            <td class="button-cell">
+              <a
+                href="${escapeHtml(instagramUrl)}"
+                target="_blank"
+                rel="noopener"
+                class="button"
+              >
+                Ver publicación en Instagram ▸
+              </a>
+            </td>
+          </tr>
+        </table>
+
+        <table
+          role="presentation"
+          cellspacing="0"
+          cellpadding="0"
+          align="center"
+          class="button-table"
+        >
+          <tr>
+            <td class="button-cell">
+              <a
+                href="${escapeHtml(appUrl)}"
+                target="_blank"
+                rel="noopener"
+                class="button"
+              >
+                Abrir aplicación de Engloba ▸
+              </a>
+            </td>
+          </tr>
+        </table>
+
+      </div>
+
+      <div class="notice">
+        Este correo es meramente informativo y no requiere ninguna
+        acción.
+      </div>
+
+      <p class="signature">
+        Un saludo,<br>
+        <strong>
+          Departamento de Comunicación y Desarrollo Tecnológico
+        </strong><br>
+        Asociación Engloba
+      </p>
+
+      <p style="font-size:14px;color:#777777;">
+        Contacto:
+        <a
+          href="mailto:${escapeHtml(supportEmail)}"
+          class="link"
+        >
+          ${escapeHtml(supportEmail)}
+        </a>
+      </p>
+    </div>
+
+    <div class="footer">
+      © ${new Date().getFullYear()} Asociación Engloba
+    </div>
+
+  </div>
+</body>
+</html>`;
+}

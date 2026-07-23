@@ -125,22 +125,31 @@ const communicationPublicationSchema = new Schema(
       trim: true,
     },
 
-    scopeType: {
-      type: String,
-      enum: ["program", "dispositive"],
-      required: true,
+    /*
+      Una publicación puede estar relacionada con varios
+      programas y varios dispositivos.
+
+      Los arrays también pueden estar vacíos para publicaciones
+      institucionales o generales de Asociación Engloba.
+    */
+    programs: {
+      type: [
+        {
+          type: Schema.Types.ObjectId,
+          ref: "Program",
+        },
+      ],
+      default: [],
     },
 
-    program: {
-      type: Schema.Types.ObjectId,
-      ref: "Program",
-      required: true,
-    },
-
-    dispositive: {
-      type: Schema.Types.ObjectId,
-      ref: "Dispositive",
-      default: null,
+    dispositives: {
+      type: [
+        {
+          type: Schema.Types.ObjectId,
+          ref: "Dispositive",
+        },
+      ],
+      default: [],
     },
 
     publicationDate: {
@@ -258,8 +267,8 @@ const communicationPublicationSchema = new Schema(
    ÍNDICES
 ========================================================= */
 
-communicationPublicationSchema.index({ program: 1 });
-communicationPublicationSchema.index({ dispositive: 1 });
+communicationPublicationSchema.index({ programs: 1 });
+communicationPublicationSchema.index({ dispositives: 1 });
 communicationPublicationSchema.index({ publicationDate: -1 });
 communicationPublicationSchema.index({ platforms: 1 });
 communicationPublicationSchema.index({ "wordpress.publishedAt": 1 });

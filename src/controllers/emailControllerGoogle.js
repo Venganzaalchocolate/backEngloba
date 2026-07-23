@@ -12,7 +12,7 @@ const {
   ScopedRoleRule,
   Provinces,
 } = require('../models/indexModels');
-const {   buildSesameInactiveByLeavePlainText, buildSesameInactiveByLeaveHtmlEmail, buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail, buildEqualityLgtbiqSurveyPlainText, buildEqualityLgtbiqSurveyHtmlEmail, buildMiniTutorialsOpsPlainText, buildMiniTutorialsOpsHtmlEmail, buildSignatureUpdateHtmlEmail, buildSignatureUpdatePlainText, buildLeaveExpectedEndReminderPlainText, buildLeaveExpectedEndReminderHtmlEmail, buildLeaveSyncInfoPlainText, buildLeaveSyncInfoHtmlEmail, buildExpenseControlInstallHtmlEmail, buildExpenseControlInstallPlainText, buildRefugeeDaySpecialInvitationPlainText, buildRefugeeDaySpecialInvitationHtmlEmail } = require('../templates/emailTemplates');
+const {   buildCommunicationPublicationCompletedPlainText, buildCommunicationPublicationCompletedHtmlEmail, buildSesameInactiveByLeavePlainText, buildSesameInactiveByLeaveHtmlEmail, buildSesameOpsPlainText, buildSesameOpsHtmlEmail, buildSesamePlainText, buildSesameHtmlEmail, buildPlainText, buildHtmlEmail, buildChangeRequestNotificationHtml, buildChangeRequestNotificationPlainText, buildMissingDniPlainText, buildMissingDniHtmlEmail, buildWelcomeWorkerPlainText, buildWelcomeWorkerHtmlEmail, buildPayrollAppNotificationPlainText, buildPayrollAppNotificationHtmlEmail, buildChristmasEmployeesPlainText, buildChristmasEmployeesHtmlEmail, buildEqualityLgtbiqSurveyPlainText, buildEqualityLgtbiqSurveyHtmlEmail, buildMiniTutorialsOpsPlainText, buildMiniTutorialsOpsHtmlEmail, buildSignatureUpdateHtmlEmail, buildSignatureUpdatePlainText, buildLeaveExpectedEndReminderPlainText, buildLeaveExpectedEndReminderHtmlEmail, buildLeaveSyncInfoPlainText, buildLeaveSyncInfoHtmlEmail, buildExpenseControlInstallHtmlEmail, buildExpenseControlInstallPlainText, buildRefugeeDaySpecialInvitationPlainText, buildRefugeeDaySpecialInvitationHtmlEmail } = require('../templates/emailTemplates');
 const { default: mongoose } = require('mongoose');
 
 
@@ -1730,13 +1730,349 @@ async function getManagersCoordinatorsAndSupervisors({
   return Array.from(byId.values());
 }
 
+/* =========================================================
+   AVISO DE PUBLICACIÓN COMPLETADA
+========================================================= */
+
+async function notifyCommunicationPublicationCompleted({
+  publication,
+  testEmail = false,
+  logger = console,
+} = {}) {
+  const log = logger?.log || console.log;
+  const logWarn = logger?.warn || console.warn;
+  const logError = logger?.error || console.error;
+
+  try {
+    if (!publication?._id) {
+      throw new Error("publication es obligatoria");
+    }
+
+    const platforms = Array.from(publication.platforms || []);
+
+    const hasBothPlatforms =
+      platforms.includes("wordpress") &&
+      platforms.includes("instagram");
+
+    const wordpressUrl =
+      String(publication.wordpress?.url || "").trim();
+
+    const instagramUrl =
+      String(publication.instagram?.url || "").trim();
+
+    /*
+     * Solo se avisa cuando la publicación está prevista
+     * tanto para WordPress como para Instagram y ambos
+     * enlaces están disponibles.
+     */
+    if (!hasBothPlatforms || !wordpressUrl || !instagramUrl) {
+      return {
+        ok: false,
+        reason: "La publicación no está completada en WordPress e Instagram",
+      };
+    }
+
+    const normalizeId = (value) =>
+      String(value?._id || value || "").trim();
+
+    const programIds = Array.from(
+      new Set(
+        (publication.programs || [])
+          .map(normalizeId)
+          .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      )
+    );
+
+    const dispositiveIds = Array.from(
+      new Set(
+        (publication.dispositives || [])
+          .map(normalizeId)
+          .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      )
+    );
+
+    /*
+     * Cargamos programas y dispositivos con las personas
+     * responsables y coordinadoras asignadas.
+     */
+    const [programs, dispositives] = await Promise.all([
+      programIds.length
+        ? Program.find(
+            {
+              _id: {
+                $in: programIds.map(
+                  (id) => new mongoose.Types.ObjectId(id)
+                ),
+              },
+            },
+            {
+              name: 1,
+              acronym: 1,
+              responsible: 1,
+              coordinators: 1,
+            }
+          ).lean()
+        : [],
+
+      dispositiveIds.length
+        ? Dispositive.find(
+            {
+              _id: {
+                $in: dispositiveIds.map(
+                  (id) => new mongoose.Types.ObjectId(id)
+                ),
+              },
+            },
+            {
+              name: 1,
+              program: 1,
+              responsible: 1,
+              coordinators: 1,
+            }
+          ).lean()
+        : [],
+    ]);
+
+    /*
+     * Algunos dispositivos pueden pertenecer a programas que
+     * no hayan sido incluidos expresamente en publication.programs.
+     * Los cargamos para poder aplicar correctamente la jerarquía.
+     */
+    const parentProgramIds = Array.from(
+      new Set(
+        dispositives
+          .map((dispositive) => normalizeId(dispositive.program))
+          .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      )
+    );
+
+    const missingParentProgramIds = parentProgramIds.filter(
+      (id) => !programs.some((program) => normalizeId(program) === id)
+    );
+
+    if (missingParentProgramIds.length) {
+      const parentPrograms = await Program.find(
+        {
+          _id: {
+            $in: missingParentProgramIds.map(
+              (id) => new mongoose.Types.ObjectId(id)
+            ),
+          },
+        },
+        {
+          name: 1,
+          acronym: 1,
+          responsible: 1,
+          coordinators: 1,
+        }
+      ).lean();
+
+      programs.push(...parentPrograms);
+    }
+
+    const programMap = new Map(
+      programs.map((program) => [
+        normalizeId(program),
+        program,
+      ])
+    );
+
+    const selectedUserIds = new Set();
+
+    const addUsers = (values = []) => {
+      values
+        .map(normalizeId)
+        .filter((id) => mongoose.Types.ObjectId.isValid(id))
+        .forEach((id) => selectedUserIds.add(id));
+    };
+
+    /*
+     * Dispositivo:
+     * responsable
+     * ↓ si no existe
+     * coordinadores
+     * ↓ si tampoco existen
+     * responsable del programa
+     * ↓ si no existe
+     * coordinadores del programa
+     */
+    for (const dispositive of dispositives) {
+      const responsible = dispositive.responsible || [];
+      const coordinators = dispositive.coordinators || [];
+
+      if (responsible.length) {
+        addUsers(responsible);
+        continue;
+      }
+
+      if (coordinators.length) {
+        addUsers(coordinators);
+        continue;
+      }
+
+      const parentProgram = programMap.get(
+        normalizeId(dispositive.program)
+      );
+
+      if (!parentProgram) continue;
+
+      const programResponsible =
+        parentProgram.responsible || [];
+
+      const programCoordinators =
+        parentProgram.coordinators || [];
+
+      if (programResponsible.length) {
+        addUsers(programResponsible);
+      } else {
+        addUsers(programCoordinators);
+      }
+    }
+
+    /*
+     * Programas relacionados directamente:
+     * responsable
+     * ↓ si no existe
+     * coordinadores
+     */
+    for (const programId of programIds) {
+      const program = programMap.get(programId);
+
+      if (!program) continue;
+
+      const responsible = program.responsible || [];
+      const coordinators = program.coordinators || [];
+
+      if (responsible.length) {
+        addUsers(responsible);
+      } else {
+        addUsers(coordinators);
+      }
+    }
+
+    let recipients = [];
+
+    if (testEmail) {
+      recipients = [
+        String(testEmail).trim().toLowerCase(),
+      ].filter(Boolean);
+    } else if (selectedUserIds.size) {
+      const users = await User.find(
+        {
+          _id: {
+            $in: Array.from(selectedUserIds).map(
+              (id) => new mongoose.Types.ObjectId(id)
+            ),
+          },
+          email: {
+            $exists: true,
+            $ne: "",
+          },
+        },
+        {
+          email: 1,
+        }
+      ).lean();
+
+      recipients = Array.from(
+        new Set(
+          users
+            .map((user) =>
+              String(user.email || "").trim().toLowerCase()
+            )
+            .filter((email) => email.includes("@"))
+        )
+      );
+    }
+
+    if (!recipients.length) {
+      logWarn(
+        `[notifyCommunicationPublicationCompleted] Sin destinatarios para "${publication.title}"`
+      );
+
+      return {
+        ok: false,
+        reason: "Sin destinatarios",
+      };
+    }
+
+    const programLabels = Array.from(
+      new Set(
+        programIds
+          .map((id) => programMap.get(id))
+          .filter(Boolean)
+          .map(
+            (program) =>
+              program.acronym ||
+              program.name ||
+              ""
+          )
+          .filter(Boolean)
+      )
+    );
+
+    const dispositiveLabels = Array.from(
+      new Set(
+        dispositives
+          .map((dispositive) => dispositive.name)
+          .filter(Boolean)
+      )
+    );
+
+    const payload = {
+      title: publication.title || "Publicación de Asociación Engloba",
+      programs: programLabels,
+      dispositives: dispositiveLabels,
+      wordpressUrl,
+      instagramUrl,
+    };
+
+    const subject =
+      `Publicación completada · ${payload.title}`;
+
+    const text =
+      buildCommunicationPublicationCompletedPlainText(payload);
+
+    const html =
+      buildCommunicationPublicationCompletedHtmlEmail(payload);
+
+    await sendEmail(
+      recipients,
+      subject,
+      text,
+      html
+    );
+
+    log(
+      `✅ Aviso de publicación completada enviado: "${payload.title}" → ${recipients.join(", ")}`
+    );
+
+    return {
+      ok: true,
+      recipients,
+      subject,
+    };
+  } catch (error) {
+    logError(
+      `[notifyCommunicationPublicationCompleted] ${
+        error?.message || error
+      }`
+    );
+
+    return {
+      ok: false,
+      error: error?.message || String(error),
+    };
+  }
+}
 
 
 module.exports = {
-  sendEmail,          // firma idéntica a tu antiguo SMTP
+  sendEmail,
   generateEmailHTML,
   sendWelcomeEmail,
   notifyDeviceManagersOfChangeRequest,
   notifyCurrentResponsibleManagersOfLeave,
   notifyCurrentResponsibleManagersOfExpectedLeaveEnd,
+  notifyCommunicationPublicationCompleted,
 };
