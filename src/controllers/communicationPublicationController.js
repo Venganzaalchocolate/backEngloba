@@ -925,23 +925,11 @@ const syncPendingCommunicationPublications = async () => {
 module.exports = {
   getWordpressPosts: catchAsync(getWordpressPosts),
   getInstagramMedia: catchAsync(getInstagramMedia),
-  getCommunicationConnections: catchAsync(
-    getCommunicationConnections
-  ),
-  postCreateCommunicationPublication: catchAsync(
-    postCreateCommunicationPublication
-  ),
-  getCommunicationPublications: catchAsync(
-    getCommunicationPublications
-  ),
-  getCommunicationPublicationById: catchAsync(
-    getCommunicationPublicationById
-  ),
-  postUpdateCommunicationPublication: catchAsync(
-    postUpdateCommunicationPublication
-  ),
-  postDeleteCommunicationPublication: catchAsync(
-    postDeleteCommunicationPublication
-  ),
+  getCommunicationConnections: catchAsync(getCommunicationConnections),
+  postCreateCommunicationPublication: catchAsync(postCreateCommunicationPublication),
+  getCommunicationPublications: catchAsync(getCommunicationPublications),
+  getCommunicationPublicationById: catchAsync(getCommunicationPublicationById),
+  postUpdateCommunicationPublication: catchAsync(postUpdateCommunicationPublication),
+  postDeleteCommunicationPublication: catchAsync(postDeleteCommunicationPublication),
   syncPendingCommunicationPublications,
 };
