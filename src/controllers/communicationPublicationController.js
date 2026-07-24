@@ -6,66 +6,120 @@ const {
   notifyCommunicationPublicationCompleted,
 } = require("./emailControllerGoogle");
 
-const madridDateFormatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" });
+const madridDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/Madrid",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 
-const populatePublication = (query) => query
-  .populate("programs", "name acronym active")
-  .populate({
-    path: "dispositives",
-    select: "name active province program",
-    populate: [
-      { path: "province", select: "name" },
-      { path: "program", select: "name acronym" },
-    ],
-  })
-  .populate("createdBy", "firstName lastName")
-  .populate("updatedBy", "firstName lastName");
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+const populatePublication = (query) =>
+  query
+    .populate("programs", "name acronym active")
+    .populate({
+      path: "dispositives",
+      select: "name active province program",
+      populate: [
+        { path: "province", select: "name" },
+        { path: "program", select: "name acronym" },
+      ],
+    })
+    .populate("createdBy", "firstName lastName")
+    .populate("updatedBy", "firstName lastName");
 
 const assertRoot = (req) => {
-  if (req.user.role !== "root") throw new ClientError("No tienes permisos para realizar esta acción", 403);
+  if (req.user?.role !== "root") {
+    throw new ClientError(
+      "No tienes permisos para realizar esta acción",
+      403
+    );
+  }
 };
 
-const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const normalizeText = (value = "") => String(value).replace(/<[^>]*>/g, " ").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-const normalizeUrl = (value = "") => String(value).trim().split("?")[0].replace(/\/+$/, "").toLowerCase();
-const getMadridDate = (value) => madridDateFormatter.format(new Date(value));
-const getWordpressUrl = (post) => post.link;
-const getWordpressTitle = (post) => typeof post.title === "string" ? post.title : post.title.rendered;
-const getWordpressDate = (post) => post.date;
-const getWordpressPublicationDate = (post) => getWordpressDate(post).slice(0, 10);
-const unique = (values) => [...new Set(values)];
+const escapeRegex = (value = "") =>
+  String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const normalizeText = (value = "") =>
+  String(value)
+    .replace(/<[^>]*>/g, " ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+const normalizeUrl = (value = "") =>
+  String(value)
+    .trim()
+    .split("?")[0]
+    .replace(/\/+$/, "")
+    .toLowerCase();
+
+const getMadridDate = (value) =>
+  madridDateFormatter.format(new Date(value));
+
+const getWordpressUrl = (post) => post?.link || post?.url || "";
+const getWordpressTitle = (post) =>
+  typeof post?.title === "string"
+    ? post.title
+    : post?.title?.rendered || "";
+const getWordpressDate = (post) =>
+  post?.date || post?.publishedAt || null;
+
+const unique = (values = []) => [
+  ...new Set(Array.isArray(values) ? values : []),
+];
 
 const calculateStatus = (publication) => {
-  if (!publication.platforms.length) return "draft";
-  const published = publication.platforms.reduce((total, platform) => total + Number(Boolean(platform === "wordpress" ? publication.wordpress?.postId || publication.wordpress?.url : publication.instagram?.mediaId || publication.instagram?.url)), 0);
-  if (published === publication.platforms.length) return "complete";
-  if (published) return "partial";
-  return publication.publicationDate ? "scheduled" : "draft";
+  const platforms = Array.from(publication.platforms || []);
+
+  if (!platforms.length) return "draft";
+
+  const hasWordpress = Boolean(
+    publication.wordpress?.postId || publication.wordpress?.url
+  );
+
+  const hasInstagram = Boolean(
+    publication.instagram?.mediaId || publication.instagram?.url
+  );
+
+  let published = 0;
+
+  if (platforms.includes("wordpress") && hasWordpress) published += 1;
+  if (platforms.includes("instagram") && hasInstagram) published += 1;
+
+  if (published === platforms.length) return "complete";
+  if (published > 0) return "partial";
+
+  const hasScheduledDate =
+    (platforms.includes("wordpress") &&
+      Boolean(publication.wordpress?.publicationDate)) ||
+    (platforms.includes("instagram") &&
+      Boolean(publication.instagram?.publicationDate));
+
+  return hasScheduledDate ? "scheduled" : "draft";
 };
 
 const notifyIfPublicationBecameComplete = async (
   publication,
   previousStatus = null
 ) => {
-  const platforms = Array.from(
-    publication?.platforms || []
-  );
+  const platforms = Array.from(publication?.platforms || []);
 
   const becameComplete =
-    previousStatus !== "complete" &&
-    publication?.status === "complete";
+    previousStatus !== "complete" && publication?.status === "complete";
 
   const hasBothPlatforms =
-    platforms.includes("wordpress") &&
-    platforms.includes("instagram");
+    platforms.includes("wordpress") && platforms.includes("instagram");
 
   if (!becameComplete || !hasBothPlatforms) return;
 
   try {
-    const result =
-      await notifyCommunicationPublicationCompleted({
-        publication,
-      });
+    const result = await notifyCommunicationPublicationCompleted({
+      publication,
+    });
 
     if (!result?.ok) {
       console.warn(
@@ -81,19 +135,115 @@ const notifyIfPublicationBecameComplete = async (
   }
 };
 
-const buildPublicationData = ({ title, publicationDate, platforms, programs, dispositives, wordpress, instagram }) => ({
-  title: title.trim(),
-  publicationDate,
-  platforms: unique(platforms),
-  programs: unique(programs),
-  dispositives: unique(dispositives),
-  wordpress: { url: wordpress.url?.trim() || null },
-  instagram: { url: instagram.url?.trim() || null, matchText: instagram.matchText.trim() },
-});
+const validatePublicationDate = (date, platformLabel) => {
+  if (!DATE_REGEX.test(String(date || ""))) {
+    throw new ClientError(
+      `La fecha prevista de ${platformLabel} no es válida`,
+      400
+    );
+  }
+};
+
+const buildPublicationData = ({
+  title,
+  platforms = [],
+  programs = [],
+  dispositives = [],
+  wordpress = {},
+  instagram = {},
+} = {}) => {
+  const normalizedTitle = String(title || "").trim();
+  const normalizedPlatforms = unique(platforms).filter((platform) =>
+    ["wordpress", "instagram"].includes(platform)
+  );
+
+  if (!normalizedTitle) {
+    throw new ClientError("El título es obligatorio", 400);
+  }
+
+  if (!normalizedPlatforms.length) {
+    throw new ClientError("Debes seleccionar al menos un medio", 400);
+  }
+
+  const wordpressPublicationDate = normalizedPlatforms.includes("wordpress")
+    ? String(wordpress.publicationDate || "").trim()
+    : null;
+
+  const instagramPublicationDate = normalizedPlatforms.includes("instagram")
+    ? String(instagram.publicationDate || "").trim()
+    : null;
+
+  if (normalizedPlatforms.includes("wordpress")) {
+    validatePublicationDate(wordpressPublicationDate, "WordPress");
+  }
+
+  if (normalizedPlatforms.includes("instagram")) {
+    validatePublicationDate(instagramPublicationDate, "Instagram");
+  }
+
+  const instagramUrl = String(instagram.url || "").trim();
+  const instagramMatchText = String(instagram.matchText || "").trim();
+
+  if (
+    normalizedPlatforms.includes("instagram") &&
+    !instagramUrl &&
+    !instagramMatchText
+  ) {
+    throw new ClientError(
+      "Debes indicar el enlace o un fragmento del texto de Instagram",
+      400
+    );
+  }
+
+  return {
+    title: normalizedTitle,
+    platforms: normalizedPlatforms,
+    programs: unique(programs),
+    dispositives: unique(dispositives),
+    wordpress: {
+      publicationDate: wordpressPublicationDate,
+      url: normalizedPlatforms.includes("wordpress")
+        ? String(wordpress.url || "").trim() || null
+        : null,
+    },
+    instagram: {
+      publicationDate: instagramPublicationDate,
+      url: normalizedPlatforms.includes("instagram")
+        ? instagramUrl || null
+        : null,
+      matchText: normalizedPlatforms.includes("instagram")
+        ? instagramMatchText
+        : "",
+    },
+  };
+};
 
 const clearUnusedPlatforms = (publication) => {
-  if (!publication.platforms.includes("wordpress")) publication.wordpress = { postId: null, url: null, publishedAt: null, stats: [] };
-  if (!publication.platforms.includes("instagram")) publication.instagram = { mediaId: null, url: null, matchText: "", matchStatus: "pending", caption: "", mediaType: "", publishedAt: null, stats: [] };
+  const platforms = Array.from(publication.platforms || []);
+
+  if (!platforms.includes("wordpress")) {
+    publication.wordpress = {
+      publicationDate: null,
+      postId: null,
+      url: null,
+      publishedAt: null,
+      stats: [],
+    };
+  }
+
+  if (!platforms.includes("instagram")) {
+    publication.instagram = {
+      publicationDate: null,
+      mediaId: null,
+      url: null,
+      matchText: "",
+      matchStatus: "pending",
+      caption: "",
+      mediaType: "",
+      publishedAt: null,
+      stats: [],
+    };
+  }
 };
 
 const resetWordpressMatch = (publication) => {
@@ -111,77 +261,179 @@ const resetInstagramMatch = (publication) => {
   publication.instagram.stats = [];
 };
 
-const matchWordpressPublication = (publication, posts) => {
-  if (!publication.platforms.includes("wordpress") || publication.wordpress?.postId) return;
-  const expectedUrl = normalizeUrl(publication.wordpress.url);
+const matchWordpressPublication = (publication, posts = []) => {
+  if (
+    !publication.platforms?.includes("wordpress") ||
+    publication.wordpress?.postId
+  ) {
+    return;
+  }
+
+  const expectedUrl = normalizeUrl(publication.wordpress?.url);
   const expectedTitle = normalizeText(publication.title);
+
   const candidates = expectedUrl
-    ? posts.filter((post) => normalizeUrl(getWordpressUrl(post)) === expectedUrl)
+    ? posts.filter(
+        (post) => normalizeUrl(getWordpressUrl(post)) === expectedUrl
+      )
     : posts.filter((post) => {
-      const title = normalizeText(getWordpressTitle(post));
-      return title.includes(expectedTitle) || expectedTitle.includes(title);
-    });
+        const title = normalizeText(getWordpressTitle(post));
+        return (
+          title &&
+          expectedTitle &&
+          (title.includes(expectedTitle) || expectedTitle.includes(title))
+        );
+      });
+
   if (candidates.length !== 1) return;
+
   const post = candidates[0];
+  const publishedAt = getWordpressDate(post);
+
   publication.wordpress.postId = Number(post.id);
   publication.wordpress.url = getWordpressUrl(post);
-  publication.wordpress.publishedAt = new Date(getWordpressDate(post));
+  publication.wordpress.publishedAt = publishedAt
+    ? new Date(publishedAt)
+    : null;
 };
 
-const matchInstagramPublication = (publication, media) => {
-  if (!publication.platforms.includes("instagram") || publication.instagram?.mediaId) return;
-  const expectedUrl = normalizeUrl(publication.instagram.url);
-  const matchText = normalizeText(publication.instagram.matchText);
+const matchInstagramPublication = (publication, media = []) => {
+  if (
+    !publication.platforms?.includes("instagram") ||
+    publication.instagram?.mediaId
+  ) {
+    return;
+  }
+
+  const expectedUrl = normalizeUrl(publication.instagram?.url);
+  const matchText = normalizeText(publication.instagram?.matchText);
+
+  if (!expectedUrl && !matchText) {
+    publication.instagram.matchStatus = "pending";
+    return;
+  }
+
   const candidates = expectedUrl
-    ? media.filter((item) => normalizeUrl(item.permalink) === expectedUrl)
-    : media.filter((item) => normalizeText(item.caption).includes(matchText));
+    ? media.filter(
+        (item) => normalizeUrl(item.permalink) === expectedUrl
+      )
+    : media.filter((item) =>
+        normalizeText(item.caption).includes(matchText)
+      );
+
   if (!candidates.length) {
     publication.instagram.matchStatus = "pending";
     return;
   }
+
   if (candidates.length > 1) {
     publication.instagram.matchStatus = "ambiguous";
     return;
   }
+
   const item = candidates[0];
+
   publication.instagram.mediaId = item.id;
   publication.instagram.url = item.permalink;
   publication.instagram.caption = item.caption || "";
-  publication.instagram.mediaType = item.media_type;
-  publication.instagram.publishedAt = new Date(item.timestamp);
+  publication.instagram.mediaType = item.media_type || "";
+  publication.instagram.publishedAt = item.timestamp
+    ? new Date(item.timestamp)
+    : null;
   publication.instagram.matchStatus = "matched";
 };
 
 const syncExternalPublicationData = async (publication) => {
-  if (publication.publicationDate > getMadridDate(new Date())) return;
-  const needsWordpress = publication.platforms.includes("wordpress") && !publication.wordpress?.postId;
-  const needsInstagram = publication.platforms.includes("instagram") && !publication.instagram?.mediaId;
-  const [posts, instagram] = await Promise.all([
-    needsWordpress ? wordpressService.getAllPosts({ after: `${publication.publicationDate}T00:00:00`, before: `${publication.publicationDate}T23:59:59` }) : [],
-    needsInstagram ? instagramService.getAllMedia({ limit: 100, maxPages: 20 }) : { media: [] },
+  const today = getMadridDate(new Date());
+  const wordpressDate = publication.wordpress?.publicationDate;
+  const instagramDate = publication.instagram?.publicationDate;
+
+  const needsWordpress =
+    publication.platforms?.includes("wordpress") &&
+    !publication.wordpress?.postId &&
+    wordpressDate &&
+    wordpressDate <= today;
+
+  const needsInstagram =
+    publication.platforms?.includes("instagram") &&
+    !publication.instagram?.mediaId &&
+    instagramDate &&
+    instagramDate <= today;
+
+  const [wordpressResult, instagramResult] = await Promise.allSettled([
+    needsWordpress
+      ? wordpressService.getAllPosts({
+          after: `${wordpressDate}T00:00:00`,
+          before: `${wordpressDate}T23:59:59`,
+        })
+      : Promise.resolve({ posts: [] }),
+    needsInstagram
+      ? instagramService.getAllMedia({ limit: 100, maxPages: 20 })
+      : Promise.resolve({ media: [] }),
   ]);
-  if (needsWordpress) matchWordpressPublication(publication, posts);
-  if (needsInstagram) matchInstagramPublication(publication, instagram.media.filter((item) => getMadridDate(item.timestamp) === publication.publicationDate));
+
+  const errors = [];
+
+  if (wordpressResult.status === "fulfilled" && needsWordpress) {
+    matchWordpressPublication(
+      publication,
+      wordpressResult.value?.posts || []
+    );
+  } else if (wordpressResult.status === "rejected") {
+    errors.push(wordpressResult.reason?.message || "Error en WordPress");
+  }
+
+  if (instagramResult.status === "fulfilled" && needsInstagram) {
+    const mediaFromDate = (instagramResult.value?.media || []).filter(
+      (item) => getMadridDate(item.timestamp) === instagramDate
+    );
+
+    matchInstagramPublication(publication, mediaFromDate);
+  } else if (instagramResult.status === "rejected") {
+    errors.push(instagramResult.reason?.message || "Error en Instagram");
+  }
+
+  return errors;
 };
 
-const groupByDate = (items, getDate) => {
-  const groups = new Map();
-  for (const item of items) {
-    const date = getDate(item);
-    if (!groups.has(date)) groups.set(date, []);
-    groups.get(date).push(item);
-  }
-  return groups;
-};
+/* =========================================================
+   CONEXIONES EXTERNAS
+========================================================= */
 
 const getWordpressPosts = async (req, res) => {
-  const { after, before, page = 1, perPage = 100, all = false } = req.body;
-  response(res, 200, all ? await wordpressService.getAllPosts({ after, before }) : await wordpressService.listPosts({ after, before, page, perPage }));
+  const {
+    after,
+    before,
+    page = 1,
+    perPage = 100,
+    all = false,
+  } = req.body;
+
+  const result = all
+    ? await wordpressService.getAllPosts({ after, before })
+    : await wordpressService.listPosts({
+        after,
+        before,
+        page,
+        perPage,
+      });
+
+  response(res, 200, result);
 };
 
 const getInstagramMedia = async (req, res) => {
-  const { limit = 100, after, all = false, maxPages = 20 } = req.body;
-  response(res, 200, all ? await instagramService.getAllMedia({ limit, maxPages }) : await instagramService.listMedia({ limit, after }));
+  const {
+    limit = 100,
+    after,
+    all = false,
+    maxPages = 20,
+  } = req.body;
+
+  const result = all
+    ? await instagramService.getAllMedia({ limit, maxPages })
+    : await instagramService.listMedia({ limit, after });
+
+  response(res, 200, result);
 };
 
 const getCommunicationConnections = async (req, res) => {
@@ -189,130 +441,319 @@ const getCommunicationConnections = async (req, res) => {
     wordpressService.listPosts({ page: 1, perPage: 1, order: "desc" }),
     instagramService.listMedia({ limit: 1 }),
   ]);
+
   response(res, 200, {
-    wordpress: { connected: wordpress.status === "fulfilled", sample: wordpress.status === "fulfilled" ? wordpress.value.posts[0] || null : null, error: wordpress.status === "rejected" ? wordpress.reason.message : null },
-    instagram: { connected: instagram.status === "fulfilled", sample: instagram.status === "fulfilled" ? instagram.value.media[0] || null : null, error: instagram.status === "rejected" ? instagram.reason.message : null },
+    wordpress: {
+      connected: wordpress.status === "fulfilled",
+      sample:
+        wordpress.status === "fulfilled"
+          ? wordpress.value.posts[0] || null
+          : null,
+      error:
+        wordpress.status === "rejected"
+          ? wordpress.reason.message
+          : null,
+    },
+    instagram: {
+      connected: instagram.status === "fulfilled",
+      sample:
+        instagram.status === "fulfilled"
+          ? instagram.value.media[0] || null
+          : null,
+      error:
+        instagram.status === "rejected"
+          ? instagram.reason.message
+          : null,
+    },
   });
 };
 
+/* =========================================================
+   CREAR
+========================================================= */
+
 const postCreateCommunicationPublication = async (req, res) => {
   assertRoot(req);
+
   const data = buildPublicationData(req.body);
+
   clearUnusedPlatforms(data);
-  await syncExternalPublicationData(data);
+
+  const externalErrors = await syncExternalPublicationData(data);
+
   data.status = calculateStatus(data);
   data.createdBy = req.user._id;
   data.updatedBy = req.user._id;
-  data.history = [{ action: "created", changedBy: req.user._id, details: { status: data.status } }];
+  data.history = [
+    {
+      action: "created",
+      changedBy: req.user._id,
+      details: {
+        status: data.status,
+        wordpressPublicationDate:
+          data.wordpress?.publicationDate || null,
+        instagramPublicationDate:
+          data.instagram?.publicationDate || null,
+        externalErrors,
+      },
+    },
+  ];
+
   const created = await CommunicationPublication.create(data);
 
-await notifyIfPublicationBecameComplete(
-  created,
-  null
-);
+  await notifyIfPublicationBecameComplete(created, null);
 
-const publication = await populatePublication(
-  CommunicationPublication.findById(created._id)
-).lean();
+  const publication = await populatePublication(
+    CommunicationPublication.findById(created._id)
+  ).lean();
+
   response(res, 200, publication);
 };
 
+/* =========================================================
+   LISTAR
+========================================================= */
+
 const getCommunicationPublications = async (req, res) => {
-  const { page = 1, limit = 50, status, medium, program, dispositive, search, dateFrom, dateTo } = req.body;
+  const {
+    page = 1,
+    limit = 50,
+    status,
+    medium,
+    program,
+    dispositive,
+    search,
+    dateFrom,
+    dateTo,
+  } = req.body;
+
+  const currentPage = Math.max(Number(page) || 1, 1);
+  const currentLimit = Math.min(
+    Math.max(Number(limit) || 50, 1),
+    100
+  );
+
   const filter = {};
+
   if (status) filter.status = status;
   if (program) filter.programs = program;
   if (dispositive) filter.dispositives = dispositive;
-  if (search) filter.title = { $regex: escapeRegex(search.trim()), $options: "i" };
-  if (dateFrom || dateTo) {
-    filter.publicationDate = {};
-    if (dateFrom) filter.publicationDate.$gte = dateFrom;
-    if (dateTo) filter.publicationDate.$lte = dateTo;
+
+  if (search?.trim()) {
+    filter.title = {
+      $regex: escapeRegex(search.trim()),
+      $options: "i",
+    };
   }
-  if (medium === "both") filter.platforms = { $all: ["wordpress", "instagram"] };
-  if (medium === "wordpress") filter.platforms = { $all: ["wordpress"], $nin: ["instagram"] };
-  if (medium === "instagram") filter.platforms = { $all: ["instagram"], $nin: ["wordpress"] };
-  if (medium === "pending") filter.status = { $in: ["draft", "scheduled"] };
+
+  if (dateFrom || dateTo) {
+    const dateRange = {};
+
+    if (dateFrom) dateRange.$gte = dateFrom;
+    if (dateTo) dateRange.$lte = dateTo;
+
+    filter.$or = [
+      { "wordpress.publicationDate": dateRange },
+      { "instagram.publicationDate": dateRange },
+    ];
+  }
+
+  if (medium === "both") {
+    filter.platforms = { $all: ["wordpress", "instagram"] };
+  }
+
+  if (medium === "wordpress") {
+    filter.platforms = { $all: ["wordpress"], $nin: ["instagram"] };
+  }
+
+  if (medium === "instagram") {
+    filter.platforms = { $all: ["instagram"], $nin: ["wordpress"] };
+  }
+
+  if (medium === "pending") {
+    filter.status = { $in: ["draft", "scheduled"] };
+  }
+
   const [publications, total] = await Promise.all([
-    populatePublication(CommunicationPublication.find(filter).sort({ publicationDate: -1, createdAt: -1 }).skip((page - 1) * limit).limit(limit)).lean(),
+    populatePublication(
+      CommunicationPublication.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((currentPage - 1) * currentLimit)
+        .limit(currentLimit)
+    ).lean(),
     CommunicationPublication.countDocuments(filter),
   ]);
-  response(res, 200, { publications, page, limit, total, totalPages: Math.ceil(total / limit) });
+
+  response(res, 200, {
+    publications,
+    page: currentPage,
+    limit: currentLimit,
+    total,
+    totalPages: Math.ceil(total / currentLimit),
+  });
 };
 
+/* =========================================================
+   OBTENER UNA PUBLICACIÓN
+========================================================= */
+
 const getCommunicationPublicationById = async (req, res) => {
-  const publication = await populatePublication(CommunicationPublication.findById(req.body.publicationId)).lean();
-  if (!publication) throw new ClientError("Publicación no encontrada", 404);
+  const publication = await populatePublication(
+    CommunicationPublication.findById(req.body.publicationId)
+  ).lean();
+
+  if (!publication) {
+    throw new ClientError("Publicación no encontrada", 404);
+  }
+
   response(res, 200, publication);
 };
 
+/* =========================================================
+   ACTUALIZAR
+========================================================= */
+
 const postUpdateCommunicationPublication = async (req, res) => {
   assertRoot(req);
-  const publication = await CommunicationPublication.findById(req.body.publicationId);
-  if (!publication) throw new ClientError("Publicación no encontrada", 404);
+
+  const publication = await CommunicationPublication.findById(
+    req.body.publicationId
+  );
+
+  if (!publication) {
+    throw new ClientError("Publicación no encontrada", 404);
+  }
+
   const data = buildPublicationData(req.body);
   const previousStatus = publication.status;
-  const dateChanged = data.publicationDate !== publication.publicationDate;
-  const titleChanged = normalizeText(data.title) !== normalizeText(publication.title);
-  const wordpressChanged = dateChanged || normalizeUrl(data.wordpress.url) !== normalizeUrl(publication.wordpress.url) || (!data.wordpress.url && titleChanged);
-  const instagramChanged = dateChanged || normalizeUrl(data.instagram.url) !== normalizeUrl(publication.instagram.url) || normalizeText(data.instagram.matchText) !== normalizeText(publication.instagram.matchText);
+
+  const wordpressDateChanged =
+    data.wordpress.publicationDate !==
+    publication.wordpress?.publicationDate;
+
+  const instagramDateChanged =
+    data.instagram.publicationDate !==
+    publication.instagram?.publicationDate;
+
+  const titleChanged =
+    normalizeText(data.title) !== normalizeText(publication.title);
+
+  const wordpressChanged =
+    wordpressDateChanged ||
+    normalizeUrl(data.wordpress.url) !==
+      normalizeUrl(publication.wordpress?.url) ||
+    (!data.wordpress.url && titleChanged);
+
+  const instagramChanged =
+    instagramDateChanged ||
+    normalizeUrl(data.instagram.url) !==
+      normalizeUrl(publication.instagram?.url) ||
+    normalizeText(data.instagram.matchText) !==
+      normalizeText(publication.instagram?.matchText);
+
   publication.title = data.title;
-  publication.publicationDate = data.publicationDate;
   publication.platforms = data.platforms;
   publication.programs = data.programs;
   publication.dispositives = data.dispositives;
+
+  publication.wordpress.publicationDate =
+    data.wordpress.publicationDate;
   publication.wordpress.url = data.wordpress.url;
+
+  publication.instagram.publicationDate =
+    data.instagram.publicationDate;
   publication.instagram.url = data.instagram.url;
   publication.instagram.matchText = data.instagram.matchText;
-  if (wordpressChanged && publication.platforms.includes("wordpress")) resetWordpressMatch(publication);
-  if (instagramChanged && publication.platforms.includes("instagram")) resetInstagramMatch(publication);
+
+  if (
+    wordpressChanged &&
+    publication.platforms.includes("wordpress")
+  ) {
+    resetWordpressMatch(publication);
+  }
+
+  if (
+    instagramChanged &&
+    publication.platforms.includes("instagram")
+  ) {
+    resetInstagramMatch(publication);
+  }
+
   clearUnusedPlatforms(publication);
-  await syncExternalPublicationData(publication);
+
+  const externalErrors = await syncExternalPublicationData(publication);
+
   publication.status = calculateStatus(publication);
   publication.updatedBy = req.user._id;
-  publication.history.push({ action: "updated", changedBy: req.user._id, details: { previousStatus, status: publication.status } });
+
+  publication.history.push({
+    action: "updated",
+    changedBy: req.user._id,
+    details: {
+      previousStatus,
+      status: publication.status,
+      wordpressPublicationDate:
+        publication.wordpress?.publicationDate || null,
+      instagramPublicationDate:
+        publication.instagram?.publicationDate || null,
+      externalErrors,
+    },
+  });
+
   await publication.save();
 
-await notifyIfPublicationBecameComplete(
-  publication,
-  previousStatus
-);
+  await notifyIfPublicationBecameComplete(
+    publication,
+    previousStatus
+  );
 
-const updated = await populatePublication(
-  CommunicationPublication.findById(publication._id)
-).lean();
+  const updated = await populatePublication(
+    CommunicationPublication.findById(publication._id)
+  ).lean();
+
   response(res, 200, updated);
 };
 
+/* =========================================================
+   ELIMINAR
+========================================================= */
+
 const postDeleteCommunicationPublication = async (req, res) => {
   assertRoot(req);
-  const publication = await CommunicationPublication.findByIdAndDelete(req.body.publicationId);
-  if (!publication) throw new ClientError("Publicación no encontrada", 404);
+
+  const publication =
+    await CommunicationPublication.findByIdAndDelete(
+      req.body.publicationId
+    );
+
+  if (!publication) {
+    throw new ClientError("Publicación no encontrada", 404);
+  }
+
   response(res, 200, { success: true });
 };
+
+/* =========================================================
+   SINCRONIZACIÓN PARA EL CRON
+========================================================= */
 
 const syncPendingCommunicationPublications = async () => {
   const today = getMadridDate(new Date());
 
-  const publications =
-    await CommunicationPublication.find({
-      publicationDate: { $lte: today },
-      $or: [
-        {
-          status: {
-            $in: ["scheduled", "partial"],
-          },
-        },
-        {
-          platforms: "wordpress",
-          "wordpress.postId": null,
-        },
-        {
-          platforms: "instagram",
-          "instagram.mediaId": null,
-        },
-      ],
-    });
+  const publications = await CommunicationPublication.find({
+    $or: [
+      {
+        platforms: "wordpress",
+        "wordpress.postId": null,
+        "wordpress.publicationDate": { $lte: today },
+      },
+      {
+        platforms: "instagram",
+        "instagram.mediaId": null,
+        "instagram.publicationDate": { $lte: today },
+      },
+    ],
+  });
 
   let updated = 0;
   let notifications = 0;
@@ -338,18 +779,16 @@ const syncPendingCommunicationPublications = async () => {
     updated += 1;
 
     const becameComplete =
-      previousStatus !== "complete" &&
-      nextStatus === "complete";
+      previousStatus !== "complete" && nextStatus === "complete";
 
     const hasBothPlatforms =
       publication.platforms?.includes("wordpress") &&
       publication.platforms?.includes("instagram");
 
     if (becameComplete && hasBothPlatforms) {
-      const result =
-        await notifyCommunicationPublicationCompleted({
-          publication,
-        });
+      const result = await notifyCommunicationPublicationCompleted({
+        publication,
+      });
 
       if (result?.ok) {
         notifications += 1;
@@ -369,16 +808,26 @@ const syncPendingCommunicationPublications = async () => {
   };
 };
 
-
-
 module.exports = {
   getWordpressPosts: catchAsync(getWordpressPosts),
   getInstagramMedia: catchAsync(getInstagramMedia),
-  getCommunicationConnections: catchAsync(getCommunicationConnections),
-  postCreateCommunicationPublication: catchAsync(postCreateCommunicationPublication),
-  getCommunicationPublications: catchAsync(getCommunicationPublications),
-  getCommunicationPublicationById: catchAsync(getCommunicationPublicationById),
-  postUpdateCommunicationPublication: catchAsync(postUpdateCommunicationPublication),
-  postDeleteCommunicationPublication: catchAsync(postDeleteCommunicationPublication),
+  getCommunicationConnections: catchAsync(
+    getCommunicationConnections
+  ),
+  postCreateCommunicationPublication: catchAsync(
+    postCreateCommunicationPublication
+  ),
+  getCommunicationPublications: catchAsync(
+    getCommunicationPublications
+  ),
+  getCommunicationPublicationById: catchAsync(
+    getCommunicationPublicationById
+  ),
+  postUpdateCommunicationPublication: catchAsync(
+    postUpdateCommunicationPublication
+  ),
+  postDeleteCommunicationPublication: catchAsync(
+    postDeleteCommunicationPublication
+  ),
   syncPendingCommunicationPublications,
 };

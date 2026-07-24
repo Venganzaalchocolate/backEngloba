@@ -10,9 +10,9 @@ const replaceSnapshot = (snapshot) => [
   },
 ];
 
-const getEarliestPublicationDate = (publications) =>
+const getEarliestWordpressPublicationDate = (publications) =>
   publications
-    .map((publication) => publication.publicationDate)
+    .map((publication) => publication.wordpress?.publicationDate)
     .filter(Boolean)
     .sort()[0] || "2026-01-01";
 
@@ -28,7 +28,7 @@ const collectCommunicationMetrics = async ({
   };
 
   let query = CommunicationPublication.find(filter).sort({
-    publicationDate: -1,
+    createdAt: -1,
   });
 
   if (limit) {
@@ -51,7 +51,7 @@ const collectCommunicationMetrics = async ({
           (publication) => publication.wordpress.url
         ),
         {
-          startDate: getEarliestPublicationDate(
+          startDate: getEarliestWordpressPublicationDate(
             wordpressPublications
           ),
         }
@@ -88,8 +88,7 @@ const collectCommunicationMetrics = async ({
         if (publication.wordpress?.url && !analyticsError) {
           try {
             publication.wordpress.stats = replaceSnapshot({
-              views:
-                viewsByUrl.get(publication.wordpress.url) || 0,
+              views: viewsByUrl.get(publication.wordpress.url) || 0,
             });
 
             summary.wordpressUpdated += 1;

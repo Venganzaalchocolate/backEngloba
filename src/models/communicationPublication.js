@@ -125,13 +125,6 @@ const communicationPublicationSchema = new Schema(
       trim: true,
     },
 
-    /*
-      Una publicación puede estar relacionada con varios
-      programas y varios dispositivos.
-
-      Los arrays también pueden estar vacíos para publicaciones
-      institucionales o generales de Asociación Engloba.
-    */
     programs: {
       type: [
         {
@@ -152,12 +145,6 @@ const communicationPublicationSchema = new Schema(
       default: [],
     },
 
-    publicationDate: {
-      type: String,
-      required: true,
-      match: /^\d{4}-\d{2}-\d{2}$/,
-    },
-
     platforms: {
       type: [
         {
@@ -169,6 +156,11 @@ const communicationPublicationSchema = new Schema(
     },
 
     wordpress: {
+      publicationDate: {
+        type: String,
+        default: null,
+        match: /^\d{4}-\d{2}-\d{2}$/,
+      },
       postId: {
         type: Number,
         default: null,
@@ -189,6 +181,11 @@ const communicationPublicationSchema = new Schema(
     },
 
     instagram: {
+      publicationDate: {
+        type: String,
+        default: null,
+        match: /^\d{4}-\d{2}-\d{2}$/,
+      },
       mediaId: {
         type: String,
         trim: true,
@@ -269,8 +266,9 @@ const communicationPublicationSchema = new Schema(
 
 communicationPublicationSchema.index({ programs: 1 });
 communicationPublicationSchema.index({ dispositives: 1 });
-communicationPublicationSchema.index({ publicationDate: -1 });
 communicationPublicationSchema.index({ platforms: 1 });
+communicationPublicationSchema.index({ "wordpress.publicationDate": -1 });
+communicationPublicationSchema.index({ "instagram.publicationDate": -1 });
 communicationPublicationSchema.index({ "wordpress.publishedAt": 1 });
 communicationPublicationSchema.index({ "instagram.publishedAt": 1 });
 
