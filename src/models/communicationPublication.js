@@ -260,6 +260,45 @@ const communicationPublicationSchema = new Schema(
   }
 );
 
+const calculateVerifiedStatus = (publication) => {
+  const platforms = Array.from(publication.platforms || []);
+
+  if (!platforms.length) return "draft";
+
+  const hasWordpress =
+    Number.isInteger(Number(publication.wordpress?.postId)) &&
+    Number(publication.wordpress.postId) > 0;
+
+  const hasInstagram = Boolean(
+    String(publication.instagram?.mediaId || "").trim()
+  );
+
+  const verifiedPlatforms = [
+    platforms.includes("wordpress") && hasWordpress,
+    platforms.includes("instagram") && hasInstagram,
+  ].filter(Boolean).length;
+
+  if (verifiedPlatforms === platforms.length) return "complete";
+  if (verifiedPlatforms > 0) return "partial";
+
+  const hasScheduledDate = platforms.some((platform) =>
+    platform === "wordpress"
+      ? Boolean(publication.wordpress?.publicationDate)
+      : Boolean(publication.instagram?.publicationDate)
+  );
+
+  return hasScheduledDate ? "scheduled" : "draft";
+};
+
+// Impide guardar `complete` o `partial` solo porque exista una URL.
+communicationPublicationSchema.pre("validate", function (next) {
+  if (this.status !== "error") {
+    this.status = calculateVerifiedStatus(this);
+  }
+
+  next();
+});
+
 /* =========================================================
    ÍNDICES
 ========================================================= */
@@ -271,6 +310,16 @@ communicationPublicationSchema.index({ "wordpress.publicationDate": -1 });
 communicationPublicationSchema.index({ "instagram.publicationDate": -1 });
 communicationPublicationSchema.index({ "wordpress.publishedAt": 1 });
 communicationPublicationSchema.index({ "instagram.publishedAt": 1 });
+communicationPublicationSchema.index({
+  platforms: 1,
+  "wordpress.postId": 1,
+  "wordpress.publicationDate": 1,
+});
+communicationPublicationSchema.index({
+  platforms: 1,
+  "instagram.mediaId": 1,
+  "instagram.publicationDate": 1,
+});
 
 communicationPublicationSchema.index(
   { "wordpress.postId": 1 },

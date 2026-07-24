@@ -22,8 +22,13 @@ const collectCommunicationMetrics = async ({
 } = {}) => {
   const filter = {
     $or: [
-      { "wordpress.url": { $type: "string", $ne: "" } },
-      { "instagram.mediaId": { $type: "string", $ne: "" } },
+      {
+        "wordpress.postId": { $type: "number", $gt: 0 },
+        "wordpress.url": { $type: "string", $ne: "" },
+      },
+      {
+        "instagram.mediaId": { $type: "string", $ne: "" },
+      },
     ],
   };
 
@@ -38,7 +43,9 @@ const collectCommunicationMetrics = async ({
   const publications = await query;
 
   const wordpressPublications = publications.filter(
-    (publication) => publication.wordpress?.url
+    (publication) =>
+      Number(publication.wordpress?.postId) > 0 &&
+      Boolean(publication.wordpress?.url)
   );
 
   let viewsByUrl = new Map();
@@ -85,7 +92,11 @@ const collectCommunicationMetrics = async ({
       runLimited(async () => {
         let changed = false;
 
-        if (publication.wordpress?.url && !analyticsError) {
+        if (
+          Number(publication.wordpress?.postId) > 0 &&
+          publication.wordpress?.url &&
+          !analyticsError
+        ) {
           try {
             publication.wordpress.stats = replaceSnapshot({
               views: viewsByUrl.get(publication.wordpress.url) || 0,
