@@ -526,29 +526,29 @@ const disableSesameEmployeeForUser = async (userId) => {
       sesameId: String(user.userIdSesame),
       data: updated,
     };
-  }  catch (error) {
-  console.error("[disableSesameEmployeeForUser] Sesame error FULL:", {
-    name: error?.name,
-    message: error?.message,
-    code: error?.code,
-    isAxiosError: error?.isAxiosError,
+  } catch (error) {
+    console.error("[disableSesameEmployeeForUser] Sesame error FULL:", {
+      name: error?.name,
+      message: error?.message,
+      code: error?.code,
+      isAxiosError: error?.isAxiosError,
 
-    responseStatus: error?.response?.status,
-    responseData: error?.response?.data,
-    responseHeaders: error?.response?.headers,
+      responseStatus: error?.response?.status,
+      responseData: error?.response?.data,
+      responseHeaders: error?.response?.headers,
 
-    requestMethod: error?.config?.method,
-    requestBaseURL: error?.config?.baseURL,
-    requestURL: error?.config?.url,
-    requestData: error?.config?.data,
+      requestMethod: error?.config?.method,
+      requestBaseURL: error?.config?.baseURL,
+      requestURL: error?.config?.url,
+      requestData: error?.config?.data,
 
-    cause: error?.cause,
-    stack: error?.stack,
-    payload,
-  });
+      cause: error?.cause,
+      stack: error?.stack,
+      payload,
+    });
 
-  throw error;
-}
+    throw error;
+  }
 };
 
 const deleteSesameEmployeeForUser = async (userId) => {
@@ -1923,7 +1923,7 @@ const assignEmployeeToDispositiveSesameScopes = async ({
   const employeeSync = await ensureSesameEmployeeForUser(userId, { status: "active" });
 
   if (!employeeSync?.sesameId) {
-    throw new ClientError((employeeSync?.message)?`No se pudo crear o activar el usuario en Sesame. Error de sesame: ${employeeSync?.message}`:"No se pudo crear o activar el usuario en Sesame", 400);
+    throw new ClientError((employeeSync?.message) ? `No se pudo crear o activar el usuario en Sesame. Error de sesame: ${employeeSync?.message}` : "No se pudo crear o activar el usuario en Sesame", 400);
   }
 
   const dispositive = await Dispositive.findById(dispositiveId)
@@ -2395,10 +2395,11 @@ const inviteSesameUsersByActivePeriodDispositivesLocal = async ({
 //
 // 12 horas -> trabajador/a
 // 24 horas -> responsable o coordinador/a
-// 48 horas -> web@engloba.org.es y comunicacion@engloba.org.es
+// 48 horas -> trabajador/a, web y comunicación
+// 72 horas -> trabajador/a
 // ============================================================================
 
-const SESAME_ALERT_LOOKBACK_DAYS = 3;
+const SESAME_ALERT_LOOKBACK_DAYS = 4;
 const SESAME_ALERT_PAGE_LIMIT = 200;
 
 const SESAME_ALERT_ADMIN_EMAILS = [
@@ -2409,7 +2410,9 @@ const SESAME_ALERT_ADMIN_EMAILS = [
 const SESAME_ALERT_FIELDS = {
   "12h": "employee12hNotifiedAt",
   "24h": "responsible24hNotifiedAt",
-  "48h": "admin48hNotifiedAt",
+  employee48h: "employee48hNotifiedAt",
+  admin48h: "admin48hNotifiedAt",
+  "72h": "employee72hNotifiedAt",
 };
 
 const normalizeSesameAlertEmail = (email = "") =>
@@ -2475,11 +2478,11 @@ const formatSesameAlertElapsedTime = (milliseconds) => {
 const getSesameAlertExpirationDate = () =>
   new Date(
     Date.now() +
-      30 * 24 * 60 * 60 * 1000
+    30 * 24 * 60 * 60 * 1000
   );
 
 /*
- * Obtiene los fichajes de los últimos tres días,
+ * Obtiene los fichajes de los últimos cuatro días,
  * recorriendo todas las páginas de Sesame.
  */
 const getSesameWorkEntriesForAlerts = async () => {
@@ -2487,11 +2490,11 @@ const getSesameWorkEntriesForAlerts = async () => {
 
   const fromDate = new Date(
     now.getTime() -
-      SESAME_ALERT_LOOKBACK_DAYS *
-        24 *
-        60 *
-        60 *
-        1000
+    SESAME_ALERT_LOOKBACK_DAYS *
+    24 *
+    60 *
+    60 *
+    1000
   );
 
   const from =
@@ -3038,7 +3041,9 @@ const processSesameOpenEntryAlerts =
         openEntries.length,
       sent12h: 0,
       sent24h: 0,
-      sent48h: 0,
+      sentEmployee48h: 0,
+      sentAdmin48h: 0,
+      sent72h: 0,
       deletedAlerts,
       errors: [],
     };
@@ -3081,8 +3086,8 @@ const processSesameOpenEntryAlerts =
       const context =
         localUser?._id
           ? deviceContexts.get(
-              String(localUser._id)
-            )
+            String(localUser._id)
+          )
           : null;
 
       const employeeName =
@@ -3199,7 +3204,29 @@ const processSesameOpenEntryAlerts =
           enabled:
             elapsedHours >= 48,
 
-          alertType: "48h",
+          alertType:
+            "employee48h",
+
+          recipientType:
+            "employee",
+
+          recipientName:
+            localUser?.firstName ||
+            sesameEmployee.firstName ||
+            "",
+
+          recipients:
+            employeeEmails,
+
+          thresholdHours: 48,
+        },
+
+        {
+          enabled:
+            elapsedHours >= 48,
+
+          alertType:
+            "admin48h",
 
           recipientType: "hr",
 
@@ -3209,6 +3236,26 @@ const processSesameOpenEntryAlerts =
             SESAME_ALERT_ADMIN_EMAILS,
 
           thresholdHours: 48,
+        },
+
+        {
+          enabled:
+            elapsedHours >= 72,
+
+          alertType: "72h",
+
+          recipientType:
+            "employee",
+
+          recipientName:
+            localUser?.firstName ||
+            sesameEmployee.firstName ||
+            "",
+
+          recipients:
+            employeeEmails,
+
+          thresholdHours: 72,
         },
       ];
 
@@ -3245,9 +3292,21 @@ const processSesameOpenEntryAlerts =
           }
 
           if (
-            alert.alertType === "48h"
+            alert.alertType === "employee48h"
           ) {
-            results.sent48h += 1;
+            results.sentEmployee48h += 1;
+          }
+
+          if (
+            alert.alertType === "admin48h"
+          ) {
+            results.sentAdmin48h += 1;
+          }
+
+          if (
+            alert.alertType === "72h"
+          ) {
+            results.sent72h += 1;
           }
         } catch (error) {
           const errorData = {
@@ -3284,8 +3343,12 @@ const processSesameOpenEntryAlerts =
           results.sent12h,
         sent24h:
           results.sent24h,
-        sent48h:
-          results.sent48h,
+        sentEmployee48h:
+          results.sentEmployee48h,
+        sentAdmin48h:
+          results.sentAdmin48h,
+        sent72h:
+          results.sent72h,
         deletedAlerts:
           results.deletedAlerts,
         errors:
@@ -3434,12 +3497,12 @@ const processMonthlySesameNoClockInsAlerts = async ({
 
   const localUsers = sesameEmployeeIds.length
     ? await User.find({
-        userIdSesame: { $in: sesameEmployeeIds },
-      })
-        .select(
-          "_id userIdSesame firstName lastName email employmentStatus"
-        )
-        .lean()
+      userIdSesame: { $in: sesameEmployeeIds },
+    })
+      .select(
+        "_id userIdSesame firstName lastName email employmentStatus"
+      )
+      .lean()
     : [];
 
   const localUserBySesameId = new Map(
@@ -3450,15 +3513,15 @@ const processMonthlySesameNoClockInsAlerts = async ({
 
   const usersOnActiveLeave = localUserIds.length
     ? await Leaves.distinct("idUser", {
-        idUser: { $in: localUserIds },
-        active: { $ne: false },
-        startLeaveDate: { $lte: now },
-        $or: [
-          { actualEndLeaveDate: { $exists: false } },
-          { actualEndLeaveDate: null },
-          { actualEndLeaveDate: { $gt: now } },
-        ],
-      })
+      idUser: { $in: localUserIds },
+      active: { $ne: false },
+      startLeaveDate: { $lte: now },
+      $or: [
+        { actualEndLeaveDate: { $exists: false } },
+        { actualEndLeaveDate: null },
+        { actualEndLeaveDate: { $gt: now } },
+      ],
+    })
     : [];
 
   const activeLeaveUserIds = new Set(usersOnActiveLeave.map(String));

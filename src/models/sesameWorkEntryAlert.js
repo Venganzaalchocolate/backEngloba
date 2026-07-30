@@ -21,7 +21,7 @@ const SesameWorkEntryAlertSchema =
         required: true,
       },
 
-      employee8hNotifiedAt: {
+      employee12hNotifiedAt: {
         type: Date,
         default: null,
       },
@@ -31,7 +31,17 @@ const SesameWorkEntryAlertSchema =
         default: null,
       },
 
+      employee48hNotifiedAt: {
+        type: Date,
+        default: null,
+      },
+
       admin48hNotifiedAt: {
+        type: Date,
+        default: null,
+      },
+
+      employee72hNotifiedAt: {
         type: Date,
         default: null,
       },

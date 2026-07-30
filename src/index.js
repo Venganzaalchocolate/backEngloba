@@ -4,6 +4,11 @@ const express = require("express");
 const cors = require("cors");
 
 const {
+  startMemoryMonitor,
+  memoryRequestMiddleware,
+} = require("./utils/memoryMonitor");
+
+const {
   limiter,
   corsOptions,
   verifyOriginAndReferer,
@@ -55,6 +60,14 @@ const port = process.env.PORT || 10000;
 
 // Crear la aplicación Express
 const app = express();
+
+// Iniciar el monitor de memoria si está habilitado
+
+startMemoryMonitor();
+
+app.use(memoryRequestMiddleware);
+
+// ----
 
 // Necesario para cookies seguras detrás del proxy HTTPS de Render
 app.set("trust proxy", 1);

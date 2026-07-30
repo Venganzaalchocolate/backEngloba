@@ -2067,6 +2067,7 @@ async function notifyCommunicationPublicationCompleted({
 }
 
 
+
 module.exports = {
   sendEmail,
   generateEmailHTML,
